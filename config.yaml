@@ -44,7 +44,7 @@ encode:
 
 entrance:
   max_seconds: 8               # uploads are trimmed to this
-  loudness_lufs: -28           # volume for all mic sounds; closer to 0 = louder (-20 is loud, -32 quiet)
+  loudness_lufs: -32           # volume for all mic sounds; closer to 0 = louder (-20 is loud, -32 quiet)
   tv_join_sound: C:\Users\tyler\Downloads\mr-tenna-says-its-tv-time.mp3
   tv_join_pause_seconds: 1.5   # gap between the jingle and the stream starting
 
