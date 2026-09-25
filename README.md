@@ -4,7 +4,7 @@ A fake cable TV channel for the Discord server. A throwaway Discord account Go L
 streams a schedule of shows, movies and commercials into a voice channel; a normal
 bot is the remote control.
 
-**Status: step 1 of 6 (proof of concept).** Only the test scripts exist so far.
+**Status: step 2 of 6 done (catalog).** Next: the controller bot + player.
 
 ## Why it runs natively (not Docker)
 
@@ -45,6 +45,46 @@ Press Ctrl+C to stop; the account leaves the voice channel.
 
 `data\testclip.mp4` is a generated 2-minute color-bar clip with a 440 Hz beep and
 an on-screen timestamp, so you can check picture, audio and seeking at a glance.
+
+## Settings
+
+Everything you'd want to change is in **`config.yaml`** (comments explain each
+line). Secrets live in `.env`. After editing either, restart the TV (step 6 adds
+the service; until then just re-run the command).
+
+## The catalog
+
+```
+tv.cmd sync      pull everything from Plex + local folders, import tags.csv files (~30s)
+tv.cmd stats     what's in the catalog and why things can't be scheduled
+```
+
+The catalog lives in `data	v.db` (SQLite). Sync is safe to run any time; it only
+re-reads audio/subtitle details for items Plex says changed.
+
+**What gets scheduled.** Plex items come in three flavors:
+- *fully identified*: title, summary, air date, all there.
+- *show-only*: Plex knows the show but not the episode (King of the Hill "Episode
+  101"). Included by default; set `plex.include_show_only_matches: false` to drop them.
+- *unidentified*: raw filenames (all of "Other Media"). Excluded unless you set
+  `plex.include_unmatched: true`.
+
+**Language.** English audio is picked when the file has it. Foreign-audio items need
+English subtitles: picture-based subtitle tracks are drawn on live, and separate
+`.srt` files are downloaded to `data\subs`. Items whose subtitles are a text track
+*inside* the video file are skipped for now (planned). Foreign-audio files with no
+subtitle track at all are skipped, unless you list the show under
+`language.hardsubbed_shows` because its subtitles are burned into the picture.
+
+**Local files** go in the folders under `local:` in config.yaml:
+- shows: `shows\<Show Name>\...\Show.Name.S01E02.Episode.Title.mkv`
+- movies: `movies\Movie Title (1994).mkv`
+- commercials / clips: anything, subfolders are fine
+
+**Tagging commercials and clips.** Each of those folders gets a `tags.csv`. Every
+sync adds a blank row for new files; fill in `decade` (90s, 1990s, 1994 all work),
+`holiday` (halloween / thanksgiving / christmas / none) and `notes` in Excel, save,
+and the next sync imports it. Close Excel before syncing, or sync can't add new rows.
 
 ## Optional: turning on Quick Sync
 

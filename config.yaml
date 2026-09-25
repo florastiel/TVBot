@@ -1,0 +1,50 @@
+# tvchannel settings. Edit this file, then restart the TV (see README).
+# Anything you delete falls back to the default built into src/config.js.
+# Secrets (tokens, API key) do NOT go here; they live in .env.
+
+discord:
+  guild_id: ""                 # your server (right-click server > Copy ID)
+  now_playing_channel_id: ""   # text channel for "now playing" posts
+  admin_user_id: ""            # you; can skip shows, force sync, regenerate schedule
+
+broadcast:
+  timezone: America/New_York
+  hours: "00:00-24:00"         # when the channel is on the air; default 24/7
+  block_minutes: 60            # normal block length (movies get a longer block)
+  commercials_per_break: [1, 2]  # random between min and max
+  clip_chance: 0.3             # chance a break also includes a clip (0 to 1)
+  no_repeat_days: 14           # don't reuse an episode/movie within this many days
+  idle_leave_minutes: 5        # leave voice after this long with nobody watching
+
+plex:
+  server_name: 
+  libraries: ["Movies", "Anime/TV Shows", "Other Media"]
+  include_unmatched: false     # items Plex couldn't identify at all (raw filenames) stay off the schedule
+  include_show_only_matches: true  # episodes of a known show that Plex couldn't pin down (no episode title)
+
+language:
+  audio: eng                   # preferred audio language
+  subtitles: eng               # subtitles to show when the audio isn't in that language
+  # Shows whose foreign-audio files have subtitles burned into the picture (no subtitle
+  # track). Exact show title as Plex shows it. Otherwise those files are skipped.
+  hardsubbed_shows: []
+
+local:
+  shows: D:\data\tv\shows            # <Show Name>\...\Show S01E02.mkv
+  movies: D:\data\tv\movies          # Movie Title (1994).mkv
+  clips: D:\data\tv\clips            # tag in clips\tags.csv
+  commercials: D:\data\tv\commercials  # tag in commercials\tags.csv
+
+encode:
+  height: 720
+  frame_rate: 30
+  bitrate_kbps: 2500
+  max_bitrate_kbps: 4000
+  encoder: software            # software (CPU) or qsv (Intel Quick Sync, needs the Intel driver)
+
+entrance:
+  max_seconds: 8               # uploads are trimmed to this
+  tv_join_sound: C:\Users\tyler\Downloads\mr-tenna-says-its-tv-time.mp3
+
+claude:
+  model: claude-sonnet-5       # used for tagging and weekly scheduling
