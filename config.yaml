@@ -52,6 +52,7 @@ encode:
   frame_rate: 30
   bitrate_kbps: 2500
   max_bitrate_kbps: 4000
+  hw_decode: true              # decode on the GPU when it can (less CPU); falls back to software
   encoder: qsv                 # software (CPU) or qsv (Intel Quick Sync, needs the Intel driver)
 
 entrance:
@@ -61,6 +62,7 @@ entrance:
 player:
   port: 7651                   # local-only port the bot uses to talk to the player
   spool_max_gb: 30             # download-ahead folder (for subtitles inside files) never grows past this
+  spool_max_mbps: 20           # download-ahead speed limit, leaving the Plex server's upload for the live stream
   spool_max_file_gb: 8         # files bigger than this aren't downloaded ahead; they play without subtitles
 
 claude:

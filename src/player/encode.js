@@ -40,13 +40,14 @@ export function itemArgs(seg, offsetSec) {
   const seek = (seg.seekMs || 0) / 1000;
   const args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-nostats"];
 
-  if (seg.card) return cardArgs(seg, offsetSec);
+  if (seg.kind === "card" || typeof seg.card === "string") return cardArgs(seg, offsetSec); // even a blank card
   if (/^https?:/i.test(seg.input)) {
     // Retry on network hiccups, but NOT at end of file (-reconnect_at_eof makes ffmpeg
     // hang for ~17 minutes after every Plex file; see README).
     args.push("-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_network_error", "1",
       "-reconnect_delay_max", "10", "-rw_timeout", "20000000");
   }
+  if (config.encode.hw_decode) args.push("-hwaccel", "auto");
   if (seek) args.push("-ss", seek.toFixed(3));
   args.push("-i", seg.input);
   const silent = seg.audioStream === null || seg.audioStream === undefined;
@@ -88,7 +89,7 @@ function cardArgs(seg, offsetSec) {
   mkdirSync(dir, { recursive: true });
   // Text goes in a file so no escaping of titles is needed.
   const file = join(dir, `${createHash("sha1").update(seg.card).digest("hex").slice(0, 12)}.txt`);
-  writeFileSync(file, seg.card);
+  writeFileSync(file, seg.card || " ");
   const font = "C\\:/Windows/Fonts/arialbd.ttf";
   const text = `drawtext=fontfile='${font}':textfile='${filterPath(file)}':fontsize=${Math.round(h / 12)}:fontcolor=white:line_spacing=${Math.round(h / 30)}:text_align=C:x=(w-text_w)/2:y=(h-text_h)/2`;
   return ["-hide_banner", "-loglevel", "error", "-nostdin", "-nostats",

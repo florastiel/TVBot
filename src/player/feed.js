@@ -8,6 +8,7 @@ import { log } from "../log.js";
 
 const FFMPEG = () => process.env.FFMPEG_PATH || "ffmpeg";
 const TS_PACKET = 188;
+const CUSHION = 16 * 1024 * 1024; // ~40 s of 720p video held ahead of what's playing
 
 // Highest PES timestamp (seconds) in a run of whole TS packets, or -1. Lets the feed
 // know exactly where the stream's clock is, instead of trusting ffmpeg's progress
@@ -46,11 +47,15 @@ export class Feed extends EventEmitter {
 
   // Encode one segment into the feed. Resolves when it finishes, is skipped, or fails:
   // { result: "done" | "skipped" | "error", playedSec }
+  //
+  // The encoder runs faster than real time; up to CUSHION bytes of its output are held
+  // here and written to the stream as it plays. That rides out the Plex server dropping
+  // the connection every ~100 MB (ffmpeg reconnects, which takes a second or two).
   play(seg) {
     if (this.closed) return Promise.resolve({ result: "error", playedSec: 0 });
     const startOffset = this.offsetSec;
     const proc = spawn(FFMPEG(), itemArgs(seg, startOffset), { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-    const cur = { proc, skipped: false, lastPts: -1 };
+    const cur = { proc, skipped: false, lastPts: -1, queue: [], queued: 0, waiting: false, exited: false, code: 0, finish: null };
     this.current = cur;
 
     let errText = "";
@@ -58,7 +63,50 @@ export class Feed extends EventEmitter {
       errText = (errText + String(d)).slice(-4000);
     });
 
-    // Only forward whole 188-byte TS packets, so killing an item mid-write (skip)
+    const done = new Promise((resolve) => { cur.finish = resolve; });
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (this.current === cur) this.current = null;
+      // Continue the next item's clock just after the last frame actually written.
+      // A tiny gap is invisible; an overlap would make the joiner drop frames.
+      const playedSec = Math.max(0, cur.lastPts - startOffset);
+      if (cur.lastPts >= 0) this.offsetSec = cur.lastPts + 0.1;
+      if (cur.skipped || this.closed) return cur.finish({ result: "skipped", playedSec });
+      if (cur.code !== 0 && cur.lastPts < 0 && usingQsv() && /qsv|mfx|encoder/i.test(errText)) { // only when the GPU encoder itself failed
+        // Nothing came out and we're on Quick Sync: assume the GPU encoder is the
+        // problem, switch this process to CPU encoding, and try the item again.
+        log.warn(`feed: Quick Sync failed (${errText.trim().split("\n").slice(-1)[0]}); switching to CPU encoding`);
+        encoderState.qsvBroken = true;
+        return cur.finish(this.play(seg));
+      }
+      if (cur.code !== 0) {
+        log.warn(`feed: item failed (exit ${cur.code}) after ${playedSec.toFixed(1)}s: ${errText.trim().split("\n").slice(-3).join(" | ")}`);
+        return cur.finish({ result: "error", playedSec });
+      }
+      cur.finish({ result: "done", playedSec });
+    };
+    cur.finishNow = finish;
+
+    // Write queued output to the stream at the pace it plays (outer's backpressure).
+    const pump = () => {
+      if (cur.waiting) return;
+      while (cur.queue.length && !cur.skipped && !this.closed) {
+        const c = cur.queue.shift();
+        cur.queued -= c.buf.length;
+        if (c.pts > cur.lastPts) cur.lastPts = c.pts;
+        if (cur.queued < CUSHION / 2 && proc.stdout.isPaused()) proc.stdout.resume();
+        if (!this.outer.stdin.write(c.buf)) {
+          cur.waiting = true;
+          this.outer.stdin.once("drain", () => { cur.waiting = false; pump(); });
+          return;
+        }
+      }
+      if (cur.exited && !cur.queue.length) finish();
+    };
+
+    // Only queue whole 188-byte TS packets, so killing an item mid-write (skip)
     // never hands the outer ffmpeg half a packet.
     let carry = Buffer.alloc(0);
     proc.stdout.on("data", (chunk) => {
@@ -67,42 +115,29 @@ export class Feed extends EventEmitter {
       const whole = buf.length - (buf.length % TS_PACKET);
       carry = buf.subarray(whole);
       if (!whole) return;
-      const out = buf.subarray(0, whole);
-      cur.lastPts = Math.max(cur.lastPts, maxPts(out));
-      if (!this.outer.stdin.write(out)) {
-        proc.stdout.pause();
-        this.outer.stdin.once("drain", () => proc.stdout.resume());
-      }
+      const out = Buffer.from(buf.subarray(0, whole));
+      cur.queue.push({ buf: out, pts: maxPts(out) });
+      cur.queued += out.length;
+      if (cur.queued > CUSHION) proc.stdout.pause();
+      pump();
     });
 
-    return new Promise((resolve) => {
-      proc.on("exit", (code) => {
-        if (this.current === cur) this.current = null;
-        // Continue the next item's clock just after the last frame actually forwarded.
-        // A tiny gap is invisible; an overlap would make the joiner drop frames.
-        const playedSec = Math.max(0, cur.lastPts - startOffset);
-        if (cur.lastPts >= 0) this.offsetSec = cur.lastPts + 0.1;
-        if (cur.skipped || this.closed) return resolve({ result: "skipped", playedSec });
-        if (code !== 0 && cur.lastPts < 0 && usingQsv()) {
-          // Nothing came out and we're on Quick Sync: assume the GPU encoder is the
-          // problem, switch this process to CPU encoding, and try the item again.
-          log.warn(`feed: Quick Sync failed (${errText.trim().split("\n").slice(-1)[0]}); switching to CPU encoding`);
-          encoderState.qsvBroken = true;
-          return resolve(this.play(seg));
-        }
-        if (code !== 0) {
-          log.warn(`feed: item failed (exit ${code}) after ${playedSec.toFixed(1)}s: ${errText.trim().split("\n").slice(-3).join(" | ")}`);
-          return resolve({ result: "error", playedSec });
-        }
-        resolve({ result: "done", playedSec });
-      });
+    proc.on("exit", (code) => {
+      cur.exited = true;
+      cur.code = code ?? 0;
+      if (cur.skipped || this.closed) return finish();
+      pump(); // finishes once the queue has been written
     });
+    return done;
   }
 
   skip() {
-    if (!this.current) return false;
-    this.current.skipped = true;
-    this.current.proc.kill("SIGKILL");
+    const cur = this.current;
+    if (!cur) return false;
+    cur.skipped = true;
+    cur.queue = []; // drop whatever of it hasn't been shown yet
+    cur.proc.kill("SIGKILL");
+    if (cur.exited) cur.finishNow();
     return true;
   }
 

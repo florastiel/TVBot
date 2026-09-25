@@ -85,6 +85,10 @@ async function download(row, plex) {
           if (buf.length !== end - pos + 1) throw new Error(`short read (${buf.length} bytes)`);
           writeSync(out, buf, 0, buf.length, pos);
           pos += buf.length;
+          // Stay under spool_max_mbps so the live stream (read from the same server)
+          // keeps enough of the Plex server's upload.
+          const due = ((pos * 8) / (config.player.spool_max_mbps * 1e6)) * 1000 - (Date.now() - t0);
+          if (due > 0) await sleep(due);
           break;
         } catch (e) {
           if (attempt >= 5) throw e;
