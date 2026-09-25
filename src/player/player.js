@@ -12,7 +12,7 @@ import { log } from "../log.js";
 import { Plex } from "../plex.js";
 import { PLAYER_PORT, localSecret } from "../local.js";
 import { Feed } from "./feed.js";
-import { playMic } from "./mic.js";
+import { playMic, prepareSound } from "./mic.js";
 import { PlaylistProgram } from "./program.js";
 
 export const ENTRANCE_DIR = join(DATA_DIR, "entrances");
@@ -40,6 +40,7 @@ export class Player extends EventEmitter {
     log.info(`player: logged in as ${this.streamer.client.user.tag}`);
     this.streamer.client.on("voiceStateUpdate", (before, after) => this.onVoiceState(before, after));
     setInterval(() => this.checkIdle(), 30000).unref();
+    if (this.jingle()) await prepareSound(this.jingle()).catch((e) => log.warn(`player: jingle not usable: ${e.message}`));
     this.serve();
   }
 
@@ -66,25 +67,37 @@ export class Player extends EventEmitter {
       throw e;
     }
     log.info(`player: joined voice ${channelId}`);
-    if (config.entrance.tv_join_sound && existsSync(config.entrance.tv_join_sound)) {
-      this.mic(config.entrance.tv_join_sound);
-    }
 
+    // The first show starts encoding right away (it just buffers), while the jingle
+    // plays; then a short pause so Discord's own "went live" sound doesn't step on it.
     const feed = new Feed();
     const abort = new AbortController();
     const session = { feed, abort, skippedBreaks: new Set() };
     this.session = session;
-    feed.on("closed", () => session === this.session && this.leave("stream stopped"));
-    playStream(feed.output, this.streamer, { type: "go-live" }, abort.signal)
-      .catch((e) => !abort.signal.aborted && log.warn(`player: stream ended: ${e.message}`))
-      .finally(() => session === this.session && this.leave("stream stopped"));
     this.state = "on";
-    this.emitEvent("on");
+    feed.on("closed", () => session === this.session && this.leave("stream stopped"));
     this.run(session).catch((e) => {
       log.error("player: playback loop crashed:", e);
       if (session === this.session) this.leave("error");
     });
+    this.emitEvent("on");
+
+    (async () => {
+      if (this.jingle()) {
+        await this.mic(this.jingle());
+        await sleep(config.entrance.tv_join_pause_seconds * 1000);
+      }
+      if (session !== this.session) return;
+      await playStream(feed.output, this.streamer, { type: "go-live" }, abort.signal);
+    })()
+      .catch((e) => !abort.signal.aborted && log.warn(`player: stream ended: ${e.message}`))
+      .finally(() => session === this.session && this.leave("stream stopped"));
     return this.status();
+  }
+
+  jingle() {
+    const f = config.entrance.tv_join_sound;
+    return f && existsSync(f) ? f : null;
   }
 
   async run(session) {
@@ -145,11 +158,12 @@ export class Player extends EventEmitter {
     return this.status();
   }
 
-  // Sounds over the mic, one at a time.
+  // Sounds over the mic, one at a time. Resolves when this one has finished.
   mic(file) {
     this.micQueue = this.micQueue
-      .then(() => playMic(this.streamer, file, config.entrance.max_seconds))
+      .then(() => playMic(this.streamer, file))
       .catch((e) => log.warn(`player: mic sound failed: ${e.message}`));
+    return this.micQueue;
   }
 
   onVoiceState(before, after) {

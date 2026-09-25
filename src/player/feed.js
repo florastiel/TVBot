@@ -82,7 +82,7 @@ export class Feed extends EventEmitter {
         // A tiny gap is invisible; an overlap would make the joiner drop frames.
         const playedSec = Math.max(0, cur.lastPts - startOffset);
         if (cur.lastPts >= 0) this.offsetSec = cur.lastPts + 0.1;
-        if (cur.skipped) return resolve({ result: "skipped", playedSec });
+        if (cur.skipped || this.closed) return resolve({ result: "skipped", playedSec });
         if (code !== 0) {
           log.warn(`feed: item failed (exit ${code}) after ${playedSec.toFixed(1)}s: ${errText.trim().split("\n").slice(-3).join(" | ")}`);
           return resolve({ result: "error", playedSec });
