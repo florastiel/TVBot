@@ -237,6 +237,18 @@ export class Player extends EventEmitter {
     return s.feed.skip();
   }
 
+  // Admin skip of the whole block: everything still to come in it is dropped (and taken
+  // off the schedule), and the rest of the day moves up to the next quarter hour.
+  skipBlock() {
+    const s = this.session;
+    const r = s?.program?.skipBlock?.();
+    if (!r) return false;
+    for (const id of r.ids) removeFromBlock(r.blockId, id);
+    if (this.now?.breakId) s.skippedBreaks.add(this.now.breakId);
+    log.info(`player: skipped the rest of the block (${r.ids.length} item(s))`);
+    return s.feed.skip();
+  }
+
   async leave(reason) {
     if (this.state === "off") return this.status();
     this.stopStream();
@@ -326,6 +338,7 @@ export class Player extends EventEmitter {
       "POST /live": () => this.goLive(),
       "POST /skip-break": (b) => ({ skipped: this.skipBreak(b.breakId) }),
       "POST /skip-item": () => ({ skipped: this.skipItem() }),
+      "POST /skip-block": () => ({ skipped: this.skipBlock() }),
       // Load new code/settings: right away if off or paused, otherwise at the next
       // commercial break (the TV comes back to the same channel by itself).
       "POST /restart": () => {

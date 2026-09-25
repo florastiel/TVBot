@@ -90,6 +90,15 @@ export class ScheduleProgram {
     this.skipped.add(itemId);
   }
 
+  // Drop everything still to come in the current block; the next block starts at the
+  // next quarter hour. Returns what was dropped, for taking it off the schedule.
+  skipBlock() {
+    if (!this.block) return null;
+    for (const id of this.blockRest) this.skipped.add(id);
+    this.blockSkipped = this.block.id;
+    return { blockId: this.block.id, ids: [...this.blockRest] };
+  }
+
   // Drop any delay: the next segment is whatever the schedule says is on now.
   goLive() {
     this.live = true;
@@ -158,6 +167,8 @@ export class ScheduleProgram {
       t += gap;
     }
 
+    this.block = block;
+    this.blockRest = new Set(pieces.slice(start).map((p) => p.row.id)); // not aired yet (incl. what's on)
     const titleOf = (row) => (row ? toSegment(row, this.plex).title : null);
     const before = (segs, row) => segs.map((s) => ({ ...s, nextTitle: titleOf(row) }));
     if (breakFirstMs > 3000 && start < pieces.length) yield* before(makeBreak(this.plex, { theme: block.theme, budgetMs: breakFirstMs }), pieces[start].row);
@@ -165,6 +176,7 @@ export class ScheduleProgram {
     for (let i = start; i < pieces.length; i++) {
       const p = pieces[i];
       if (this.skipped.has(p.row.id)) continue;
+      this.blockRest = new Set(pieces.slice(i).map((q) => q.row.id));
       // Download ahead (in airing order) whatever airs in the next few hours and needs
       // it for subtitles, so even big movies are ready well before they start.
       const ahead = [...new Set(pieces.slice(i + 1).map((q) => q.row))];
@@ -197,6 +209,7 @@ export class ScheduleProgram {
 
     // Content ran out early (a skip): the rest of the day moves up by whole grid steps,
     // so the next block starts sooner. Whatever can't move gets shows, not ads.
+    this.blockRest = new Set();
     this.pullUp(block);
     yield* this.fillWithShows(block);
     if (this.live) return null;
@@ -226,11 +239,15 @@ export class ScheduleProgram {
     const minute = 60000;
     const adsAtEnd = 3 * minute;
     for (;;) {
+      // The block was skipped (maybe while this filler played): get to the next one.
+      const skipped = this.blockSkipped === block.id;
+      if (skipped) this.pullUp(block);
       const left = block.end_at - this.clock();
       const row = (left > maxBreak + minute && this.fillerEpisode(block, left - minute))
         || (left > adsAtEnd && this.fillerShort(left - minute));
       if (!row) return;
       appendToBlock(block.id, row.id);
+      this.blockRest = new Set([row.id]);
       yield { ...toSegment(row, this.plex), blockId: block.id, upNext: null };
       if (this.live) return;
       const after = block.end_at - this.clock() - adsAtEnd;

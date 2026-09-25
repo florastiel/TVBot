@@ -81,7 +81,8 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 | `/entrance set` + file | anyone | your join sound (first 8 s, volume evened out) |
 | `/entrance clear` | anyone (admin: anyone's) | remove a join sound |
 | Skip commercials button (on the break message in the posting channel) | people in the TV's voice channel | ends the current break |
-| `/tvadmin skip` | admin | drop the rest of the current show or movie (also from the schedule); the rest of the day moves up (see *Skipping*) |
+| `/tvadmin skip` | admin | skip this episode or movie (also off the schedule); the block goes on with its next one, and the day moves up (see *Skipping*) |
+| `/tvadmin skipblock` | admin | skip the rest of this block; the next block starts at the next quarter hour |
 | `/tvadmin sync` | admin | re-read the catalog now |
 | `/tvadmin regen` | admin | throw away the upcoming schedule and program a new week (specials stay) |
 | `/tvadmin add` + kind + links | admin | download commercials/clips from YouTube (etc.) straight into rotation |
@@ -194,8 +195,8 @@ the breaks after each show (clips count as commercials; whole files, so a break 
 run a few seconds long). If a break is skipped, the next show starts early and the
 last break makes up the difference; a plain "Up next" card covers any last seconds.
 
-**Skipping** (`/tvadmin skip`) drops the rest of the show or movie and takes it off the
-schedule. The rest of the day then moves up by whole quarter hours, so the next block
+**Skipping**: `/tvadmin skip` drops the rest of the show or movie and takes it off the
+schedule; `/tvadmin skipblock` does that for everything left in the block. The rest of the day then moves up by whole quarter hours, so the next block
 starts as soon as possible (the guide times change with it; the bot plans the next day
 correspondingly sooner). Specials keep their announced time: the move stops there. The
 odd minutes that can't move get, in order: an episode of a show with nothing scheduled

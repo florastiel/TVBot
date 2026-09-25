@@ -70,7 +70,8 @@ const COMMANDS = [
   new SlashCommandBuilder().setName("tvlive").setDescription("Jump back to what the schedule says is on right now"),
   new SlashCommandBuilder().setName("tvadmin").setDescription("TV admin controls")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addSubcommand((s) => s.setName("skip").setDescription("Skip the rest of this show or movie (other shows fill its time)"))
+    .addSubcommand((s) => s.setName("skip").setDescription("Skip this episode or movie (the block goes on with its next one)"))
+    .addSubcommand((s) => s.setName("skipblock").setDescription("Skip the rest of this block (the next block starts at the next quarter hour)"))
     .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex and local catalog now"))
     .addSubcommand((s) => s.setName("regen").setDescription("Throw away the upcoming schedule and program it again"))
     .addSubcommand((s) => s.setName("add").setDescription("Download a commercial or clip (YouTube link etc.) into rotation")
@@ -257,7 +258,11 @@ export async function startBot() {
         const sub = i.options.getSubcommand();
         if (sub === "skip") {
           const r = await callPlayer("/skip-item", {});
-          return i.reply({ content: r.skipped ? "Skipped the rest of it. Other shows fill its time." : "Nothing is playing.", ...ephemeral });
+          return i.reply({ content: r.skipped ? "Skipped." : "Nothing is playing.", ...ephemeral });
+        }
+        if (sub === "skipblock") {
+          const r = await callPlayer("/skip-block", {});
+          return i.reply({ content: r.skipped ? "Skipped the rest of this block." : "Nothing to skip.", ...ephemeral });
         }
         if (sub === "sync") {
           await i.deferReply(ephemeral);
