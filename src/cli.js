@@ -57,6 +57,20 @@ Object.assign(commands, {
     await commands.guide();
   },
 
+  // tv.cmd special "Scream marathon Saturday 8pm"   (or no text: Claude picks one)
+  async special(...words) {
+    const { planSpecials } = await import("./schedule/specials.js");
+    const done = await planSpecials({ request: words.join(" ") || null, days: 8 });
+    for (const s of done) console.log(`${s.label}: ${new Date(s.start).toLocaleString("en-US")} - ${new Date(s.end).toLocaleTimeString("en-US")} (${s.blocks} blocks)`);
+  },
+
+  // tv.cmd add commercial <url> [url...]   or   tv.cmd add clip <url>
+  async add(kind, ...urls) {
+    if (!["commercial", "clip"].includes(kind) || !urls.length) throw new Error("usage: tv.cmd add commercial|clip <url> [url...]");
+    const { addFromUrls } = await import("./catalog/download.js");
+    for (const a of await addFromUrls(kind, urls)) console.log(a.skipped ? `skipped "${a.title}": ${a.skipped}` : `added "${a.title}" (${a.seconds}s)`);
+  },
+
   async guide() {
     const { guideText } = await import("./schedule/guide.js");
     // Discord timestamps shown as local times for the terminal.
@@ -127,6 +141,8 @@ if (!commands[cmd]) {
   schedule [days] [--replace]  program the schedule with Claude (default 7 days)
   guide                        print what's on today
   playlist --clear             drop the test playlist; the TV follows the schedule
+  add commercial|clip <url...> download from YouTube etc. into rotation
+  special ["request"]          plan a marathon/themed special (no text: Claude picks)
   restart [player|bot]         load new code/settings (player: at the next commercial break)`);
   process.exit(cmd === "help" ? 0 : 1);
 }

@@ -14,8 +14,9 @@ export function saveBlocks(blocks, source) {
   });
 }
 
+// Regular blocks only: specials stay put until they air.
 export function deleteBlocksFrom(ms) {
-  return getDb().prepare("DELETE FROM blocks WHERE start_at >= ?").run(ms).changes;
+  return getDb().prepare("DELETE FROM blocks WHERE start_at >= ? AND source != 'special'").run(ms).changes;
 }
 
 function withItems(block) {

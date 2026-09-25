@@ -8,6 +8,7 @@ import { log } from "../log.js";
 import { schedulableSql } from "../catalog/schedulable.js";
 import { localDay, localTime, season, gridMs, gridCeil, gridFloor, nextWindow } from "./time.js";
 import { saveBlocks, deleteBlocksFrom, usedIds, blocksBetween, nextBlockAfter } from "./store.js";
+import { withScheduleLock } from "./lock.js";
 
 const DAY = 86400000;
 const EPISODES_PER_SHOW = 5;
@@ -66,14 +67,39 @@ function describeShow(s) {
     .filter(Boolean).join(", ");
 }
 
+const inOrder = (title) => (config.shows?.in_order || []).includes(title);
+
+// For shows set to air in order: the next `count` episodes after the last one that
+// aired before `beforeMs` (holiday episodes aired out of order don't count), wrapping
+// around at the end of the series.
+export function nextInOrder(title, count, used, beforeMs) {
+  const db = getDb();
+  const eps = db.prepare(`SELECT i.* FROM items i LEFT JOIN tags t ON t.item_id = i.id
+    WHERE i.kind = 'episode' AND i.show_title = ? AND ${schedulableSql("i")} AND COALESCE(t.holiday, 'none') = 'none'
+    ORDER BY i.season IS NULL OR i.season = 0, i.season, i.episode IS NULL, i.episode, i.id`).all(title);
+  const last = db.prepare(`SELECT i.id FROM block_items bi JOIN blocks b ON b.id = bi.block_id JOIN items i ON i.id = bi.item_id
+    LEFT JOIN tags t ON t.item_id = i.id
+    WHERE i.show_title = ? AND b.start_at < ? AND COALESCE(t.holiday, 'none') = 'none'
+    ORDER BY b.start_at DESC, bi.position DESC LIMIT 1`).get(title, beforeMs)?.id;
+  const start = last ? eps.findIndex((e) => e.id === last) + 1 : 0;
+  const out = [];
+  for (let k = 0; k < eps.length && out.length < count; k++) {
+    const e = eps[(start + k) % eps.length];
+    if (!used.has(e.id)) out.push(e);
+  }
+  return out;
+}
+
 // Everything the scheduler may use on a day, plus the text of the menu.
 export function buildMenu(day, used) {
   const db = getDb();
   const theme = season(day);
   const allowed = new Map();
+  const order = new Map(); // in-order shows: their next episode ids, in airing order
   const lines = [];
 
-  // Shows: a few random episodes each that haven't aired recently (reruns, like real TV).
+  // Shows: a few random episodes each that haven't aired recently (reruns, like real
+  // TV); shows set to air in order get their next episodes instead.
   const episodes = db.prepare(`SELECT i.* FROM items i LEFT JOIN tags t ON t.item_id = i.id
     WHERE i.kind = 'episode' AND ${schedulableSql("i")} AND COALESCE(t.holiday, 'none') = 'none'
     ORDER BY random()`).all();
@@ -82,9 +108,12 @@ export function buildMenu(day, used) {
 
   lines.push("SHOWS (a random pick of episode ids, each with its length in minutes)");
   for (const [title, eps] of [...byShow].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const pick = eps.slice(0, EPISODES_PER_SHOW);
+    const ordered = inOrder(title);
+    const pick = ordered ? nextInOrder(title, EPISODES_PER_SHOW, used, day.startMs) : eps.slice(0, EPISODES_PER_SHOW);
+    if (!pick.length) continue;
     pick.forEach((e) => allowed.set(e.id, e));
-    lines.push(`- ${title} | ${describeShow(shows.get(title))} | ${pick.map((e) => `${e.id} (${min1(e.duration_ms)})`).join(", ")}`);
+    if (ordered) order.set(title, pick.map((e) => e.id));
+    lines.push(`- ${title}${ordered ? " (in order: use these ids in this order)" : ""} | ${describeShow(shows.get(title))} | ${pick.map((e) => `${e.id} (${min1(e.duration_ms)})`).join(", ")}`);
   }
 
   // Holiday material for the season: all of it is on the menu.
@@ -114,7 +143,7 @@ export function buildMenu(day, used) {
       lines.push(`- ${m.id} ${m.title} (${m.year ?? "?"}) | ${min1(m.duration_ms)}m | ${tags}`);
     }
   }
-  return { allowed, text: lines.join("\n"), theme };
+  return { allowed, order, text: lines.join("\n"), theme };
 }
 
 // ---------- checking Claude's answer ----------
@@ -159,6 +188,23 @@ export function validate(blocks, { allowed, windowMs, fixedEnd }) {
     problems.push(`The blocks run ${hours(total)} hours; that's more than needed (${hours(windowMs)} hours, a little over is fine). Remove blocks at the end.`);
   }
   return problems;
+}
+
+// In-order shows: whatever ids Claude picked, their spots get the show's next
+// episodes in airing order, with no gaps.
+function keepInOrder(blocks, allowed, order) {
+  const spots = new Map();
+  blocks.forEach((b) => b.ids.forEach((id, pos) => {
+    const r = allowed.get(id);
+    if (r?.kind === "episode" && order.has(r.show_title) && !(r.holiday && r.holiday !== "none")) {
+      if (!spots.has(r.show_title)) spots.set(r.show_title, []);
+      spots.get(r.show_title).push({ b, pos });
+    }
+  }));
+  for (const [title, list] of spots) {
+    const next = order.get(title);
+    list.forEach((spot, i) => { if (next[i] !== undefined) spot.b.ids[spot.pos] = next[i]; });
+  }
 }
 
 // ---------- the simple fallback ----------
@@ -230,6 +276,7 @@ ${menu.text}`;
     }
     const problems = validate(blocks, ctx);
     if (!problems.length) {
+      keepInOrder(blocks, menu.allowed, menu.order);
       log.info(`schedule: ${tag}: ${blocks.length} blocks from Claude (attempt ${attempt}; ${usage.input} in / ${usage.output} out tokens)`);
       return { blocks, source: "claude", theme: s.theme, allowed: menu.allowed };
     }
@@ -243,7 +290,11 @@ ${menu.text}`;
 // Program `days` days of air time from fromMs, in stretches of about a day, back to
 // back. Existing blocks are kept (and never overlapped); with replace, everything after
 // the current block is thrown away first. Block start/end times are worked out here.
-export async function generateSchedule({ fromMs = Date.now(), days = 7, replace = false } = {}) {
+export async function generateSchedule(opts = {}, { locked = false } = {}) {
+  return locked ? generateUnlocked(opts) : withScheduleLock(() => generateUnlocked(opts));
+}
+
+async function generateUnlocked({ fromMs = Date.now(), days = 7, replace = false } = {}) {
   const client = new Anthropic({ apiKey: secrets.anthropicKey });
   if (replace) {
     const current = blocksBetween(fromMs, fromMs + 1)[0];

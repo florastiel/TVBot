@@ -13,10 +13,13 @@ import { PLAYER_URL, callPlayer, localSecret } from "../local.js";
 import { runSync } from "../catalog/index.js";
 import { setEntrance, clearEntrance } from "./entrance.js";
 import { generateSchedule } from "../schedule/generate.js";
+import { planSpecials } from "../schedule/specials.js";
+import { addFromUrls } from "../catalog/download.js";
+import { localDay, localTime } from "../schedule/time.js";
 import { scheduledUntil } from "../schedule/store.js";
 import { guideText } from "../schedule/guide.js";
 import { runTagging } from "../tagging/tagger.js";
-import { getMeta } from "../db.js";
+import { getMeta, getDb } from "../db.js";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "../config.js";
@@ -47,6 +50,13 @@ async function upkeep() {
     log.info("bot: programming the next week");
     await generateSchedule({ fromMs: Math.max(Date.now(), until), days: 7 });
   }
+  // The automatic weekly special(s), if none is coming up yet.
+  const want = config.broadcast.specials_per_week;
+  const upcoming = getDb().prepare("SELECT COUNT(DISTINCT label) n FROM blocks WHERE source = 'special' AND start_at > ?").get(Date.now()).n;
+  if (want > 0 && upcoming === 0) {
+    log.info("bot: planning this week's special");
+    await planSpecials({ count: want, days: 7 }).catch((e) => log.warn(`bot: special planning failed: ${e.message}`));
+  }
 }
 
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
@@ -62,7 +72,13 @@ const COMMANDS = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((s) => s.setName("skip").setDescription("Skip whatever is playing (e.g. a broken file)"))
     .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex and local catalog now"))
-    .addSubcommand((s) => s.setName("regen").setDescription("Throw away the upcoming schedule and program a new week")),
+    .addSubcommand((s) => s.setName("regen").setDescription("Throw away the upcoming schedule and program a new week"))
+    .addSubcommand((s) => s.setName("add").setDescription("Download a commercial or clip (YouTube link etc.) into rotation")
+      .addStringOption((o) => o.setName("kind").setDescription("What it is").setRequired(true)
+        .addChoices({ name: "commercial", value: "commercial" }, { name: "clip", value: "clip" }))
+      .addStringOption((o) => o.setName("urls").setDescription("One or more links, separated by spaces").setRequired(true)))
+    .addSubcommand((s) => s.setName("special").setDescription("Plan a marathon or themed special")
+      .addStringOption((o) => o.setName("request").setDescription('e.g. "Scream marathon Saturday 8pm" or "Ghibli afternoon Sunday"').setRequired(true))),
   new SlashCommandBuilder().setName("schedule").setDescription("What's on the TV today"),
   new SlashCommandBuilder().setName("entrance").setDescription("Your sound when you join the TV's voice channel")
     .addSubcommand((s) => s.setName("set").setDescription(`Upload a sound (only the first ${config.entrance.max_seconds} seconds play)`)
@@ -239,6 +255,18 @@ export async function startBot() {
           await i.deferReply(ephemeral);
           await runSync();
           return i.editReply("Catalog sync finished.");
+        }
+        if (sub === "add") {
+          await i.deferReply(ephemeral);
+          const urls = i.options.getString("urls").split(/\s+/).filter((u) => /^https?:\/\//.test(u));
+          const done = await maintenance.run(() => addFromUrls(i.options.getString("kind"), urls));
+          return i.editReply(done.map((a) => (a.skipped ? `Skipped "${a.title}": ${a.skipped}` : `Added "${a.title}"`)).join("\n") || "No links found.");
+        }
+        if (sub === "special") {
+          await i.deferReply(ephemeral);
+          const done = await maintenance.run(() => planSpecials({ request: i.options.getString("request"), days: 8 }));
+          const lines = done.map((s) => `${s.label}: <t:${Math.floor(s.start / 1000)}:F> to <t:${Math.floor(s.end / 1000)}:t>`);
+          return i.editReply(`Scheduled:\n${lines.join("\n")}`);
         }
         if (sub === "regen") {
           await i.deferReply(ephemeral);

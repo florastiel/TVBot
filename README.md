@@ -82,7 +82,9 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 | Skip commercials button | people in the TV's voice channel | ends the current break |
 | `/tvadmin skip` | admin | skip whatever is playing (broken file) |
 | `/tvadmin sync` | admin | re-read the catalog now |
-| `/tvadmin regen` | admin | throw away the upcoming schedule and program a new week |
+| `/tvadmin regen` | admin | throw away the upcoming schedule and program a new week (specials stay) |
+| `/tvadmin add` + kind + links | admin | download commercials/clips from YouTube (etc.) straight into rotation |
+| `/tvadmin special` + request | admin | plan a marathon or themed special, e.g. "Scream marathon Saturday 8pm" |
 
 The bot keeps the channel tidy: only the latest "Now playing" post stays up, skip
 notes vanish after a minute, and the Skip button disappears when the break ends.
@@ -97,6 +99,7 @@ tv.cmd tag --dry                     estimate what tagging would cost, no API ca
 tv.cmd tag --redo                    retag everything
 tv.cmd schedule [days] [--replace]   program the schedule (default 7 days; keeps existing days)
 tv.cmd guide                         print today's guide
+tv.cmd add commercial <links...>     download commercials (or: add clip) from YouTube etc. and sync
 tv.cmd playlist "<show>" [count]     test override: loop a few episodes instead of the schedule
 tv.cmd playlist --clear              back to the schedule
 ```
@@ -154,6 +157,17 @@ nothing repeats within `no_repeat_days`, a movie gets its own block, labels are 
 words, and no block's rounding leaves more than `max_ad_minutes_per_hour` of ads.
 Problems go back to Claude (3 tries), then a simple code-built schedule is used.
 Roughly $0.25 per day of schedule with Sonnet 5.
+
+**Episode order.** Episodes air in random order, like reruns. Shows listed under
+`shows.in_order` in config.yaml air in order instead, picking up where they left off.
+Shows under `shows.never` are never scheduled.
+
+**Specials** (marathons, themed nights) take over the regular schedule for a few hours.
+Claude plans `specials_per_week` of them by itself (usually weekend evenings), and
+`/tvadmin special` or `tv.cmd special "..."` plans one on request. A separate Claude
+call sees the whole catalog, so it can spot movie series (Scream, the Dragon Ball Z
+movies, Knives Out...) or themes (Ghibli, David Lynch). Code checks it, removes the
+regular blocks it overlaps, and re-fills any gaps around it.
 
 Seasons: Halloween material through October, Thanksgiving until Thanksgiving Day,
 then Christmas until the 25th, ramping up as the day gets closer.
