@@ -4,7 +4,7 @@
 
 discord:
   guild_id: ""   # your server (right-click server > Copy ID)
-  now_playing_channel_id: ""   # text channel for "now playing" posts
+  now_playing_channel_id: ""   # channel for "now playing" posts
   admin_user_id: ""   # you; can skip shows, force sync, regenerate schedule
 
 broadcast:
