@@ -100,7 +100,7 @@ tv.cmd playlist --clear              back to the schedule
 ## Settings
 
 Everything you'd want to change is in **`config.yaml`** (comments explain each line):
-broadcast hours, the block grid (15 min), ad minutes per hour, clip chance, no-repeat window,
+broadcast hours, the block grid (15 min), min/max ad minutes per hour, clip chance, no-repeat window,
 idle timeout, encode size/bitrate, Plex server + libraries, local folders, jingle and
 volume, encoder (qsv = Intel Quick Sync, falls back to CPU by itself), Claude model.
 After changing settings: `tv.cmd restart` (the player waits until the TV is off).
@@ -143,7 +143,7 @@ episodes are Halloween/Thanksgiving/Christmas episodes. The first full pass cost
 Claude programs one day at a time from a menu: each show's next few episodes in
 order, in-season holiday episodes, and a sample of movies not aired recently. It
 returns blocks (a 1–3 word label and which items). Code works out each block's length:
-its shows plus `ad_minutes_per_hour` of ads, rounded up to the next quarter hour, so
+its shows plus at least `min_ad_minutes_per_hour` of ads, rounded up to the next quarter hour, so
 blocks start and end on :00/:15/:30/:45. Code checks every answer: ids from the menu,
 nothing repeats within `no_repeat_days`, a movie gets its own block, labels are plain
 words, and no block's rounding leaves more than `max_ad_minutes_per_hour` of ads.

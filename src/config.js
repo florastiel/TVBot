@@ -15,7 +15,7 @@ const DEFAULTS = {
     timezone: "America/New_York",
     hours: "00:00-24:00",
     grid_minutes: 15,
-    ad_minutes_per_hour: 5,
+    min_ad_minutes_per_hour: 3,
     max_ad_minutes_per_hour: 8,
     clip_chance: 0.3,
     no_repeat_days: 14,

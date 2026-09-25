@@ -76,10 +76,10 @@ const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
 // A commercial break of about budgetMs: whole commercial files until the budget is used
 // up (the last one may run a few seconds over; the end of the block makes up for it),
 // sometimes a clip. Empty if nothing fits, in which case the next show just starts.
-// Without a budget (test playlist): about ad_minutes_per_hour's worth for one episode.
+// Without a budget (test playlist): about half the max ad time of an hour, per episode.
 const OVERRUN_MS = 20000;
 export function makeBreak(plex, { theme = null, budgetMs = null } = {}) {
-  const budget = budgetMs ?? (config.broadcast.ad_minutes_per_hour * 60000 * 22) / 60;
+  const budget = budgetMs ?? (config.broadcast.max_ad_minutes_per_hour * 60000 * 22) / 60 / 2;
   const rows = [];
   let left = budget;
   if (Math.random() < config.broadcast.clip_chance) {

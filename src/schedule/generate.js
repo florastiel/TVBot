@@ -13,10 +13,10 @@ const DAY = 86400000;
 const EPISODES_PER_SHOW = 5;
 const MAX_ATTEMPTS = 3;
 
-// How long a block runs: its shows plus ad_minutes_per_hour of ads, rounded up to the
-// grid. Returns { lengthMs, adMs, adPerHour }.
+// How long a block runs: its shows plus at least min_ad_minutes_per_hour of ads,
+// rounded up to the grid. Returns { lengthMs, adMs, adPerHour }.
 export function blockLength(contentMs) {
-  const rate = config.broadcast.ad_minutes_per_hour / 60;
+  const rate = config.broadcast.min_ad_minutes_per_hour / 60;
   const lengthMs = Math.ceil(contentMs / (1 - rate) / gridMs()) * gridMs();
   const adMs = lengthMs - contentMs;
   return { lengthMs, adMs, adPerHour: (adMs / lengthMs) * 60 };
@@ -44,7 +44,7 @@ const SCHEMA = {
 
 const SYSTEM = `You program a stretch of a retro cable-TV style channel for a group of friends. You get the start time, roughly how long to fill, and a menu of shows, movies and episodes; you return a list of blocks that play back to back.
 
-How block lengths work (done by code, not you): each block runs its items plus a few minutes of commercials per hour, rounded UP to the next quarter hour (:00, :15, :30, :45). So pick items whose total length lands just under a quarter-hour mark, or the rounding leaves too many commercials. Example: three 22.5-minute episodes (67.5 min) make a 75-minute block; two of them (45 min) would need a 60-minute block with 15 minutes of ads, which is too much.
+How block lengths work (done by code, not you): each block runs its items plus at least ${config.broadcast.min_ad_minutes_per_hour} minutes of commercials per hour, rounded UP to the next quarter hour (:00, :15, :30, :45). So pick items whose total length lands a few minutes under a quarter-hour mark, or the rounding leaves too many commercials. Example: three 22.5-minute episodes (67.5 min) make a 75-minute block with 7.5 minutes of ads; two of them (45 min) would need a 60-minute block with 15 minutes of ads, which is too much.
 
 Rules:
 - A block holds items that go together (same show, or shows with a similar feel), in a sensible order. Mix it up; don't run the same show all day.
@@ -71,6 +71,7 @@ export function buildMenu(day, used) {
   const db = getDb();
   const theme = season(day);
   const allowed = new Map();
+  const order = new Map(); // show -> episode ids in airing order, as offered
   const lines = [];
 
   // Shows: the next few episodes after whatever aired last, in order.
@@ -95,6 +96,7 @@ export function buildMenu(day, used) {
     }
     if (!next.length) continue;
     next.forEach((e) => allowed.set(e.id, e));
+    order.set(title, next.map((e) => e.id));
     lines.push(`- ${title} | ${describeShow(shows.get(title))} | ${next.map((e) => `${e.id} (${min1(e.duration_ms)})`).join(", ")}`);
   }
 
@@ -125,7 +127,7 @@ export function buildMenu(day, used) {
       lines.push(`- ${m.id} ${m.title} (${m.year ?? "?"}) | ${min1(m.duration_ms)}m | ${tags}`);
     }
   }
-  return { allowed, text: lines.join("\n"), theme };
+  return { allowed, order, text: lines.join("\n"), theme };
 }
 
 // ---------- checking Claude's answer ----------
@@ -172,21 +174,21 @@ export function validate(blocks, { allowed, windowMs, fixedEnd }) {
   return problems;
 }
 
-// Keep each show's episodes in series order across the day, even if Claude
-// shuffled them between blocks.
-function keepSeriesOrder(blocks, allowed) {
-  const byShow = new Map();
+// Each show's spots across the stretch get that show's next episodes in airing order,
+// with no gaps, whichever of the offered ids Claude picked. Holiday picks (which
+// may air out of order) stay where they are.
+function keepSeriesOrder(blocks, allowed, order) {
+  const spots = new Map();
   blocks.forEach((b) => b.ids.forEach((id, pos) => {
     const r = allowed.get(id);
-    if (r.kind !== "episode" || (r.holiday && r.holiday !== "none")) return; // holiday picks stay where they are
-    if (!byShow.has(r.show_title)) byShow.set(r.show_title, []);
-    byShow.get(r.show_title).push({ b, pos, r });
+    if (r.kind !== "episode" || (r.holiday && r.holiday !== "none")) return;
+    if (!spots.has(r.show_title)) spots.set(r.show_title, []);
+    spots.get(r.show_title).push({ b, pos });
   }));
-  const order = (r) => [r.season == null || r.season === 0 ? 1e9 : r.season, r.episode ?? 1e9, r.id];
-  const cmp = (x, y) => { const a = order(x), c = order(y); for (let i = 0; i < 3; i++) if (a[i] !== c[i]) return a[i] - c[i]; return 0; };
-  for (const spots of byShow.values()) {
-    const sorted = spots.map((s) => s.r).sort(cmp);
-    spots.forEach((s, i) => { s.b.ids[s.pos] = sorted[i].id; });
+  const holidayIds = new Set(blocks.flatMap((b) => b.ids).filter((id) => { const r = allowed.get(id); return r.holiday && r.holiday !== "none"; }));
+  for (const [title, list] of spots) {
+    const next = (order.get(title) || []).filter((id) => !holidayIds.has(id));
+    list.forEach((spot, i) => { if (next[i] !== undefined) spot.b.ids[spot.pos] = next[i]; });
   }
 }
 
@@ -229,7 +231,7 @@ async function planWindow(client, win) {
     ? `The channel signs off at ${localTime(win.end)}: the blocks must not run past it.`
     : `That's until about ${localTime(win.end)}; running up to an hour or two past it is fine.`;
   const prompt = `Program ${win.day.weekday}, ${win.day.date}, starting at ${localTime(win.start)}: about ${hours(windowMs)} hours. ${endNote}
-About ${config.broadcast.ad_minutes_per_hour} minutes of commercials per hour get added between items automatically.
+Commercials (${config.broadcast.min_ad_minutes_per_hour} to ${config.broadcast.max_ad_minutes_per_hour} minutes per hour) get added between items automatically.
 ${seasonNote}
 
 ${menu.text}`;
@@ -259,7 +261,7 @@ ${menu.text}`;
     }
     const problems = validate(blocks, ctx);
     if (!problems.length) {
-      keepSeriesOrder(blocks, menu.allowed);
+      keepSeriesOrder(blocks, menu.allowed, menu.order);
       log.info(`schedule: ${tag}: ${blocks.length} blocks from Claude (attempt ${attempt}; ${usage.input} in / ${usage.output} out tokens)`);
       return { blocks, source: "claude", theme: s.theme, allowed: menu.allowed };
     }
