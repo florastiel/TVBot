@@ -10,7 +10,7 @@ import { log } from "../log.js";
 import { schedulableSql } from "../catalog/schedulable.js";
 import { blockLength, generateSchedule, nextInOrder } from "./generate.js";
 import { localDay, localTime, localToUtc, gridMs } from "./time.js";
-import { saveBlocks, usedIds } from "./store.js";
+import { saveBlocks, usedIds, scheduledUntil } from "./store.js";
 import { withScheduleLock } from "./lock.js";
 
 const DAY = 86400000;
@@ -208,10 +208,12 @@ ${cat.text}`;
     }
     if (!specials.length) problems.push("No specials were returned.");
     if (!problems.length) {
+      const plannedUntil = scheduledUntil();
       for (const p of planned) placeSpecial(p);
-      // Fill any holes left around the specials with regular programming.
-      const from = Math.min(...planned.map((p) => p.start)) - 3 * 3600000;
-      await generateSchedule({ fromMs: Math.max(from, Date.now()), days: days + 1 }, { locked: true });
+      // Re-fill only holes inside what was already planned; later days get planned
+      // by the regular daily upkeep, which works around the special.
+      const from = Math.max(Date.now(), Math.min(...planned.map((p) => p.start)) - 3 * 3600000);
+      if (plannedUntil > from) await generateSchedule({ fromMs: from, days: (plannedUntil - from) / DAY }, { locked: true });
       log.info(`specials: ${planned.map((p) => `"${p.sp.label}" ${localDay(p.start).date} ${localTime(p.start)}-${localTime(p.end)}`).join("; ")}`);
       return planned.map((p) => ({ label: p.sp.label, start: p.start, end: p.end, blocks: p.blocks.length }));
     }

@@ -46,9 +46,9 @@ async function upkeep() {
     await runTagging().catch((e) => log.warn(`bot: tagging failed: ${e.message}`));
   }
   const until = scheduledUntil();
-  if (until < Date.now() + 2 * 86400000) {
-    log.info("bot: programming the next week");
-    await generateSchedule({ fromMs: Math.max(Date.now(), until), days: 7 });
+  if (until < Date.now() + 12 * 3600000) {
+    log.info(`bot: programming the next ${config.broadcast.plan_days} day(s)`);
+    await generateSchedule({ fromMs: Math.max(Date.now(), until), days: config.broadcast.plan_days });
   }
   // The automatic weekly special(s), if none is coming up yet.
   const want = config.broadcast.specials_per_week;
@@ -72,7 +72,7 @@ const COMMANDS = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((s) => s.setName("skip").setDescription("Skip whatever is playing (e.g. a broken file)"))
     .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex and local catalog now"))
-    .addSubcommand((s) => s.setName("regen").setDescription("Throw away the upcoming schedule and program a new week"))
+    .addSubcommand((s) => s.setName("regen").setDescription("Throw away the upcoming schedule and program it again"))
     .addSubcommand((s) => s.setName("add").setDescription("Download a commercial or clip (YouTube link etc.) into rotation")
       .addStringOption((o) => o.setName("kind").setDescription("What it is").setRequired(true)
         .addChoices({ name: "commercial", value: "commercial" }, { name: "clip", value: "clip" }))
@@ -270,7 +270,7 @@ export async function startBot() {
         }
         if (sub === "regen") {
           await i.deferReply(ephemeral);
-          await maintenance.run(() => generateSchedule({ replace: true, days: 7 }));
+          await maintenance.run(() => generateSchedule({ replace: true, days: config.broadcast.plan_days }));
           return i.editReply("New schedule is ready (from the next block on). /schedule to see it.");
         }
       }

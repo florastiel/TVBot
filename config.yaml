@@ -15,6 +15,7 @@ broadcast:
   max_ad_minutes_per_hour: 9   # ...and at most this (rounding up to the grid decides where in between)
   clip_chance: 0.3             # chance a break includes one of the clips (0 to 1)
   no_repeat_days: 14           # don't reuse an episode/movie within this many days
+  plan_days: 1                 # how far ahead Claude plans at a time (upkeep tops it up as it runs low)
   specials_per_week: 1         # marathons/themed specials Claude plans by itself each week (0 = only on request)
   idle_leave_minutes: 5        # leave voice after this long with nobody watching
 

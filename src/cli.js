@@ -52,7 +52,8 @@ Object.assign(commands, {
   // Program the schedule with Claude. Days that already have blocks are kept unless --replace.
   async schedule(...args) {
     const { generateSchedule } = await import("./schedule/generate.js");
-    const days = Number(args.find((a) => /^\d+$/.test(a)) || 7);
+    const { config } = await import("./config.js");
+    const days = Number(args.find((a) => /^\d+$/.test(a)) || config.broadcast.plan_days);
     await generateSchedule({ days, replace: args.includes("--replace") });
     await commands.guide();
   },
@@ -138,7 +139,7 @@ if (!commands[cmd]) {
   bot                          run the remote-control bot
   playlist "<show>" [count]    set the test playlist to a few episodes of a show
   tag [--dry|--sample|--redo]  tag the catalog with Claude (only untagged items unless --redo)
-  schedule [days] [--replace]  program the schedule with Claude (default 7 days)
+  schedule [days] [--replace]  program the schedule with Claude (default: plan_days)
   guide                        print what's on today
   playlist --clear             drop the test playlist; the TV follows the schedule
   add commercial|clip <url...> download from YouTube etc. into rotation

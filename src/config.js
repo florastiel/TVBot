@@ -19,6 +19,7 @@ const DEFAULTS = {
     max_ad_minutes_per_hour: 8,
     clip_chance: 0.3,
     no_repeat_days: 14,
+    plan_days: 1,
     specials_per_week: 1,
     idle_leave_minutes: 5,
   },
