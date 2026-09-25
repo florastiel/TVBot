@@ -41,7 +41,8 @@ Already done on glados: `tools\node` (Node 24 LTS), `tools\ffmpeg` (BtbN build),
 
 1. Unzip the Node 24 Windows x64 zip (nodejs.org) to `tools\node`.
 2. Unzip `ffmpeg-master-latest-win64-gpl.zip` (github.com/BtbN/FFmpeg-Builds) to `tools\ffmpeg`.
-3. `tools\node\npm install`, then `tools\node\npm install-scripts approve node-av zeromq`
+3. Download `yt-dlp.exe` (github.com/yt-dlp/yt-dlp/releases) into `tools\` (used by `tv.cmd add`).
+4. `tools\node\npm install`, then `tools\node\npm install-scripts approve node-av zeromq`
    and `tools\node\npm rebuild node-av zeromq`.
 
 Copy `.env.example` to `.env` and fill it in: `STREAMER_TOKEN` (the streamer account),
