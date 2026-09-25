@@ -122,13 +122,20 @@ Lives in `data\tv.db`. Plex items come in three flavors:
 - *unidentified*: raw filenames (all of "Other Media"). Off the schedule unless
   `plex.include_unmatched: true`.
 
-**Language.** English audio is picked when the file has it. Foreign-audio items need
-English subtitles: picture-based tracks are drawn on live, separate `.srt` files are
-downloaded to `data\subs`. Items whose subtitles are a text track *inside* the file
-are skipped for now; the easy fix is for the Plex owner to extract them to separate
-files (Bazarr, or MKVToolNix's mkvextract), which sync then picks up automatically.
-Foreign-audio files with no subtitle track are skipped unless the show is listed
-under `language.hardsubbed_shows`.
+**Language and subtitles.** English audio is picked when the file has it. English
+subtitles are shown whenever a file has them (`language.always_subtitles`), and
+foreign-audio items need them to be scheduled at all.
+- Picture-based subtitle tracks are drawn on live.
+- Separate `.srt` files are downloaded to `data\subs` at sync (tiny).
+- Text tracks *inside* the file (most common) need a local copy: while one show plays,
+  the next ones that need it are **downloaded ahead** into `data\spool` (in 32 MB chunks;
+  the Plex server drops single long downloads), then played from there with subtitles
+  burned in. Same total transfer from the Plex server, just earlier. Copies are deleted
+  after 12 hours unused; the folder is capped at `player.spool_max_gb` and files over
+  `player.spool_max_file_gb` are skipped. The first show after `/tv`, or one joined
+  midway, hasn't been downloaded yet and plays without subtitles.
+- Foreign-audio files with no subtitle track are skipped unless the show is listed
+  under `language.hardsubbed_shows`.
 
 **Local files** go in the folders under `local:` in config.yaml:
 - shows: `shows\<Show Name>\...\Show.Name.S01E02.Episode.Title.mkv`
