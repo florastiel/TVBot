@@ -2,8 +2,10 @@
 // exact same format (fixed frame size, frame rate, audio layout) as MPEG-TS with its
 // timestamps shifted to continue where the previous item ended, so the items can be
 // concatenated into one unbroken stream and Go Live never has to restart.
-import { relative } from "node:path";
-import { config, ROOT } from "../config.js";
+import { relative, join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { config, ROOT, DATA_DIR } from "../config.js";
 
 export function frameSize() {
   const h = config.encode.height;
@@ -33,6 +35,7 @@ export function itemArgs(seg, offsetSec) {
   const seek = (seg.seekMs || 0) / 1000;
   const args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-nostats"];
 
+  if (seg.card) return cardArgs(seg, offsetSec);
   if (/^https?:/i.test(seg.input)) {
     // Retry on network hiccups, but NOT at end of file (-reconnect_at_eof makes ffmpeg
     // hang for ~17 minutes after every Plex file; see README).
@@ -70,6 +73,24 @@ export function itemArgs(seg, offsetSec) {
     "-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0", "-output_ts_offset", offsetSec.toFixed(3),
     "pipe:1");
   return args;
+}
+
+// A plain text card: dark background, white text, silence.
+function cardArgs(seg, offsetSec) {
+  const { w, h } = frameSize();
+  const dir = join(DATA_DIR, "cards");
+  mkdirSync(dir, { recursive: true });
+  // Text goes in a file so no escaping of titles is needed.
+  const file = join(dir, `${createHash("sha1").update(seg.card).digest("hex").slice(0, 12)}.txt`);
+  writeFileSync(file, seg.card);
+  const font = "C\\:/Windows/Fonts/arialbd.ttf";
+  const text = `drawtext=fontfile='${font}':textfile='${filterPath(file)}':fontsize=${Math.round(h / 12)}:fontcolor=white:line_spacing=${Math.round(h / 30)}:text_align=C:x=(w-text_w)/2:y=(h-text_h)/2`;
+  return ["-hide_banner", "-loglevel", "error", "-nostdin", "-nostats",
+    "-f", "lavfi", "-i", `color=c=0x14142a:s=${w}x${h}:r=${config.encode.frame_rate},${text},format=${config.encode.encoder === "qsv" ? "nv12" : "yuv420p"}`,
+    "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+    "-map", "0:v", "-map", "1:a", "-t", (seg.durationMs / 1000).toFixed(3),
+    ...videoCodecArgs(), "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+    "-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0", "-output_ts_offset", offsetSec.toFixed(3), "pipe:1"];
 }
 
 // Joins the per-item MPEG-TS chunks into the single stream handed to Discord.

@@ -13,7 +13,8 @@ import { Plex } from "../plex.js";
 import { PLAYER_PORT, localSecret } from "../local.js";
 import { Feed } from "./feed.js";
 import { playMic, prepareSound } from "./mic.js";
-import { PlaylistProgram } from "./program.js";
+import { makeProgram } from "./program.js";
+import { execFileSync } from "node:child_process";
 
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
 
@@ -39,7 +40,16 @@ export class Player extends EventEmitter {
     log.info(`player: logged in as ${this.streamer.client.user.tag}`);
     this.streamer.client.on("voiceStateUpdate", (before, after) => this.onVoiceState(before, after));
     setInterval(() => this.checkIdle(), 30000).unref();
-    if (this.jingle()) await prepareSound(this.jingle()).catch((e) => log.warn(`player: jingle not usable: ${e.message}`));
+    this.jingleMs = 0;
+    if (this.jingle()) {
+      try {
+        const f = await prepareSound(this.jingle());
+        const out = execFileSync(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f]);
+        this.jingleMs = Math.round(Number(out) * 1000) || 0;
+      } catch (e) {
+        log.warn(`player: jingle not usable: ${e.message}`);
+      }
+    }
     this.serve();
   }
 
@@ -71,7 +81,10 @@ export class Player extends EventEmitter {
     // plays; then a short pause so Discord's own "went live" sound doesn't step on it.
     const feed = new Feed();
     const abort = new AbortController();
-    const session = { feed, abort, skippedBreaks: new Set() };
+    // t0: the wall-clock time the stream's first frame plays. Estimated now (jingle,
+    // pause, Go Live setup), corrected when the stream really starts.
+    const preroll = (this.jingle() ? this.jingleMs + config.entrance.tv_join_pause_seconds * 1000 : 0) + 2000;
+    const session = { feed, abort, skippedBreaks: new Set(), t0: Date.now() + preroll };
     this.session = session;
     this.state = "on";
     feed.on("closed", () => session === this.session && this.leave("stream stopped"));
@@ -87,6 +100,7 @@ export class Player extends EventEmitter {
         await sleep(config.entrance.tv_join_pause_seconds * 1000);
       }
       if (session !== this.session) return;
+      session.t0 = Date.now() + 1000;
       await playStream(feed.output, this.streamer, { type: "go-live" }, abort.signal);
     })()
       .catch((e) => !abort.signal.aborted && log.warn(`player: stream ended: ${e.message}`))
@@ -100,7 +114,9 @@ export class Player extends EventEmitter {
   }
 
   async run(session) {
-    const program = new PlaylistProgram(this.plex);
+    // Wall-clock time at which the next segment will start playing.
+    const clock = () => session.t0 + session.feed.offsetSec * 1000;
+    const program = makeProgram(this.plex, clock);
     let inBreak = null;
     let failures = 0;
     for (const seg of program.segments()) {

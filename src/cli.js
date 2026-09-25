@@ -2,7 +2,7 @@
 import { getDb, getMeta } from "./db.js";
 import { runSync } from "./catalog/index.js";
 import { schedulableSql } from "./catalog/schedulable.js";
-import { savePlaylist } from "./player/program.js";
+import { savePlaylist, clearPlaylist } from "./player/program.js";
 import { describe } from "./player/segments.js";
 
 const commands = {
@@ -49,11 +49,29 @@ Object.assign(commands, {
     await t.runTagging({ redo: flags.includes("--redo") });
   },
 
-  // Test playlist for the player until the real schedule exists (step 5).
+  // Program the schedule with Claude. Days that already have blocks are kept unless --replace.
+  async schedule(...args) {
+    const { generateSchedule } = await import("./schedule/generate.js");
+    const days = Number(args.find((a) => /^\d+$/.test(a)) || 7);
+    await generateSchedule({ days, replace: args.includes("--replace") });
+    await commands.guide();
+  },
+
+  async guide() {
+    const { guideText } = await import("./schedule/guide.js");
+    // Discord timestamps shown as local times for the terminal.
+    console.log(guideText().replace(/<t:(\d+):t>/g, (_, s) => new Date(s * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })));
+  },
+
+  // Test playlist: overrides the schedule until cleared (tv.cmd playlist --clear).
   async playlist(show, count = "3") {
-    if (!show) throw new Error('usage: tv.cmd playlist "<show name>" [episodes]');
+    if (show === "--clear") {
+      clearPlaylist();
+      return console.log("Test playlist removed; the TV follows the schedule again.");
+    }
+    if (!show) throw new Error('usage: tv.cmd playlist "<show name>" [episodes]   or   tv.cmd playlist --clear');
     const rows = getDb().prepare(`SELECT * FROM items WHERE show_title = ? COLLATE NOCASE AND ${schedulableSql()}
-      ORDER BY season, episode`).all(show);
+      ORDER BY season IS NULL OR season = 0, season, episode`).all(show);
     if (!rows.length) {
       const like = getDb().prepare(`SELECT DISTINCT show_title FROM items WHERE show_title LIKE ? AND ${schedulableSql()} LIMIT 10`)
         .all(`%${show}%`).map((r) => r.show_title);
@@ -77,7 +95,10 @@ if (!commands[cmd]) {
   player                       run the streamer (the throwaway account)
   bot                          run the remote-control bot
   playlist "<show>" [count]    set the test playlist to a few episodes of a show
-  tag [--dry|--sample|--redo]  tag the catalog with Claude (only untagged items unless --redo)`);
+  tag [--dry|--sample|--redo]  tag the catalog with Claude (only untagged items unless --redo)
+  schedule [days] [--replace]  program the schedule with Claude (default 7 days)
+  guide                        print what's on today
+  playlist --clear             drop the test playlist; the TV follows the schedule`);
   process.exit(cmd === "help" ? 0 : 1);
 }
 await commands[cmd](...args);

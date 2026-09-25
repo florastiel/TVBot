@@ -67,7 +67,7 @@ export function buildMenu(day, used) {
 
   // Shows: the next few episodes after whatever aired last, in order.
   const episodes = db.prepare(`SELECT * FROM items i WHERE i.kind = 'episode' AND ${schedulableSql("i")}
-    ORDER BY i.show_title, i.season IS NULL, i.season, i.episode IS NULL, i.episode, i.id`).all();
+    ORDER BY i.show_title, i.season IS NULL OR i.season = 0, i.season, i.episode IS NULL, i.episode, i.id`).all();
   const byShow = Map.groupBy(episodes, (e) => e.show_title);
   const shows = new Map(db.prepare("SELECT * FROM shows").all().map((s) => [s.title, s]));
   const lastAired = db.prepare(`SELECT i.id FROM block_items bi JOIN blocks b ON b.id = bi.block_id JOIN items i ON i.id = bi.item_id
@@ -172,7 +172,7 @@ function keepSeriesOrder(blocks, allowed) {
     if (!byShow.has(r.show_title)) byShow.set(r.show_title, []);
     byShow.get(r.show_title).push({ b, pos, r });
   }));
-  const order = (r) => [r.season ?? 1e9, r.episode ?? 1e9, r.id];
+  const order = (r) => [r.season == null || r.season === 0 ? 1e9 : r.season, r.episode ?? 1e9, r.id];
   const cmp = (x, y) => { const a = order(x), c = order(y); for (let i = 0; i < 3; i++) if (a[i] !== c[i]) return a[i] - c[i]; return 0; };
   for (const spots of byShow.values()) {
     const sorted = spots.map((s) => s.r).sort(cmp);

@@ -12,6 +12,37 @@ import { log } from "../log.js";
 import { PLAYER_URL, callPlayer, localSecret } from "../local.js";
 import { runSync } from "../catalog/index.js";
 import { setEntrance, clearEntrance } from "./entrance.js";
+import { generateSchedule } from "../schedule/generate.js";
+import { scheduledUntil } from "../schedule/store.js";
+import { guideText } from "../schedule/guide.js";
+import { runTagging } from "../tagging/tagger.js";
+import { getMeta } from "../db.js";
+
+// One background job at a time (sync, tagging, scheduling all write the catalog).
+const maintenance = {
+  busy: Promise.resolve(),
+  run(fn) {
+    const job = this.busy.then(fn);
+    this.busy = job.catch(() => {});
+    return job;
+  },
+};
+
+// Weekly catalog sync + tagging of anything new; keep at least 2 days scheduled.
+async function upkeep() {
+  const week = 7 * 86400000;
+  const lastSync = Date.parse(getMeta("last_sync") || 0) || 0;
+  if (Date.now() - lastSync > week) {
+    log.info("bot: weekly catalog sync");
+    await runSync();
+    await runTagging().catch((e) => log.warn(`bot: tagging failed: ${e.message}`));
+  }
+  const until = scheduledUntil();
+  if (until < Date.now() + 2 * 86400000) {
+    log.info("bot: programming the next week");
+    await generateSchedule({ fromMs: Math.max(Date.now(), until), days: 7 });
+  }
+}
 
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
 const ephemeral = { flags: MessageFlags.Ephemeral };
@@ -22,7 +53,9 @@ const COMMANDS = [
   new SlashCommandBuilder().setName("tvadmin").setDescription("TV admin controls")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((s) => s.setName("skip").setDescription("Skip whatever is playing (e.g. a broken file)"))
-    .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex and local catalog now")),
+    .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex and local catalog now"))
+    .addSubcommand((s) => s.setName("regen").setDescription("Throw away the upcoming schedule and program a new week")),
+  new SlashCommandBuilder().setName("schedule").setDescription("What's on the TV today"),
   new SlashCommandBuilder().setName("entrance").setDescription("Your sound when you join the TV's voice channel")
     .addSubcommand((s) => s.setName("set").setDescription(`Upload a sound (only the first ${config.entrance.max_seconds} seconds play)`)
       .addAttachmentOption((o) => o.setName("file").setDescription("mp3, wav, ogg, or a video clip").setRequired(true)))
@@ -170,6 +203,14 @@ export async function startBot() {
           await runSync();
           return i.editReply("Catalog sync finished.");
         }
+        if (sub === "regen") {
+          await i.deferReply(ephemeral);
+          await maintenance.run(() => generateSchedule({ replace: true, days: 7 }));
+          return i.editReply("New schedule is ready (from the next block on). /schedule to see it.");
+        }
+      }
+      if (i.isChatInputCommand() && i.commandName === "schedule") {
+        return i.reply({ content: guideText(), ...ephemeral, allowedMentions: { parse: [] } });
       }
       if (i.isButton() && i.customId.startsWith("tv:skip:")) {
         const breakId = i.customId.slice("tv:skip:".length);
@@ -200,6 +241,10 @@ export async function startBot() {
     await registerCommands().catch((e) => log.error("bot: couldn't register commands:", e.message));
     await cleanUpOldPosts().catch((e) => log.warn(`bot: cleanup failed: ${e.message}`));
     followPlayer();
+    // Keep the catalog, tags and schedule topped up. Hourly check; cheap when nothing's due.
+    const tick = () => maintenance.run(upkeep).catch((e) => log.error("bot: upkeep failed:", e.message));
+    tick();
+    setInterval(tick, 3600000).unref();
   });
 
   await client.login(secrets.botToken);

@@ -42,44 +42,80 @@ const recent = []; // item ids of the last commercials/clips played, to avoid re
 const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
 // Prefer something not played recently; with a small pool, allow repeats rather than
-// leaving the break empty. Never repeat within the same break.
-function pick(kind, theme, exclude) {
-  return pickFrom(kind, theme, [...exclude, ...recent]) || pickFrom(kind, theme, exclude);
+// leaving the break empty. Never repeat within the same break. maxMs: must fit in this.
+function pick(kind, theme, exclude, maxMs = Infinity) {
+  return pickFrom(kind, theme, [...exclude, ...recent], maxMs) || pickFrom(kind, theme, exclude, maxMs);
 }
 
-function pickFrom(kind, theme, ex) {
+function pickFrom(kind, theme, ex, maxMs) {
   const db = getDb();
   const notIn = ex.length ? `AND i.id NOT IN (${ex.map(() => "?").join(",")})` : "";
   const base = `SELECT i.* FROM items i LEFT JOIN tags t ON t.item_id = i.id
-    WHERE i.kind = ? AND i.present = 1 AND i.playable = 1 AND NOT i.excluded ${notIn}`;
+    WHERE i.kind = ? AND i.present = 1 AND i.playable = 1 AND NOT i.excluded AND i.duration_ms <= ? ${notIn}`;
+  const cap = Number.isFinite(maxMs) ? maxMs : 1e12;
   // Themed block: prefer matching commercials. Otherwise: prefer non-holiday ones,
   // so Christmas ads don't show up in July.
   const themed = theme && theme !== "none"
-    ? db.prepare(`${base} AND t.holiday = ? ORDER BY random() LIMIT 1`).get(kind, ...ex, theme)
+    ? db.prepare(`${base} AND t.holiday = ? ORDER BY random() LIMIT 1`).get(kind, cap, ...ex, theme)
     : null;
   return themed
-    || db.prepare(`${base} AND COALESCE(t.holiday, 'none') = 'none' ORDER BY random() LIMIT 1`).get(kind, ...ex)
-    || db.prepare(`${base} ORDER BY random() LIMIT 1`).get(kind, ...ex);
+    || db.prepare(`${base} AND COALESCE(t.holiday, 'none') = 'none' ORDER BY random() LIMIT 1`).get(kind, cap, ...ex)
+    || db.prepare(`${base} ORDER BY random() LIMIT 1`).get(kind, cap, ...ex);
 }
 
-let breakCounter = 0;
-// A commercial break: 1-2 commercials (config), sometimes a clip. Empty if there's
-// nothing to show, in which case the next show just starts.
-export function makeBreak(plex, { theme = null } = {}) {
-  const [min, max] = config.broadcast.commercials_per_break;
-  const breakId = `b${++breakCounter}-${Date.now()}`;
-  const rows = [];
-  for (let n = rand(min, max); n > 0; n--) {
-    const r = pick("commercial", theme, rows.map((x) => x.id));
-    if (r) rows.push(r);
-  }
-  if (Math.random() < config.broadcast.clip_chance) {
-    const c = pick("clip", theme, []);
-    if (c) rows.splice(rand(0, rows.length), 0, c);
-  }
+function remember(rows) {
   for (const r of rows) {
     recent.push(r.id);
     if (recent.length > 30) recent.shift();
   }
+}
+
+let breakCounter = 0;
+const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
+
+// A commercial break: 1-2 commercials (config), sometimes a clip. With budgetMs, only
+// what fits in that much time (so blocks can start on time). Empty if there's nothing
+// that fits, in which case the next show just starts.
+export function makeBreak(plex, { theme = null, budgetMs = Infinity } = {}) {
+  const [min, max] = config.broadcast.commercials_per_break;
+  const rows = [];
+  let left = budgetMs;
+  for (let n = rand(min, max); n > 0; n--) {
+    const r = pick("commercial", theme, rows.map((x) => x.id), left);
+    if (!r) break;
+    rows.push(r);
+    left -= r.duration_ms;
+  }
+  if (Math.random() < config.broadcast.clip_chance) {
+    const c = pick("clip", theme, [], left);
+    if (c) rows.splice(rand(0, rows.length), 0, c);
+  }
+  remember(rows);
+  const breakId = newBreakId();
   return rows.map((r) => toSegment(r, plex, { breakId }));
+}
+
+// Fill the rest of a block exactly: commercials and clips while they fit, then a plain
+// "Up next" card for the last few seconds. Counts as a (skippable) break.
+export function fillBreak(plex, ms, { theme = null, upNextTitle = null } = {}) {
+  const rows = [];
+  let left = ms;
+  for (;;) {
+    const kind = rows.length % 4 === 3 ? "clip" : "commercial";
+    const avoid = rows.slice(-2).map((x) => x.id); // small libraries may repeat, never back-to-back
+    const r = pick(kind, theme, avoid, left) || pick(kind === "clip" ? "commercial" : "clip", theme, avoid, left);
+    if (!r) break;
+    rows.push(r);
+    left -= r.duration_ms;
+  }
+  remember(rows);
+  const breakId = newBreakId();
+  const segs = rows.map((r) => toSegment(r, plex, { breakId }));
+  if (left > 3000) segs.push(card(upNextTitle ? `Up next\n${upNextTitle}` : "Stay tuned", left, { breakId }));
+  return segs;
+}
+
+// A plain text card (template text + real titles only). No sound.
+export function card(text, durationMs, extra = {}) {
+  return { kind: "card", title: text.split("\n").pop(), subtitle: "", card: text, durationMs, audioStream: null, subs: { mode: "none" }, ...extra };
 }
