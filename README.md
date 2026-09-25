@@ -62,8 +62,9 @@ tv.cmd player
 tv.cmd bot
 ```
 
-Restarting the **bot** is always safe. Restarting the **player** cuts off the stream,
-so do it when the TV is off.
+To load new code or settings: `tv.cmd restart`. The bot restarts right away; the
+player waits until the TV is off, so nobody gets cut off. If the player ever freezes,
+the bot notices after 2 minutes and kills it, and the service starts a fresh one.
 
 ## Discord commands
 
@@ -99,10 +100,10 @@ tv.cmd playlist --clear              back to the schedule
 ## Settings
 
 Everything you'd want to change is in **`config.yaml`** (comments explain each line):
-broadcast hours, block length, commercials per break, clip chance, no-repeat window,
+broadcast hours, the block grid (15 min), ad minutes per hour, clip chance, no-repeat window,
 idle timeout, encode size/bitrate, Plex server + libraries, local folders, jingle and
-volume, Claude model. Restart the part that uses a setting after changing it (player
-for playback/sound settings, bot for the rest).
+volume, encoder (qsv = Intel Quick Sync, falls back to CPU by itself), Claude model.
+After changing settings: `tv.cmd restart` (the player waits until the TV is off).
 
 ## The catalog
 
@@ -141,20 +142,22 @@ episodes are Halloween/Thanksgiving/Christmas episodes. The first full pass cost
 
 Claude programs one day at a time from a menu: each show's next few episodes in
 order, in-season holiday episodes, and a sample of movies not aired recently. It
-returns blocks (a 1–3 word label, how many slots, which items). Code checks every
-answer: ids must be from the menu, nothing repeats within `no_repeat_days`, items plus
-breaks must fit, a movie gets its own block, labels must be plain words. Problems go
-back to Claude (3 tries), then a simple code-built schedule is used instead. Code
-assigns all start times. Roughly $0.10 per day of schedule with Sonnet 5.
+returns blocks (a 1–3 word label and which items). Code works out each block's length:
+its shows plus `ad_minutes_per_hour` of ads, rounded up to the next quarter hour, so
+blocks start and end on :00/:15/:30/:45. Code checks every answer: ids from the menu,
+nothing repeats within `no_repeat_days`, a movie gets its own block, labels are plain
+words, and no block's rounding leaves more than `max_ad_minutes_per_hour` of ads.
+Problems go back to Claude (3 tries), then a simple code-built schedule is used.
+Roughly $0.25 per day of schedule with Sonnet 5.
 
 Seasons: Halloween material through October, Thanksgiving until Thanksgiving Day,
 then Christmas until the 25th, ramping up as the day gets closer.
 
 **Playback follows the wall clock.** `/tv` works out where the current block "should"
-be and starts that show at the right point. Breaks between shows shrink or grow so
-each block still starts on time; if a break is skipped, the next show starts early.
-Leftover time at the end of a block is filled with commercials and clips, and a plain
-"Up next" card covers the last few seconds.
+be and starts that show at the right point. A block's ad time is spread evenly across
+the breaks after each show (clips count as commercials; whole files, so a break can
+run a few seconds long). If a break is skipped, the next show starts early and the
+last break makes up the difference; a plain "Up next" card covers any last seconds.
 
 ## Optional: turning on Quick Sync
 
