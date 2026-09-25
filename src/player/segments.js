@@ -126,7 +126,15 @@ export function makeBreak(plex, { theme = null, budgetMs = null } = {}) {
   }
   remember(rows);
   const breakId = newBreakId();
-  return rows.map((r) => toSegment(r, plex, { breakId }));
+  return timed(rows.map((r) => toSegment(r, plex, { breakId })));
+}
+
+// Each piece of a break knows how long the whole break runs and how far into it it
+// starts (for the "next show in 2:14" countdown).
+function timed(segs) {
+  const total = segs.reduce((n, s) => n + s.durationMs, 0);
+  let at = 0;
+  return segs.map((s) => { const out = { ...s, breakTotalMs: total, breakAtMs: at }; at += s.durationMs; return out; });
 }
 
 // Fill the rest of a block exactly: commercials and clips while they fit, then a plain
@@ -148,7 +156,7 @@ export function fillBreak(plex, ms, { theme = null, upNextTitle = null } = {}) {
   const segs = rows.map((r) => toSegment(r, plex, { breakId }));
   // Whatever is left, even a second, so the block always runs right up to its end.
   if (left >= 500) segs.push(card(upNextTitle ? `Up next\n${upNextTitle}` : "Stay tuned", left, { breakId }));
-  return segs;
+  return timed(segs);
 }
 
 // A plain text card (template text + real titles only). No sound.

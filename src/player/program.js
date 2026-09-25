@@ -149,7 +149,9 @@ export class ScheduleProgram {
       t += gap;
     }
 
-    if (breakFirstMs > 3000 && start < pieces.length) yield* makeBreak(this.plex, { theme: block.theme, budgetMs: breakFirstMs });
+    const titleOf = (row) => (row ? toSegment(row, this.plex).title : null);
+    const before = (segs, row) => segs.map((s) => ({ ...s, nextTitle: titleOf(row) }));
+    if (breakFirstMs > 3000 && start < pieces.length) yield* before(makeBreak(this.plex, { theme: block.theme, budgetMs: breakFirstMs }), pieces[start].row);
 
     for (let i = start; i < pieces.length; i++) {
       const p = pieces[i];
@@ -173,7 +175,7 @@ export class ScheduleProgram {
         // next block still starts on time even if a break was skipped or ran long.
         const rest = pieces.slice(i + 1).reduce((n, q) => n + len(q), 0);
         const budgetMs = (block.end_at - this.clock() - rest) / (pieces.length - 1 - i + 1);
-        if (budgetMs > 3000) yield* makeBreak(this.plex, { theme: block.theme, budgetMs });
+        if (budgetMs > 3000) yield* before(makeBreak(this.plex, { theme: block.theme, budgetMs }), pieces[i + 1].row);
         if (this.live) return null;
       }
     }
@@ -181,7 +183,7 @@ export class ScheduleProgram {
     const left = block.end_at - this.clock();
     if (left > 1000) {
       const nextTitle = nextBlock?.items[0] ? toSegment(nextBlock.items[0], this.plex).title : null;
-      yield* fillBreak(this.plex, left, { theme: block.theme, upNextTitle: nextTitle });
+      yield* before(fillBreak(this.plex, left, { theme: block.theme, upNextTitle: nextTitle }), nextBlock?.items[0]);
     }
     // Finished late (more than half a minute): the next block starts from its top.
     return this.clock() > block.end_at + 30000 && nextBlock?.start_at === block.end_at ? nextBlock : null;

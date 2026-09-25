@@ -187,12 +187,13 @@ export class Player extends EventEmitter {
         // A restart was asked for: use this commercial break for it instead of ads.
         if (this.restartPending) return this.restartNow();
         inBreak = seg.breakId;
-        this.emitEvent("break-start", { breakId: inBreak });
-        this.presence.commercials();
+        const endsAt = Date.now() + (seg.breakTotalMs ?? 0) - (seg.breakAtMs ?? 0);
+        this.emitEvent("break-start", { breakId: inBreak, endsAt, nextTitle: seg.nextTitle ?? null });
+        this.presence.commercials({ endsAt, nextTitle: seg.nextTitle });
       }
       this.now = seg;
       const isShow = seg.kind === "episode" || seg.kind === "movie";
-      if (isShow && !seg.continuation) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext) });
+      if (isShow) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext) });
       if (isShow) this.presence.show(seg);
       log.info(`player: ${seg.breakId ? "break" : "now"}: ${seg.title} ${seg.subtitle || ""}`.trim());
 

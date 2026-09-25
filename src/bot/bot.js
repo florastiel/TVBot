@@ -138,10 +138,18 @@ export async function startBot() {
   async function onPlayerEvent(e) {
     playerStatus = e.status;
     if (e.type === "break-start") {
-      // In the voice channel's own chat, where the viewers are.
+      // The posting channel keeps one TV message: during a break it's this one.
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`tv:skip:${e.breakId}`).setLabel("Skip commercials").setStyle(ButtonStyle.Secondary));
-      breakMsg = await post(e.status.channelId, "Commercial break", { components: [row] });
+        new ButtonBuilder().setCustomId(`tv:skip:${e.breakId}`).setLabel("Skip commercials").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("tv:pause").setLabel("Pause").setStyle(ButtonStyle.Secondary));
+      const lines = ["Commercial break"];
+      if (e.nextTitle) lines.push(`Up next: ${e.nextTitle}`);
+      if (e.endsAt > Date.now() + 5000) lines.push(`Back <t:${Math.round(e.endsAt / 1000)}:R>`);
+      const old = nowPlayingMsg;
+      nowPlayingMsg = null;
+      await clearBreakMsg();
+      breakMsg = await post(config.discord.now_playing_channel_id, lines.join("\n"), { components: [row] });
+      await remove(old);
     } else if (e.type === "break-end") {
       await clearBreakMsg();
     } else if (e.type === "off") {

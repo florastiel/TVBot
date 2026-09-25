@@ -39,8 +39,13 @@ export class RichPresence {
     });
   }
 
-  commercials() {
-    this.set({ details: "Commercial break", state: " " });
+  // Counts down to the next show.
+  commercials({ endsAt, nextTitle } = {}) {
+    this.set({
+      details: "Commercial break",
+      state: nextTitle ? `Up next: ${nextTitle}`.slice(0, 128) : " ",
+      ...(endsAt > Date.now() ? { timestamps: { end: Math.round(endsAt) } } : {}),
+    });
   }
 
   paused() {

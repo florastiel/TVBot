@@ -80,15 +80,18 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 | `/schedule` | anyone | today's TV guide (only you see it) |
 | `/entrance set` + file | anyone | your join sound (first 8 s, volume evened out) |
 | `/entrance clear` | anyone (admin: anyone's) | remove a join sound |
-| Skip commercials button | people in the TV's voice channel | ends the current break |
+| Skip commercials button (on the break message in the posting channel) | people in the TV's voice channel | ends the current break |
 | `/tvadmin skip` | admin | skip whatever is playing (broken file) |
 | `/tvadmin sync` | admin | re-read the catalog now |
 | `/tvadmin regen` | admin | throw away the upcoming schedule and program a new week (specials stay) |
 | `/tvadmin add` + kind + links | admin | download commercials/clips from YouTube (etc.) straight into rotation |
 | `/tvadmin special` + request | admin | plan a marathon or themed special, e.g. "Scream marathon Saturday 8pm" |
 
-The bot keeps the channel tidy: only the latest "Now playing" post stays up, skip
-notes vanish after a minute, and the Skip button disappears when the break ends.
+The bot keeps one TV message in the posting channel: "Now playing / Up next" with a
+Pause button while a show is on; during a break it becomes "Commercial break / Up next /
+Back in 2 minutes" with Skip and Pause buttons. The streamer account's Discord status
+(rich presence) shows the same: the show with a time-left bar, or a countdown to the next
+show during ads.
 
 ## Command line
 
