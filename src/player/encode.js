@@ -13,7 +13,8 @@ export function frameSize() {
 }
 
 // Set by the feed if Quick Sync fails; from then on this process encodes on the CPU.
-export const encoderState = { qsvBroken: false };
+export const encoderState = { qsvBroken: false, hwDecodeBroken: false };
+export const usingHwDecode = () => config.encode.hw_decode && !encoderState.hwDecodeBroken;
 export const usingQsv = () => config.encode.encoder === "qsv" && !encoderState.qsvBroken;
 const pixFmt = () => (usingQsv() ? "nv12" : "yuv420p");
 
@@ -47,7 +48,7 @@ export function itemArgs(seg, offsetSec) {
     args.push("-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_network_error", "1",
       "-reconnect_delay_max", "10", "-rw_timeout", "20000000");
   }
-  if (config.encode.hw_decode) args.push("-hwaccel", "auto");
+  if (usingHwDecode()) args.push("-hwaccel", "auto");
   if (seek) args.push("-ss", seek.toFixed(3));
   args.push("-i", seg.input);
   const silent = seg.audioStream === null || seg.audioStream === undefined;

@@ -52,7 +52,7 @@ encode:
   frame_rate: 30
   bitrate_kbps: 2500
   max_bitrate_kbps: 4000
-  hw_decode: true              # decode on the GPU when it can (less CPU); falls back to software
+  hw_decode: false             # GPU decoding: doesn't work under the Windows service (no desktop); leave off
   encoder: qsv                 # software (CPU) or qsv (Intel Quick Sync, needs the Intel driver)
 
 entrance:

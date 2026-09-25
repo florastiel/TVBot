@@ -3,7 +3,7 @@
 // "outer" ffmpeg, whose output is what Go Live streams.
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { itemArgs, outerArgs, usingQsv, encoderState } from "./encode.js";
+import { itemArgs, outerArgs, usingQsv, usingHwDecode, encoderState } from "./encode.js";
 import { log } from "../log.js";
 
 const FFMPEG = () => process.env.FFMPEG_PATH || "ffmpeg";
@@ -74,6 +74,13 @@ export class Feed extends EventEmitter {
       const playedSec = Math.max(0, cur.lastPts - startOffset);
       if (cur.lastPts >= 0) this.offsetSec = cur.lastPts + 0.1;
       if (cur.skipped || this.closed) return cur.finish({ result: "skipped", playedSec });
+      if (cur.code !== 0 && cur.lastPts < 0 && usingHwDecode() && /direct3d|dxva|d3d11|hwaccel|device creation/i.test(errText)) {
+        // GPU decoding isn't available (e.g. running as a service with no desktop):
+        // decode on the CPU from now on, and try the item again.
+        log.warn(`feed: GPU decoding failed (${errText.trim().split("\n").slice(-1)[0]}); decoding on the CPU instead`);
+        encoderState.hwDecodeBroken = true;
+        return cur.finish(this.play(seg));
+      }
       if (cur.code !== 0 && cur.lastPts < 0 && usingQsv() && /qsv|mfx|encoder/i.test(errText)) { // only when the GPU encoder itself failed
         // Nothing came out and we're on Quick Sync: assume the GPU encoder is the
         // problem, switch this process to CPU encoding, and try the item again.
