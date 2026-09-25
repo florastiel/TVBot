@@ -40,6 +40,27 @@ foreach ($part in @("player", "bot")) {
 # The bot needs the player; start the player first.
 nssm set tvchannel-bot DependOnService tvchannel-player | Out-Null
 
-Write-Host ""
-Write-Host "Done. Stop any copies running in terminals first, then start them:"
-Write-Host "  Start-Service tvchannel-player, tvchannel-bot"
+# Switch over from copies started by hand, without cutting off anyone watching:
+# wait for the TV to be off, stop the old copies, start the services.
+$secret = Get-Content (Join-Path $root "data\local-secret.txt") -ErrorAction SilentlyContinue
+function TvIsOn {
+  try { (Invoke-RestMethod "http://127.0.0.1:7651/status" -Headers @{ "x-tv-secret" = $secret } -TimeoutSec 3).state -ne "off" }
+  catch { $false }
+}
+while ((Get-Service tvchannel-player).Status -ne "Running" -and (TvIsOn)) {
+  Write-Host "The TV is on right now; waiting for it to be turned off before switching over (checks every 30 s)..."
+  Start-Sleep 30
+}
+if ((Get-Service tvchannel-player).Status -ne "Running") {
+  Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$root\tools\*" } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  # Back to the real schedule (the test playlist was only for trying things out).
+  Remove-Item (Join-Path $root "data\playlist.json") -ErrorAction SilentlyContinue
+}
+# Already-running services are left alone (restarting would cut off the stream).
+# After changing settings: Restart-Service tvchannel-player -Force (when the TV is off).
+Start-Service tvchannel-player, tvchannel-bot
+Get-Service tvchannel-player, tvchannel-bot | Format-Table Name, Status, StartType
+
+Write-Host "Done. The TV now starts with Windows and restarts itself if it crashes."
+Write-Host "Logs: $logs"
