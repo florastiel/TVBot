@@ -60,6 +60,8 @@ entrance:
 
 player:
   port: 7651                   # local-only port the bot uses to talk to the player
+  spool_max_gb: 30             # download-ahead folder (for subtitles inside files) never grows past this
+  spool_max_file_gb: 8         # files bigger than this aren't downloaded ahead; they play without subtitles
 
 claude:
   model: claude-sonnet-5       # used for tagging and weekly scheduling

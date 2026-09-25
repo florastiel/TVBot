@@ -57,10 +57,11 @@ export function itemArgs(seg, offsetSec) {
   if (seg.subs?.mode === "image") {
     // Picture subtitles are drawn at the source resolution, bottom-centered, then scaled with the video.
     graph = `[0:V:0][0:${seg.subs.index}]overlay=(W-w)/2:H-h[s];[s]${fit}[v]`;
-  } else if (seg.subs?.mode === "sidecar" && seg.subsFile) {
+  } else if ((seg.subs?.mode === "sidecar" || seg.subs?.mode === "embedded_text") && seg.subsFile) {
     // After an input seek the video restarts at 0 but the subtitle file doesn't, so
     // shift the clock forward for the subtitle renderer and back again afterwards.
-    const sub = `subtitles=filename='${filterPath(seg.subsFile)}'`;
+    const si = seg.subs.mode === "embedded_text" ? `:si=${seg.subs.pos ?? 0}` : "";
+    const sub = `subtitles=filename='${filterPath(seg.subsFile)}'${si}:fontsdir='C\\:/Windows/Fonts'`;
     graph = seek
       ? `[0:V:0]setpts=PTS+${seek.toFixed(3)}/TB,${sub},setpts=PTS-STARTPTS,${fit}[v]`
       : `[0:V:0]${sub},${fit}[v]`;

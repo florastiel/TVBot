@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { config } from "../config.js";
 import { getDb } from "../db.js";
 import { SUBS_DIR } from "../catalog/plexSync.js";
+import { spooledPath } from "./spool.js";
 
 export function describe(row) {
   if (row.kind === "episode") {
@@ -17,14 +18,19 @@ export function describe(row) {
 export function toSegment(row, plex, { seekMs = 0, breakId = null } = {}) {
   const subs = row.subs ? JSON.parse(row.subs) : { mode: "none" };
   let subsFile = null;
+  let input = row.source === "plex" ? plex.fileUrl(row.media_path) : row.source_key;
   if (subs.mode === "sidecar") {
     subsFile = [join(SUBS_DIR, `${row.id}.ass`), join(SUBS_DIR, `${row.id}.srt`)].find(existsSync) || null;
+  } else if (subs.mode === "embedded_text") {
+    // Subtitles inside the file: only from a local copy (a local file, or downloaded ahead).
+    const local = row.source === "plex" ? spooledPath(row) : row.source_key;
+    if (local) { input = local; subsFile = local; }
   }
   return {
     itemId: row.id,
     kind: row.kind,
     ...describe(row),
-    input: row.source === "plex" ? plex.fileUrl(row.media_path) : row.source_key,
+    input,
     seekMs,
     durationMs: row.duration_ms,
     audioStream: row.audio_stream,

@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, config } from "../config.js";
 import { getItem, toSegment, makeBreak, fillBreak, card } from "./segments.js";
+import { wantSpool } from "./spool.js";
 import { blockAt, nextBlockAfter } from "../schedule/store.js";
 import { localTime } from "../schedule/time.js";
 
@@ -36,6 +37,7 @@ export class PlaylistProgram {
       const row = getItem(this.ids[this.pos++ % this.ids.length]);
       if (!row) continue;
       const next = getItem(this.ids[this.pos % this.ids.length]);
+      wantSpool([next], this.plex);
       yield { ...toSegment(row, this.plex), upNext: next ? toSegment(next, this.plex) : null };
       yield* makeBreak(this.plex);
     }
@@ -150,6 +152,10 @@ export class ScheduleProgram {
 
     for (let i = start; i < pieces.length; i++) {
       const p = pieces[i];
+      // Download ahead whatever comes next that needs it (subtitles inside the file).
+      const ahead = [...new Set(pieces.slice(i + 1).map((q) => q.row))];
+      if (nextBlock) ahead.push(...nextBlock.items.slice(0, 2));
+      wantSpool(ahead.slice(0, 3), this.plex);
       const up = upNextOf(i);
       const seekMs = p.from + (i === start ? offsetMs : 0);
       yield {

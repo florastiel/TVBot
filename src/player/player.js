@@ -13,6 +13,7 @@ import { Plex } from "../plex.js";
 import { PLAYER_PORT, localSecret } from "../local.js";
 import { Feed } from "./feed.js";
 import { playMic } from "./mic.js";
+import { cleanSpool } from "./spool.js";
 import { makeProgram } from "./program.js";
 import { card } from "./segments.js";
 
@@ -43,6 +44,7 @@ export class Player extends EventEmitter {
     log.info(`player: logged in as ${this.streamer.client.user.tag}`);
     this.streamer.client.on("voiceStateUpdate", (before, after) => this.onVoiceState(before, after));
     setInterval(() => this.checkIdle(), 30000).unref();
+    cleanSpool();
     this.serve();
     await this.resumeAfterRestart();
   }

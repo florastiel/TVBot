@@ -32,7 +32,7 @@ const DEFAULTS = {
   local: { shows: "", movies: "", clips: "", commercials: "" },
   encode: { height: 720, frame_rate: 30, bitrate_kbps: 2500, max_bitrate_kbps: 4000, encoder: "software" },
   entrance: { max_seconds: 8, loudness_lufs: -32 },
-  player: { port: 7651 },
+  player: { port: 7651, spool_max_gb: 30, spool_max_file_gb: 8 },
   claude: { model: "claude-sonnet-5" },
 };
 

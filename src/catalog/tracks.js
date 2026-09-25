@@ -32,8 +32,8 @@ export function chooseTracks(streams, { showTitle } = {}) {
   }
 
   // Foreign audio: needs subtitles in our language that we can show.
-  if (subs && subs.mode !== "embedded_text") return { ...result, playable: true, subs };
-  if (subs) return { ...result, playable: false, reason: "subtitles are an embedded text track (not supported yet)", subs };
+  // (Subtitles inside the file are shown when it was downloaded ahead; see player/spool.js.)
+  if (subs) return { ...result, playable: true, subs };
   // No subtitle track at all. Could be burned into the picture; only trust that if
   // the show is listed in config as hardsubbed.
   if (showTitle && (config.language.hardsubbed_shows || []).includes(showTitle)) {
