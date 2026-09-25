@@ -73,6 +73,25 @@ const MIGRATIONS = [
   ALTER TABLE tags ADD COLUMN anime INTEGER;
   ALTER TABLE tags ADD COLUMN origin TEXT;
   `,
+  `
+  -- The schedule. Kept forever as history: the no-repeat rule reads past blocks.
+  CREATE TABLE blocks (
+    id         INTEGER PRIMARY KEY,
+    start_at   INTEGER NOT NULL,   -- unix ms
+    end_at     INTEGER NOT NULL,
+    label      TEXT NOT NULL,      -- a couple of plain words, e.g. "Sitcoms"
+    theme      TEXT,               -- halloween | thanksgiving | christmas | null
+    source     TEXT NOT NULL,      -- claude | fallback
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX blocks_start ON blocks (start_at);
+  CREATE TABLE block_items (
+    block_id INTEGER NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    item_id  INTEGER NOT NULL REFERENCES items(id),
+    PRIMARY KEY (block_id, position)
+  );
+  `,
 ];
 
 let db;

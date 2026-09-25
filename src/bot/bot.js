@@ -36,6 +36,10 @@ export async function startBot() {
   const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
   let playerStatus = { state: "off" };
   let breakMsg = null;
+  let nowPlayingMsg = null; // only the latest one stays up
+
+  const remove = (m) => m?.delete().catch(() => {});
+  const removeLater = (m, ms) => m && setTimeout(() => remove(m), ms).unref();
 
   async function registerCommands() {
     const rest = new REST().setToken(secrets.botToken);
@@ -53,6 +57,16 @@ export async function startBot() {
     return ch?.isTextBased() ? ch.send({ content, allowedMentions: { parse: [] }, ...extra }).catch((e) => log.warn(`bot: post failed: ${e.message}`)) : null;
   }
 
+  // Leftover TV posts from before a restart (only this bot's, only TV ones).
+  async function cleanUpOldPosts() {
+    const ch = await client.channels.fetch(config.discord.now_playing_channel_id).catch(() => null);
+    if (!ch?.isTextBased()) return;
+    const msgs = await ch.messages.fetch({ limit: 100 });
+    const ours = msgs.filter((m) => m.author.id === client.user.id && /^(Now playing:|Commercial break|Commercials skipped by)/.test(m.content));
+    for (const m of ours.values()) await remove(m);
+    if (ours.size) log.info(`bot: cleaned up ${ours.size} old TV posts`);
+  }
+
   async function clearBreakMsg(text) {
     const m = breakMsg;
     breakMsg = null;
@@ -67,12 +81,18 @@ export async function startBot() {
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`tv:skip:${e.breakId}`).setLabel("Skip commercials").setStyle(ButtonStyle.Secondary));
       breakMsg = await post(e.status.channelId, "Commercial break", { components: [row] });
-    } else if (e.type === "break-end" || e.type === "off") {
+    } else if (e.type === "break-end") {
       await clearBreakMsg();
+    } else if (e.type === "off") {
+      await clearBreakMsg();
+      await remove(nowPlayingMsg);
+      nowPlayingMsg = null;
     } else if (e.type === "show") {
       const lines = [`Now playing: ${label(e.show)}`];
       if (e.upNext) lines.push(`Up next: ${label(e.upNext)}`);
-      await post(config.discord.now_playing_channel_id, lines.join("\n"));
+      const old = nowPlayingMsg;
+      nowPlayingMsg = await post(config.discord.now_playing_channel_id, lines.join("\n"));
+      await remove(old);
     }
   }
 
@@ -160,7 +180,9 @@ export async function startBot() {
         const r = await callPlayer("/skip-break", { breakId });
         if (!r.skipped) return i.reply({ content: "That break is already over.", ...ephemeral });
         breakMsg = null;
-        return i.update({ content: `Commercials skipped by ${i.member?.displayName ?? i.user.username}`, components: [] });
+        await i.update({ content: `Commercials skipped by ${i.member?.displayName ?? i.user.username}`, components: [] });
+        removeLater(i.message, 60000);
+        return;
       }
       // Anything else (e.g. Coup's buttons) belongs to the other program: ignore.
     } catch (e) {
@@ -176,6 +198,7 @@ export async function startBot() {
     if (!config.discord.now_playing_channel_id) log.warn("bot: discord.now_playing_channel_id not set; no now-playing posts");
     if (!config.discord.admin_user_id) log.warn("bot: discord.admin_user_id not set; /tvadmin is locked");
     await registerCommands().catch((e) => log.error("bot: couldn't register commands:", e.message));
+    await cleanUpOldPosts().catch((e) => log.warn(`bot: cleanup failed: ${e.message}`));
     followPlayer();
   });
 
