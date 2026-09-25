@@ -7,6 +7,7 @@ import YAML from "yaml";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // TV_CONFIG / TV_DATA let tests run against a scratch config and database.
 export const DATA_DIR = process.env.TV_DATA || join(ROOT, "data");
+export const ENTRANCE_DIR = join(DATA_DIR, "entrances");
 
 const DEFAULTS = {
   discord: { guild_id: "", now_playing_channel_id: "", admin_user_id: "" },

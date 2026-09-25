@@ -11,6 +11,7 @@ import { config, secrets } from "../config.js";
 import { log } from "../log.js";
 import { PLAYER_URL, callPlayer, localSecret } from "../local.js";
 import { runSync } from "../catalog/index.js";
+import { setEntrance, clearEntrance } from "./entrance.js";
 
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
 const ephemeral = { flags: MessageFlags.Ephemeral };
@@ -22,6 +23,11 @@ const COMMANDS = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((s) => s.setName("skip").setDescription("Skip whatever is playing (e.g. a broken file)"))
     .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex and local catalog now")),
+  new SlashCommandBuilder().setName("entrance").setDescription("Your sound when you join the TV's voice channel")
+    .addSubcommand((s) => s.setName("set").setDescription(`Upload a sound (only the first ${config.entrance.max_seconds} seconds play)`)
+      .addAttachmentOption((o) => o.setName("file").setDescription("mp3, wav, ogg, or a video clip").setRequired(true)))
+    .addSubcommand((s) => s.setName("clear").setDescription("Remove an entrance sound")
+      .addUserOption((o) => o.setName("user").setDescription("Whose (admin only; default: yours)"))),
 ];
 
 const label = (seg) => (seg ? `${seg.title}${seg.subtitle ? ` ${seg.subtitle}` : ""}` : "");
@@ -104,6 +110,22 @@ export async function startBot() {
 
   client.on("interactionCreate", async (i) => {
     try {
+      if (i.isChatInputCommand() && i.commandName === "entrance") {
+        const sub = i.options.getSubcommand();
+        if (sub === "set") {
+          await i.deferReply(ephemeral);
+          try {
+            const secs = await setEntrance(i.user.id, i.options.getAttachment("file"));
+            return i.editReply(`Entrance sound saved (${secs.toFixed(1)}s). It plays when you join the TV's voice channel while the TV is on.`);
+          } catch (e) {
+            return i.editReply(e.message);
+          }
+        }
+        const target = i.options.getUser("user") ?? i.user;
+        if (target.id !== i.user.id && !isAdmin(i.user.id)) return i.reply({ content: "You can only clear your own entrance sound.", ...ephemeral });
+        const had = clearEntrance(target.id);
+        return i.reply({ content: had ? "Entrance sound removed." : "No entrance sound to remove.", ...ephemeral });
+      }
       if (i.isChatInputCommand() && ["tv", "tvoff", "tvadmin"].includes(i.commandName)) {
         if (i.commandName === "tv") {
           const vc = await voiceOf(i);

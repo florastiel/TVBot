@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Client } from "@lng2004/discord.js-selfbot-v13";
 import { Streamer, playStream } from "@dank074/discord-video-stream";
-import { config, secrets, DATA_DIR } from "../config.js";
+import { config, secrets, ENTRANCE_DIR } from "../config.js";
 import { log } from "../log.js";
 import { Plex } from "../plex.js";
 import { PLAYER_PORT, localSecret } from "../local.js";
@@ -15,7 +15,6 @@ import { Feed } from "./feed.js";
 import { playMic, prepareSound } from "./mic.js";
 import { PlaylistProgram } from "./program.js";
 
-export const ENTRANCE_DIR = join(DATA_DIR, "entrances");
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
 
 // What the bot is allowed to see about a segment (never the input URL: it has a token).
@@ -176,7 +175,7 @@ export class Player extends EventEmitter {
     }
     // Someone arrived: play their entrance sound if they have one.
     if (after.channelId === this.channelId && before.channelId !== this.channelId && this.state === "on") {
-      const f = existsSync(ENTRANCE_DIR) && readdirSync(ENTRANCE_DIR).find((n) => n.startsWith(`${after.id}.`));
+      const f = existsSync(ENTRANCE_DIR) && readdirSync(ENTRANCE_DIR).find((n) => n.startsWith(`${after.id}.`) && !n.endsWith(".tmp"));
       if (f) this.mic(join(ENTRANCE_DIR, f));
     }
   }
