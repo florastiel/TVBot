@@ -79,7 +79,8 @@ const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
 // Without a budget (test playlist): about half the max ad time of an hour, per episode.
 const OVERRUN_MS = 20000;
 export function makeBreak(plex, { theme = null, budgetMs = null } = {}) {
-  const budget = budgetMs ?? (config.broadcast.max_ad_minutes_per_hour * 60000 * 22) / 60 / 2;
+  const budget = Math.min(budgetMs ?? (config.broadcast.max_ad_minutes_per_hour * 60000 * 22) / 60 / 2,
+    config.broadcast.max_break_minutes * 60000);
   const rows = [];
   let left = budget;
   if (Math.random() < config.broadcast.clip_chance) {

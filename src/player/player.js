@@ -186,7 +186,7 @@ export class Player extends EventEmitter {
       }
       this.now = seg;
       const isShow = seg.kind === "episode" || seg.kind === "movie";
-      if (isShow) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext) });
+      if (isShow && !seg.continuation) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext) });
       log.info(`player: ${seg.breakId ? "break" : "now"}: ${seg.title} ${seg.subtitle || ""}`.trim());
 
       const startedAt = clock();

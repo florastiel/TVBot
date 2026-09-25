@@ -92,6 +92,12 @@ const MIGRATIONS = [
     PRIMARY KEY (block_id, position)
   );
   `,
+  `
+  -- Chapter start times (ms, JSON array): natural spots for commercial breaks inside
+  -- a show or movie. Clearing streams_checked makes the next sync read them for everything.
+  ALTER TABLE items ADD COLUMN cues TEXT;
+  UPDATE items SET streams_checked = NULL;
+  `,
 ];
 
 let db;

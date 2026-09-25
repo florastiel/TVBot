@@ -17,6 +17,8 @@ const DEFAULTS = {
     grid_minutes: 15,
     min_ad_minutes_per_hour: 2,
     max_show_block_minutes: 75,
+    max_break_minutes: 5,
+    split_without_chapters: true,
     max_ad_minutes_per_hour: 9,
     clip_chance: 0.3,
     no_repeat_days: 14,

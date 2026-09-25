@@ -42,7 +42,7 @@ export function parsePath(kind, root, file) {
 
 async function probe(file) {
   const { stdout } = await run(process.env.FFPROBE_PATH || "ffprobe",
-    ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", file], { maxBuffer: 16 << 20 });
+    ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", file], { maxBuffer: 16 << 20 });
   return JSON.parse(stdout);
 }
 
@@ -94,17 +94,19 @@ export async function scanLocal() {
   const todo = db.prepare(`SELECT id, source_key, show_title, source_updated FROM items
     WHERE source = 'local' AND present = 1 AND (streams_checked IS NULL OR streams_checked != source_updated)`).all();
   const save = db.prepare(`UPDATE items SET duration_ms = ?, video_height = ?, audio_stream = ?, audio_lang = ?, subs = ?,
-    playable = ?, unplayable_reason = ?, streams_checked = ? WHERE id = ?`);
+    playable = ?, unplayable_reason = ?, streams_checked = ?, cues = ? WHERE id = ?`);
   const worker = async () => {
     for (let r; (r = todo.shift()); ) {
       try {
         const p = await probe(r.source_key);
         const video = p.streams.find((s) => s.codec_type === "video" && !s.disposition?.attached_pic);
         const t = video ? chooseTracks(fromFfprobeStreams(p.streams), { showTitle: r.show_title }) : { playable: false, reason: "no video track" };
+        const cues = (p.chapters || []).map((c) => Math.round(Number(c.start_time) * 1000)).filter((ms) => ms > 0);
         save.run(Math.round(Number(p.format.duration) * 1000) || null, video?.height ?? null, t.audioStream ?? null,
-          t.audioLang ?? null, JSON.stringify(t.subs || { mode: "none" }), t.playable ? 1 : 0, t.reason || null, r.source_updated, r.id);
+          t.audioLang ?? null, JSON.stringify(t.subs || { mode: "none" }), t.playable ? 1 : 0, t.reason || null, r.source_updated,
+          cues.length ? JSON.stringify(cues) : null, r.id);
       } catch (e) {
-        save.run(null, null, null, null, null, 0, `ffprobe failed: ${e.message.split("\n")[0]}`, r.source_updated, r.id);
+        save.run(null, null, null, null, null, 0, `ffprobe failed: ${e.message.split("\n")[0]}`, r.source_updated, null, r.id);
         log.warn(`local: couldn't read ${r.source_key}`);
       }
     }

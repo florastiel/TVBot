@@ -5,7 +5,7 @@
 // test override (tv.cmd playlist): it loops a few episodes, ignoring the clock.
 import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { DATA_DIR } from "../config.js";
+import { DATA_DIR, config } from "../config.js";
 import { getItem, toSegment, makeBreak, fillBreak, card } from "./segments.js";
 import { blockAt, nextBlockAfter } from "../schedule/store.js";
 import { localTime } from "../schedule/time.js";
@@ -43,6 +43,33 @@ export class PlaylistProgram {
 }
 
 const MIN_LEFT = 20000; // don't join the last 20 seconds of a show; go to the next thing
+const EDGE = 5 * 60000;  // never break within 5 minutes of the start/end of a show or another break
+
+// Cut a block's items into pieces (at chapter points where the file has them) until
+// the block's ad time, spread over one break per piece, fits max_break_minutes each.
+export function planPieces(items, blockMs) {
+  const maxBreak = config.broadcast.max_break_minutes * 60000;
+  const pieces = items.map((r) => ({ row: r, from: 0, to: r.duration_ms }));
+  const adMs = blockMs - items.reduce((n, r) => n + r.duration_ms, 0);
+  while (pieces.length && adMs / pieces.length > maxBreak) {
+    let best = null;
+    for (const p of pieces) {
+      const size = p.to - p.from;
+      if (size < 2 * EDGE) continue;
+      const mid = p.from + size / 2;
+      const cues = (p.row.cues ? JSON.parse(p.row.cues) : []).filter((c) => c > p.from + EDGE && c < p.to - EDGE);
+      const cut = cues.length ? cues.reduce((a, c) => (Math.abs(c - mid) < Math.abs(a - mid) ? c : a))
+        : config.broadcast.split_without_chapters ? Math.round(mid) : null;
+      if (cut === null) continue;
+      // Prefer real chapter points, then the longest piece.
+      const score = (cues.length ? 1e9 : 0) + size;
+      if (!best || score > best.score) best = { p, cut, score };
+    }
+    if (!best) break;
+    pieces.splice(pieces.indexOf(best.p), 1, { ...best.p, to: best.cut }, { ...best.p, from: best.cut });
+  }
+  return pieces;
+}
 
 export class ScheduleProgram {
   // clock(): wall-clock ms at which the next segment will start playing.
@@ -92,22 +119,26 @@ export class ScheduleProgram {
   *playBlock(block, now, { fromStart = false } = {}) {
     const items = block.items.filter((r) => r.present && r.playable);
     const nextBlock = nextBlockAfter(block.end_at);
-    const upNextOf = (i) => items[i + 1] || nextBlock?.items[0] || null;
+    // Long shows/movies may be cut into pieces at chapter points so no break has to be
+    // longer than max_break_minutes.
+    const pieces = planPieces(items, block.end_at - block.start_at);
+    const upNextOf = (i) => pieces.slice(i + 1).find((p) => p.row.id !== pieces[i].row.id)?.row || nextBlock?.items[0] || null;
+    const len = (p) => p.to - p.from;
 
-    // Where "now" falls on the block's ideal timeline: shows spread evenly, with equal
+    // Where "now" falls on the block's ideal timeline: pieces spread evenly, with equal
     // breaks after each (the last one is the end-of-block filler).
-    const total = items.reduce((n, r) => n + r.duration_ms, 0);
-    const gap = items.length ? Math.max(0, (block.end_at - block.start_at - total) / items.length) : 0;
+    const total = pieces.reduce((n, p) => n + len(p), 0);
+    const gap = pieces.length ? Math.max(0, (block.end_at - block.start_at - total) / pieces.length) : 0;
     let t = block.start_at;
-    let start = fromStart ? 0 : items.length;
-    let seekMs = 0;
+    let start = fromStart ? 0 : pieces.length;
+    let offsetMs = 0;
     let breakFirstMs = 0;
-    for (let i = 0; !fromStart && i < items.length; i++) {
-      const dur = items[i].duration_ms;
+    for (let i = 0; !fromStart && i < pieces.length; i++) {
+      const dur = len(pieces[i]);
       if (now < t + dur) {
         start = i;
-        seekMs = Math.max(0, now - t);
-        if (dur - seekMs < MIN_LEFT) { start = i + 1; seekMs = 0; breakFirstMs = t + dur + gap - now; }
+        offsetMs = Math.max(0, now - t);
+        if (dur - offsetMs < MIN_LEFT) { start = i + 1; offsetMs = 0; breakFirstMs = t + dur + gap - now; }
         break;
       }
       t += dur;
@@ -115,17 +146,24 @@ export class ScheduleProgram {
       t += gap;
     }
 
-    if (breakFirstMs > 3000 && start < items.length) yield* makeBreak(this.plex, { theme: block.theme, budgetMs: breakFirstMs });
+    if (breakFirstMs > 3000 && start < pieces.length) yield* makeBreak(this.plex, { theme: block.theme, budgetMs: breakFirstMs });
 
-    for (let i = start; i < items.length; i++) {
+    for (let i = start; i < pieces.length; i++) {
+      const p = pieces[i];
       const up = upNextOf(i);
-      yield { ...toSegment(items[i], this.plex, { seekMs: i === start ? seekMs : 0 }), upNext: up ? toSegment(up, this.plex) : null };
+      const seekMs = p.from + (i === start ? offsetMs : 0);
+      yield {
+        ...toSegment(p.row, this.plex, { seekMs }),
+        durationMs: p.to, // play up to the end of this piece
+        continuation: p.from > 0 && i !== start, // back from a break inside the same show: no new "now playing"
+        upNext: up ? toSegment(up, this.plex) : null,
+      };
       if (this.live) return null;
-      if (i < items.length - 1) {
+      if (i < pieces.length - 1) {
         // Share whatever time is left over equally between the remaining breaks, so the
         // next block still starts on time even if a break was skipped or ran long.
-        const rest = items.slice(i + 1).reduce((n, r) => n + r.duration_ms, 0);
-        const budgetMs = (block.end_at - this.clock() - rest) / (items.length - 1 - i + 1);
+        const rest = pieces.slice(i + 1).reduce((n, q) => n + len(q), 0);
+        const budgetMs = (block.end_at - this.clock() - rest) / (pieces.length - 1 - i + 1);
         if (budgetMs > 3000) yield* makeBreak(this.plex, { theme: block.theme, budgetMs });
         if (this.live) return null;
       }

@@ -80,7 +80,7 @@ export class Plex {
 
   // Full details (incl. audio/subtitle streams) for many items in one request.
   async metadataBatch(ratingKeys) {
-    return (await this.get(`/library/metadata/${ratingKeys.join(",")}`, { timeoutMs: 60000 })).Metadata || [];
+    return (await this.get(`/library/metadata/${ratingKeys.join(",")}?includeChapters=1`, { timeoutMs: 60000 })).Metadata || [];
   }
 
   // Direct URL to the original file (no Plex transcoding). Contains the token: never log it.
