@@ -144,8 +144,9 @@ episodes are Halloween/Thanksgiving/Christmas episodes. The first full pass cost
 
 ## The schedule
 
-Claude programs one day at a time from a menu: each show's next few episodes in
-order, in-season holiday episodes, and a sample of movies not aired recently. It
+Claude programs one day at a time from a menu: a few random episodes of each show
+(reruns in any order, like real TV), in-season holiday episodes, and a sample of
+movies, all skipping anything aired within `no_repeat_days`. It
 returns blocks (a 1–3 word label and which items). Code works out each block's length:
 its shows plus at least `min_ad_minutes_per_hour` of ads, rounded up to the next quarter hour, so
 blocks start and end on :00/:15/:30/:45. Code checks every answer: ids from the menu,

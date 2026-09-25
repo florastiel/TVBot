@@ -49,7 +49,7 @@ How block lengths work (done by code, not you): each block runs its items plus a
 Rules:
 - A block holds items that go together (same show, or shows with a similar feel), in a sensible order. Mix it up; don't run the same show all day.
 - A movie always gets a block to itself.
-- Use a show's episodes in the order the menu lists them. Only use ids from the menu, and each id at most once.
+- Only use ids from the menu, and each id at most once. Episodes don't have to air in order (reruns, like real TV).
 - label: a short plain description of the block in 1 to 3 words, like "Sitcoms", "Cartoons", "Halloween Specials", "Movie", "Late Night Anime". No puns, no punctuation, no emoji, no day names.
 - Kids and family shows fit mornings and afternoons; adult shows fit late evening and night. Put the strongest material in the evening.`;
 
@@ -71,33 +71,20 @@ export function buildMenu(day, used) {
   const db = getDb();
   const theme = season(day);
   const allowed = new Map();
-  const order = new Map(); // show -> episode ids in airing order, as offered
   const lines = [];
 
-  // Shows: the next few episodes after whatever aired last, in order.
-  const episodes = db.prepare(`SELECT * FROM items i WHERE i.kind = 'episode' AND ${schedulableSql("i")}
-    ORDER BY i.show_title, i.season IS NULL OR i.season = 0, i.season, i.episode IS NULL, i.episode, i.id`).all();
-  const byShow = Map.groupBy(episodes, (e) => e.show_title);
+  // Shows: a few random episodes each that haven't aired recently (reruns, like real TV).
+  const episodes = db.prepare(`SELECT i.* FROM items i LEFT JOIN tags t ON t.item_id = i.id
+    WHERE i.kind = 'episode' AND ${schedulableSql("i")} AND COALESCE(t.holiday, 'none') = 'none'
+    ORDER BY random()`).all();
+  const byShow = Map.groupBy(episodes.filter((e) => !used.has(e.id)), (e) => e.show_title);
   const shows = new Map(db.prepare("SELECT * FROM shows").all().map((s) => [s.title, s]));
-  // Where each show left off. Holiday episodes aired out of order don't count.
-  const lastAired = db.prepare(`SELECT i.id FROM block_items bi JOIN blocks b ON b.id = bi.block_id JOIN items i ON i.id = bi.item_id
-    LEFT JOIN tags t ON t.item_id = i.id
-    WHERE i.show_title = ? AND b.start_at < ? AND COALESCE(t.holiday, 'none') = 'none'
-    ORDER BY b.start_at DESC, bi.position DESC LIMIT 1`);
 
-  lines.push("SHOWS (episode ids in airing order, each with its length in minutes)");
-  for (const [title, eps] of byShow) {
-    const last = lastAired.get(title, day.startMs)?.id;
-    const start = last ? eps.findIndex((e) => e.id === last) + 1 : 0;
-    const next = [];
-    for (let k = 0; k < eps.length && next.length < EPISODES_PER_SHOW; k++) {
-      const e = eps[(start + k) % eps.length]; // wrap around to the start of the series
-      if (!used.has(e.id)) next.push(e);
-    }
-    if (!next.length) continue;
-    next.forEach((e) => allowed.set(e.id, e));
-    order.set(title, next.map((e) => e.id));
-    lines.push(`- ${title} | ${describeShow(shows.get(title))} | ${next.map((e) => `${e.id} (${min1(e.duration_ms)})`).join(", ")}`);
+  lines.push("SHOWS (a random pick of episode ids, each with its length in minutes)");
+  for (const [title, eps] of [...byShow].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const pick = eps.slice(0, EPISODES_PER_SHOW);
+    pick.forEach((e) => allowed.set(e.id, e));
+    lines.push(`- ${title} | ${describeShow(shows.get(title))} | ${pick.map((e) => `${e.id} (${min1(e.duration_ms)})`).join(", ")}`);
   }
 
   // Holiday material for the season: all of it is on the menu.
@@ -127,7 +114,7 @@ export function buildMenu(day, used) {
       lines.push(`- ${m.id} ${m.title} (${m.year ?? "?"}) | ${min1(m.duration_ms)}m | ${tags}`);
     }
   }
-  return { allowed, order, text: lines.join("\n"), theme };
+  return { allowed, text: lines.join("\n"), theme };
 }
 
 // ---------- checking Claude's answer ----------
@@ -172,24 +159,6 @@ export function validate(blocks, { allowed, windowMs, fixedEnd }) {
     problems.push(`The blocks run ${hours(total)} hours; that's more than needed (${hours(windowMs)} hours, a little over is fine). Remove blocks at the end.`);
   }
   return problems;
-}
-
-// Each show's spots across the stretch get that show's next episodes in airing order,
-// with no gaps, whichever of the offered ids Claude picked. Holiday picks (which
-// may air out of order) stay where they are.
-function keepSeriesOrder(blocks, allowed, order) {
-  const spots = new Map();
-  blocks.forEach((b) => b.ids.forEach((id, pos) => {
-    const r = allowed.get(id);
-    if (r.kind !== "episode" || (r.holiday && r.holiday !== "none")) return;
-    if (!spots.has(r.show_title)) spots.set(r.show_title, []);
-    spots.get(r.show_title).push({ b, pos });
-  }));
-  const holidayIds = new Set(blocks.flatMap((b) => b.ids).filter((id) => { const r = allowed.get(id); return r.holiday && r.holiday !== "none"; }));
-  for (const [title, list] of spots) {
-    const next = (order.get(title) || []).filter((id) => !holidayIds.has(id));
-    list.forEach((spot, i) => { if (next[i] !== undefined) spot.b.ids[spot.pos] = next[i]; });
-  }
 }
 
 // ---------- the simple fallback ----------
@@ -261,7 +230,6 @@ ${menu.text}`;
     }
     const problems = validate(blocks, ctx);
     if (!problems.length) {
-      keepSeriesOrder(blocks, menu.allowed, menu.order);
       log.info(`schedule: ${tag}: ${blocks.length} blocks from Claude (attempt ${attempt}; ${usage.input} in / ${usage.output} out tokens)`);
       return { blocks, source: "claude", theme: s.theme, allowed: menu.allowed };
     }
