@@ -12,6 +12,7 @@ broadcast:
   hours: "00:00-24:00"         # when the channel is on the air; default 24/7
   grid_minutes: 15             # blocks start and end on these marks (:00 :15 :30 :45)
   min_ad_minutes_per_hour: 2   # every block gets at least this much ad time per hour...
+  max_show_block_minutes: 75   # regular blocks of episodes are at most this long (movies and specials can run longer)
   max_ad_minutes_per_hour: 9   # ...and at most this (rounding up to the grid decides where in between)
   clip_chance: 0.3             # chance a break includes one of the clips (0 to 1)
   no_repeat_days: 14           # don't reuse an episode/movie within this many days

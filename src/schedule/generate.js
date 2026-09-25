@@ -49,7 +49,8 @@ How block lengths work (done by code, not you): each block runs its items plus a
 
 Rules:
 - A block holds items that go together (same show, or shows with a similar feel), in a sensible order. Mix it up; don't run the same show all day.
-- A movie always gets a block to itself.
+- A movie always gets a block to itself. Blocks of episodes run at most ${config.broadcast.max_show_block_minutes} minutes (commercials included), so about three half-hour episodes or one or two hour-long ones.
+- Regular blocks are not marathons: don't use "Marathon" in labels (marathons are separate specials).
 - Only use ids from the menu, and each id at most once. Episodes don't have to air in order (reruns, like real TV).
 - label: a short plain description of the block in 1 to 3 words, like "Sitcoms", "Cartoons", "Halloween Specials", "Movie", "Late Night Anime". No puns, no punctuation, no emoji, no day names.
 - Kids and family shows fit mornings and afternoons; adult shows fit late evening and night. Put the strongest material in the evening.`;
@@ -175,6 +176,11 @@ export function validate(blocks, { allowed, windowMs, fixedEnd }) {
     const run = runOf(rows);
     const { lengthMs, adMs, adPerHour } = blockLength(run);
     total += lengthMs;
+    const maxShow = config.broadcast.max_show_block_minutes * 60000;
+    if (!rows.some((r) => r.kind === "movie") && lengthMs > maxShow) {
+      problems.push(`${name}: it runs ${mins(lengthMs)} minutes; blocks of episodes can be at most ${config.broadcast.max_show_block_minutes}. Use fewer episodes (split it into two blocks if you like).`);
+    }
+    if (/marathon/i.test(b.label)) problems.push(`${name}: don't call regular blocks marathons.`);
     if (adPerHour > maxAds + 0.01) {
       problems.push(`${name}: its items run ${min1(run)} minutes, so the block rounds up to ${mins(lengthMs)} minutes with ${min1(adMs)} minutes of commercials (${adPerHour.toFixed(1)} per hour; the limit is ${maxAds}). Add or swap an item so the total lands just under a quarter-hour mark.`);
     }
@@ -222,6 +228,7 @@ function fallbackBlocks(allowed, windowMs) {
     let best = null;
     for (let k = 1; k <= eps.length; k++) {
       const { lengthMs, adPerHour } = blockLength(runOf(eps.slice(0, k)));
+      if (k > 1 && lengthMs > config.broadcast.max_show_block_minutes * 60000) break;
       if (!best || adPerHour < best.adPerHour) best = { k, lengthMs, adPerHour };
     }
     blocks.push({ label: title.slice(0, 40), ids: eps.slice(0, best.k).map((e) => e.id) });
@@ -232,9 +239,10 @@ function fallbackBlocks(allowed, windowMs) {
 
 // ---------- one stretch of air time ----------
 
-async function planWindow(client, win) {
+async function planWindow(client, win, avoid) {
   const N = config.broadcast.no_repeat_days * DAY;
   const used = usedIds(win.start - N, win.start + N);
+  for (const id of avoid) used.add(id);
   const menu = buildMenu({ ...win.day, startMs: win.start }, used);
   const windowMs = win.end - win.start;
   const ctx = { allowed: menu.allowed, windowMs, fixedEnd: win.fixedEnd };
@@ -294,7 +302,8 @@ export async function generateSchedule(opts = {}, { locked = false } = {}) {
   return locked ? generateUnlocked(opts) : withScheduleLock(() => generateUnlocked(opts));
 }
 
-async function generateUnlocked({ fromMs = Date.now(), days = 7, replace = false } = {}) {
+// avoid: item ids to leave off the menu for this run (e.g. "not that show today").
+async function generateUnlocked({ fromMs = Date.now(), days = 7, replace = false, avoid = new Set() } = {}) {
   const client = new Anthropic({ apiKey: secrets.anthropicKey });
   if (replace) {
     const current = blocksBetween(fromMs, fromMs + 1)[0];
@@ -312,7 +321,7 @@ async function generateUnlocked({ fromMs = Date.now(), days = 7, replace = false
     if (existing && existing.start_at < win.end) { win.end = existing.start_at; win.fixedEnd = true; }
     if (win.end - win.start < gridMs()) { t = win.end; continue; }
 
-    const plan = await planWindow(client, win);
+    const plan = await planWindow(client, win, avoid);
     let at = win.start;
     const out = [];
     for (const b of plan.blocks) {

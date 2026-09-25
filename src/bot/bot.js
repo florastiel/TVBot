@@ -48,7 +48,7 @@ async function upkeep() {
   const until = scheduledUntil();
   if (until < Date.now() + 12 * 3600000) {
     log.info(`bot: programming the next ${config.broadcast.plan_days} day(s)`);
-    await generateSchedule({ fromMs: Math.max(Date.now(), until), days: config.broadcast.plan_days });
+    await generateSchedule({ fromMs: until, days: config.broadcast.plan_days });
   }
   // The automatic weekly special(s), if none is coming up yet.
   const want = config.broadcast.specials_per_week;

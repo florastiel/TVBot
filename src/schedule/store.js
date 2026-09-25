@@ -35,7 +35,16 @@ export const nextBlockAfter = (ms) =>
 export const blocksBetween = (from, to) =>
   getDb().prepare("SELECT * FROM blocks WHERE end_at > ? AND start_at < ? ORDER BY start_at").all(from, to).map(withItems);
 
-export const scheduledUntil = () => getDb().prepare("SELECT MAX(end_at) t FROM blocks").get().t || 0;
+// How far the schedule runs without a gap, starting now. (A special planned for next
+// week doesn't count as "the schedule is planned until next week".)
+export function scheduledUntil(fromMs = Date.now()) {
+  let t = fromMs;
+  for (const b of getDb().prepare("SELECT start_at, end_at FROM blocks WHERE end_at > ? ORDER BY start_at").all(fromMs)) {
+    if (b.start_at > t) break;
+    t = Math.max(t, b.end_at);
+  }
+  return t;
+}
 
 // Item ids aired or scheduled in [from, to).
 export function usedIds(from, to) {
