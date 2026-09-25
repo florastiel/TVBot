@@ -16,12 +16,17 @@ const MAX_MINUTES = 10; // anything longer is probably a compilation, not one ad
 const ytdlp = () => join(ROOT, "tools", "yt-dlp.exe");
 
 // Every video behind a link: one for a video link, all of them for a playlist.
+// A "watch?v=" link means that one video, even if it came from a playlist; a
+// "playlist?list=" link means the whole playlist, which goes in its own subfolder (so
+// it counts as one group when breaks are filled).
 async function expand(url) {
-  const { stdout } = await run(ytdlp(), ["--no-warnings", "--flat-playlist", "--print", "%(id)s\t%(duration)s\t%(title)s", url],
-    { maxBuffer: 16 << 20 });
+  const single = /[?&]v=/.test(url) && !/\/playlist\?/.test(url);
+  const { stdout } = await run(ytdlp(), ["--no-warnings", "--flat-playlist", ...(single ? ["--no-playlist"] : []),
+    "--print", "%(id)s\t%(duration)s\t%(playlist_title)s\t%(title)s", url], { maxBuffer: 16 << 20 });
   return stdout.trim().split("\n").filter(Boolean).map((line) => {
-    const [id, secs, ...title] = line.split("\t");
-    return { id, url: `https://www.youtube.com/watch?v=${id}`, seconds: Number(secs), title: title.join("\t") };
+    const [id, secs, playlist, ...title] = line.split("\t");
+    const folder = !single && playlist && playlist !== "NA" ? playlist.replace(/[<>:"/\\|?*]+/g, "").trim().slice(0, 60) : null;
+    return { id, url: `https://www.youtube.com/watch?v=${id}`, seconds: Number(secs), title: title.join("\t"), folder };
   });
 }
 
@@ -41,7 +46,7 @@ export async function addFromUrls(kind, urls) {
       try {
         await run(ytdlp(), ["--no-warnings", "--no-overwrites", "--ffmpeg-location", join(ROOT, "tools", "ffmpeg", "bin"),
           "-f", "bv*[height<=1080]+ba/b[height<=1080]/b", "--merge-output-format", "mp4", "--restrict-filenames",
-          "-o", join(dest, "%(title).80s [%(id)s].%(ext)s"), v.url], { maxBuffer: 16 << 20 });
+          "-o", join(v.folder ? join(dest, v.folder) : dest, "%(title).80s [%(id)s].%(ext)s"), v.url], { maxBuffer: 16 << 20 });
         log.info(`add: downloaded ${kind} "${v.title}"`);
         added.push(v);
       } catch (e) {
