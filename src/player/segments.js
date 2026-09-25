@@ -73,22 +73,25 @@ function remember(rows) {
 let breakCounter = 0;
 const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
 
-// A commercial break: 1-2 commercials (config), sometimes a clip. With budgetMs, only
-// what fits in that much time (so blocks can start on time). Empty if there's nothing
-// that fits, in which case the next show just starts.
-export function makeBreak(plex, { theme = null, budgetMs = Infinity } = {}) {
-  const [min, max] = config.broadcast.commercials_per_break;
+// A commercial break of about budgetMs: whole commercial files until the budget is used
+// up (the last one may run a few seconds over; the end of the block makes up for it),
+// sometimes a clip. Empty if nothing fits, in which case the next show just starts.
+// Without a budget (test playlist): about ad_minutes_per_hour's worth for one episode.
+const OVERRUN_MS = 20000;
+export function makeBreak(plex, { theme = null, budgetMs = null } = {}) {
+  const budget = budgetMs ?? (config.broadcast.ad_minutes_per_hour * 60000 * 22) / 60;
   const rows = [];
-  let left = budgetMs;
-  for (let n = rand(min, max); n > 0; n--) {
-    const r = pick("commercial", theme, rows.map((x) => x.id), left);
-    if (!r) break;
-    rows.push(r);
-    left -= r.duration_ms;
-  }
+  let left = budget;
   if (Math.random() < config.broadcast.clip_chance) {
-    const c = pick("clip", theme, [], left);
-    if (c) rows.splice(rand(0, rows.length), 0, c);
+    const c = pick("clip", theme, [], left + OVERRUN_MS);
+    if (c) { rows.push(c); left -= c.duration_ms; }
+  }
+  while (left > 5000) {
+    const r = pick("commercial", theme, rows.map((x) => x.id), left + OVERRUN_MS)
+      || (rows.length ? null : pick("clip", theme, [], left + OVERRUN_MS)); // no commercials yet: a clip instead
+    if (!r) break;
+    rows.splice(rand(0, rows.length), 0, r);
+    left -= r.duration_ms;
   }
   remember(rows);
   const breakId = newBreakId();

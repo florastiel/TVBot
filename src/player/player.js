@@ -54,7 +54,7 @@ export class Player extends EventEmitter {
   }
 
   status() {
-    return { state: this.state, channelId: this.channelId, now: publicSeg(this.now) };
+    return { state: this.state, channelId: this.channelId, now: publicSeg(this.now), pid: process.pid };
   }
 
   emitEvent(type, data = {}) {
@@ -170,7 +170,14 @@ export class Player extends EventEmitter {
     try { this.streamer.leaveVoice(); } catch { /* already gone */ }
     log.info(`player: left voice (${reason})`);
     this.emitEvent("off", { reason, channelId });
+    if (this.restartWhenOff) this.restartNow();
     return this.status();
+  }
+
+  // Exit; the service manager starts a fresh copy about 10 seconds later.
+  restartNow() {
+    log.info("player: restarting to load new code/settings");
+    setTimeout(() => process.exit(0), 500);
   }
 
   // Sounds over the mic, one at a time. Resolves when this one has finished.
@@ -223,6 +230,12 @@ export class Player extends EventEmitter {
       "POST /leave": () => this.leave("turned off"),
       "POST /skip-break": (b) => ({ skipped: this.skipBreak(b.breakId) }),
       "POST /skip-item": () => ({ skipped: this.skipItem() }),
+      // Load new code/settings. Never cuts off the stream: waits until the TV is off.
+      "POST /restart": () => {
+        this.restartWhenOff = true;
+        if (this.state === "off") this.restartNow();
+        return { restarting: this.state === "off" ? "now" : "when the TV is turned off" };
+      },
     };
 
     http.createServer(async (req, res) => {

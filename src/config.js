@@ -14,8 +14,9 @@ const DEFAULTS = {
   broadcast: {
     timezone: "America/New_York",
     hours: "00:00-24:00",
-    block_minutes: 60,
-    commercials_per_break: [1, 2],
+    grid_minutes: 15,
+    ad_minutes_per_hour: 5,
+    max_ad_minutes_per_hour: 8,
     clip_chance: 0.3,
     no_repeat_days: 14,
     idle_leave_minutes: 5,

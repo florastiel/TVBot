@@ -3,7 +3,7 @@
 // "outer" ffmpeg, whose output is what Go Live streams.
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { itemArgs, outerArgs } from "./encode.js";
+import { itemArgs, outerArgs, usingQsv, encoderState } from "./encode.js";
 import { log } from "../log.js";
 
 const FFMPEG = () => process.env.FFMPEG_PATH || "ffmpeg";
@@ -83,6 +83,13 @@ export class Feed extends EventEmitter {
         const playedSec = Math.max(0, cur.lastPts - startOffset);
         if (cur.lastPts >= 0) this.offsetSec = cur.lastPts + 0.1;
         if (cur.skipped || this.closed) return resolve({ result: "skipped", playedSec });
+        if (code !== 0 && cur.lastPts < 0 && usingQsv()) {
+          // Nothing came out and we're on Quick Sync: assume the GPU encoder is the
+          // problem, switch this process to CPU encoding, and try the item again.
+          log.warn(`feed: Quick Sync failed (${errText.trim().split("\n").slice(-1)[0]}); switching to CPU encoding`);
+          encoderState.qsvBroken = true;
+          return resolve(this.play(seg));
+        }
         if (code !== 0) {
           log.warn(`feed: item failed (exit ${code}) after ${playedSec.toFixed(1)}s: ${errText.trim().split("\n").slice(-3).join(" | ")}`);
           return resolve({ result: "error", playedSec });

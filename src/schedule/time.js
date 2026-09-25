@@ -40,17 +40,38 @@ export const localTime = (ms) => {
   return `${String(p.hh).padStart(2, "0")}:${String(p.mm).padStart(2, "0")}`;
 };
 
-// The on-air slots of a day: consecutive block_minutes steps inside broadcast hours.
-// "18:00-02:00" wraps past midnight; the late part belongs to the day it started.
-export function daySlots(day) {
-  const [from, to] = config.broadcast.hours.split("-").map((s) => s.split(":").map(Number));
-  const start = localToUtc(day.y, day.m, day.d, from[0], from[1]);
-  let end = to[0] === 24 ? day.endMs : localToUtc(day.y, day.m, day.d, to[0], to[1]);
-  if (end <= start) end += day.endMs - day.startMs; // wraps past midnight
-  const step = config.broadcast.block_minutes * 60000;
-  const slots = [];
-  for (let t = start; t + step <= end; t += step) slots.push(t);
-  return slots;
+export const gridMs = () => config.broadcast.grid_minutes * 60000;
+// Round a time up / down to the grid (:00 :15 :30 :45 with a 15-minute grid), in local time.
+export function gridCeil(ms) {
+  const day = localDay(ms);
+  return day.startMs + Math.ceil((ms - day.startMs) / gridMs()) * gridMs();
+}
+export function gridFloor(ms) {
+  const day = localDay(ms);
+  return day.startMs + Math.floor((ms - day.startMs) / gridMs()) * gridMs();
+}
+
+// On-air hours of a local day, e.g. "18:00-02:00" (wraps past midnight). 24/7 = the whole day.
+function onAir(day) {
+  const [from, to] = config.broadcast.hours.split("-").map((x) => x.split(":").map(Number));
+  const on = localToUtc(day.y, day.m, day.d, from[0], from[1]);
+  let off = to[0] === 24 ? day.endMs : localToUtc(day.y, day.m, day.d, to[0], to[1]);
+  if (off <= on) off += day.endMs - day.startMs;
+  return { on, off, allDay: on === day.startMs && off === day.endMs };
+}
+
+// The stretch of air time to program next, starting at `from`: the rest of that
+// day's on-air hours. For 24/7, a short remainder of a day is merged into the next day.
+export function nextWindow(from) {
+  let day = localDay(from);
+  for (let i = 0; i < 3; i++, day = localDay(day.endMs + 1)) {
+    const { on, off, allDay } = onAir(day);
+    if (from >= off) continue;
+    const start = Math.max(from, on);
+    if (allDay && off - start < 3 * 3600000) return { start, end: localDay(off + 1).endMs, day: localDay(start) };
+    return { start, end: off, day: localDay(start), fixedEnd: !allDay };
+  }
+  throw new Error("couldn't find on-air hours; check broadcast.hours in config.yaml");
 }
 
 // Holiday season for a date: Halloween in October, Thanksgiving through Thanksgiving

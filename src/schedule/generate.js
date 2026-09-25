@@ -6,13 +6,21 @@ import { config, secrets } from "../config.js";
 import { getDb } from "../db.js";
 import { log } from "../log.js";
 import { schedulableSql } from "../catalog/schedulable.js";
-import { localDay, daySlots, localTime, season } from "./time.js";
-import { saveBlocks, deleteBlocksFrom, usedIds, blocksBetween } from "./store.js";
+import { localDay, localTime, season, gridMs, gridCeil, gridFloor, nextWindow } from "./time.js";
+import { saveBlocks, deleteBlocksFrom, usedIds, blocksBetween, nextBlockAfter } from "./store.js";
 
 const DAY = 86400000;
-const EPISODES_PER_SHOW = 4;
+const EPISODES_PER_SHOW = 5;
 const MAX_ATTEMPTS = 3;
-const blockMs = () => config.broadcast.block_minutes * 60000;
+
+// How long a block runs: its shows plus ad_minutes_per_hour of ads, rounded up to the
+// grid. Returns { lengthMs, adMs, adPerHour }.
+export function blockLength(contentMs) {
+  const rate = config.broadcast.ad_minutes_per_hour / 60;
+  const lengthMs = Math.ceil(contentMs / (1 - rate) / gridMs()) * gridMs();
+  const adMs = lengthMs - contentMs;
+  return { lengthMs, adMs, adPerHour: (adMs / lengthMs) * 60 };
+}
 
 const SCHEMA = {
   type: "object",
@@ -23,10 +31,9 @@ const SCHEMA = {
         type: "object",
         properties: {
           label: { type: "string" },
-          slots: { type: "integer" },
           ids: { type: "array", items: { type: "integer" } },
         },
-        required: ["label", "slots", "ids"],
+        required: ["label", "ids"],
         additionalProperties: false,
       },
     },
@@ -35,15 +42,15 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
-const SYSTEM = `You program one day of a retro cable-TV style channel for a group of friends. You get the day's time slots and a menu of shows, movies and episodes; you return the day as a list of blocks.
+const SYSTEM = `You program a stretch of a retro cable-TV style channel for a group of friends. You get the start time, roughly how long to fill, and a menu of shows, movies and episodes; you return a list of blocks that play back to back.
+
+How block lengths work (done by code, not you): each block runs its items plus a few minutes of commercials per hour, rounded UP to the next quarter hour (:00, :15, :30, :45). So pick items whose total length lands just under a quarter-hour mark, or the rounding leaves too many commercials. Example: three 22.5-minute episodes (67.5 min) make a 75-minute block; two of them (45 min) would need a 60-minute block with 15 minutes of ads, which is too much.
 
 Rules:
-- Blocks fill the day in order, with no gaps. Each block covers a whole number of slots; the slot counts must add up to exactly the number of slots in the day.
-- A block holds items that go together (same show, or shows with a similar feel), in a sensible order. Mix it up over the day; don't run the same show all day.
-- A movie always gets a block to itself, with enough slots for its length plus breaks.
-- Fill each block well: the items' running time plus the commercial breaks between them must fit inside the block, and should use most of it. The leftover time at the end of a block gets filled with short commercials automatically.
+- A block holds items that go together (same show, or shows with a similar feel), in a sensible order. Mix it up; don't run the same show all day.
+- A movie always gets a block to itself.
 - Use a show's episodes in the order the menu lists them. Only use ids from the menu, and each id at most once.
-- label: a short plain description of the block in 1 to 3 words, like "Sitcoms", "Saturday Cartoons", "Halloween Specials", "Movie", "Late Night Anime". No puns, no punctuation, no emoji, no day names.
+- label: a short plain description of the block in 1 to 3 words, like "Sitcoms", "Cartoons", "Halloween Specials", "Movie", "Late Night Anime". No puns, no punctuation, no emoji, no day names.
 - Kids and family shows fit mornings and afternoons; adult shows fit late evening and night. Put the strongest material in the evening.`;
 
 // ---------- the menu ----------
@@ -51,6 +58,7 @@ Rules:
 const genres = (j) => (j ? JSON.parse(j) : []);
 const vibes = (j) => (j ? JSON.parse(j).join("/") : "");
 const mins = (ms) => Math.round((ms || 0) / 60000);
+const min1 = (ms) => ((ms || 0) / 60000).toFixed(1);
 
 function describeShow(s) {
   if (!s?.tagged_at) return "untagged";
@@ -76,7 +84,7 @@ export function buildMenu(day, used) {
     WHERE i.show_title = ? AND b.start_at < ? AND COALESCE(t.holiday, 'none') = 'none'
     ORDER BY b.start_at DESC, bi.position DESC LIMIT 1`);
 
-  lines.push("SHOWS (episode ids in airing order; typical episode length in minutes)");
+  lines.push("SHOWS (episode ids in airing order, each with its length in minutes)");
   for (const [title, eps] of byShow) {
     const last = lastAired.get(title, day.startMs)?.id;
     const start = last ? eps.findIndex((e) => e.id === last) + 1 : 0;
@@ -87,8 +95,7 @@ export function buildMenu(day, used) {
     }
     if (!next.length) continue;
     next.forEach((e) => allowed.set(e.id, e));
-    const typical = mins(next[0].duration_ms);
-    lines.push(`- ${title} | ${describeShow(shows.get(title))} | ${typical}m | ids ${next.map((e) => e.id).join(", ")}`);
+    lines.push(`- ${title} | ${describeShow(shows.get(title))} | ${next.map((e) => `${e.id} (${min1(e.duration_ms)})`).join(", ")}`);
   }
 
   // Holiday material for the season: all of it is on the menu.
@@ -100,7 +107,7 @@ export function buildMenu(day, used) {
       lines.push(`\n${theme.theme.toUpperCase()} EPISODES (can air outside their show's usual order)`);
       for (const e of hol) {
         allowed.set(e.id, e);
-        lines.push(`- ${e.id} ${e.show_title} S${e.season ?? "?"}E${e.episode ?? "?"} "${e.title}" | ${mins(e.duration_ms)}m | ${describeShow(shows.get(e.show_title))}`);
+        lines.push(`- ${e.id} ${e.show_title} S${e.season ?? "?"}E${e.episode ?? "?"} "${e.title}" | ${min1(e.duration_ms)}m | ${describeShow(shows.get(e.show_title))}`);
       }
     }
   }
@@ -115,36 +122,28 @@ export function buildMenu(day, used) {
     for (const m of pick) {
       allowed.set(m.id, m);
       const tags = [m.audience, m.anime ? "anime" : m.animated ? "animated" : "live action", m.origin, vibes(m.mood), m.holiday !== "none" ? m.holiday : null].filter(Boolean).join(", ");
-      lines.push(`- ${m.id} ${m.title} (${m.year ?? "?"}) | ${mins(m.duration_ms)}m | ${tags}`);
+      lines.push(`- ${m.id} ${m.title} (${m.year ?? "?"}) | ${min1(m.duration_ms)}m | ${tags}`);
     }
   }
   return { allowed, text: lines.join("\n"), theme };
 }
 
-// Average commercial break, from what's actually in the commercials/clips folders.
-export function estimatedBreakMs() {
-  const db = getDb();
-  const avg = (kind) => db.prepare(`SELECT AVG(duration_ms) a FROM items WHERE kind = ? AND present = 1 AND playable = 1`).get(kind).a;
-  const [lo, hi] = config.broadcast.commercials_per_break;
-  const commercial = avg("commercial") ?? 30000;
-  const clip = avg("clip") ?? 60000;
-  return Math.round(((lo + hi) / 2) * commercial + config.broadcast.clip_chance * clip);
-}
-
 // ---------- checking Claude's answer ----------
 
-export function validate(blocks, { slotCount, allowed, breakMs }) {
+const runOf = (rows) => rows.reduce((n, r) => n + (r.duration_ms || 0), 0);
+const hours = (ms) => (ms / 3600000).toFixed(1);
+
+export function validate(blocks, { allowed, windowMs, fixedEnd }) {
   const problems = [];
   const seen = new Set();
-  const total = blocks.reduce((n, b) => n + b.slots, 0);
-  if (total !== slotCount) problems.push(`The blocks cover ${total} slots, but the day has exactly ${slotCount}.`);
+  const maxAds = config.broadcast.max_ad_minutes_per_hour;
+  let total = 0;
   blocks.forEach((b, i) => {
     const name = `Block ${i + 1} ("${b.label}")`;
     const words = b.label.trim().split(/\s+/);
     if (!b.label.trim() || words.length > 3 || b.label.length > 30 || !/^[\p{L}\p{N} &'-]+$/u.test(b.label)) {
       problems.push(`${name}: the label must be 1 to 3 plain words (letters, numbers, spaces, & ' -).`);
     }
-    if (!Number.isInteger(b.slots) || b.slots < 1) problems.push(`${name}: slots must be a whole number, at least 1.`);
     if (!b.ids.length) problems.push(`${name}: it has no items.`);
     const rows = [];
     for (const id of b.ids) {
@@ -154,14 +153,22 @@ export function validate(blocks, { slotCount, allowed, breakMs }) {
       seen.add(id);
     }
     if (rows.some((r) => r.kind === "movie") && b.ids.length > 1) problems.push(`${name}: a movie must be alone in its block.`);
-    const lengthMs = b.slots * blockMs();
-    const runMs = rows.reduce((n, r) => n + (r.duration_ms || 0), 0) + Math.max(0, rows.length - 1) * breakMs;
-    if (runMs > lengthMs) {
-      problems.push(`${name}: its items run ${(runMs / 60000).toFixed(1)} minutes with breaks, but ${b.slots} slot(s) is only ${mins(lengthMs)} minutes. Use more slots or fewer items.`);
-    } else if (rows.length && runMs < lengthMs * 0.5) {
-      problems.push(`${name}: its items fill only ${mins(runMs)} of ${mins(lengthMs)} minutes. Add items or use fewer slots.`);
+    if (!rows.length) return;
+    const run = runOf(rows);
+    const { lengthMs, adMs, adPerHour } = blockLength(run);
+    total += lengthMs;
+    if (adPerHour > maxAds + 0.01) {
+      problems.push(`${name}: its items run ${min1(run)} minutes, so the block rounds up to ${mins(lengthMs)} minutes with ${min1(adMs)} minutes of commercials (${adPerHour.toFixed(1)} per hour; the limit is ${maxAds}). Add or swap an item so the total lands just under a quarter-hour mark.`);
     }
   });
+  if (fixedEnd) {
+    if (total > windowMs) problems.push(`The blocks run ${hours(total)} hours, but only ${hours(windowMs)} hours are available. Remove something.`);
+    else if (total < windowMs - 45 * 60000) problems.push(`The blocks run ${hours(total)} hours; fill closer to ${hours(windowMs)} hours.`);
+  } else if (total < windowMs) {
+    problems.push(`The blocks run ${hours(total)} hours; they need to cover at least ${hours(windowMs)} hours. Add blocks at the end.`);
+  } else if (total > windowMs + 3 * 3600000) {
+    problems.push(`The blocks run ${hours(total)} hours; that's more than needed (${hours(windowMs)} hours, a little over is fine). Remove blocks at the end.`);
+  }
   return problems;
 }
 
@@ -185,51 +192,50 @@ function keepSeriesOrder(blocks, allowed) {
 
 // ---------- the simple fallback ----------
 
-function fallbackDay(slots, allowed, breakMs) {
-  const byShow = Map.groupBy([...allowed.values()].filter((r) => r.kind === "episode"), (r) => r.show_title);
+// Runs of each show's episodes, sized so the ad share is as low as possible.
+function fallbackBlocks(allowed, windowMs) {
+  const regular = [...allowed.values()].filter((r) => r.kind === "episode" && !(r.holiday && r.holiday !== "none"));
+  const byShow = Map.groupBy(regular, (r) => r.show_title);
   const shows = [...byShow.keys()].sort(() => Math.random() - 0.5);
   const blocks = [];
-  let k = 0;
-  for (let s = 0; s < slots.length; s++) {
-    let placed = null;
-    for (let tries = 0; tries < shows.length && !placed; tries++) {
-      const title = shows[k++ % shows.length];
-      const eps = byShow.get(title);
-      const ids = [];
-      let run = 0;
-      while (eps.length && run + eps[0].duration_ms + (ids.length ? breakMs : 0) <= blockMs()) {
-        const e = eps.shift();
-        run += e.duration_ms + (ids.length ? breakMs : 0);
-        ids.push(e.id);
-      }
-      if (ids.length) placed = { label: title.slice(0, 40), slots: 1, ids };
+  let total = 0;
+  for (const title of shows) {
+    if (total >= windowMs) break;
+    const eps = byShow.get(title);
+    let best = null;
+    for (let k = 1; k <= eps.length; k++) {
+      const { lengthMs, adPerHour } = blockLength(runOf(eps.slice(0, k)));
+      if (!best || adPerHour < best.adPerHour) best = { k, lengthMs, adPerHour };
     }
-    if (!placed) break;
-    blocks.push(placed);
+    blocks.push({ label: title.slice(0, 40), ids: eps.slice(0, best.k).map((e) => e.id) });
+    total += best.lengthMs;
   }
   return blocks;
 }
 
-// ---------- one day ----------
+// ---------- one stretch of air time ----------
 
-async function planDay(client, day, slots) {
-  const used = usedIds(day.startMs - config.broadcast.no_repeat_days * DAY, day.startMs + config.broadcast.no_repeat_days * DAY);
-  const menu = buildMenu(day, used);
-  const breakMs = estimatedBreakMs();
-  const ctx = { slotCount: slots.length, allowed: menu.allowed, breakMs };
+async function planWindow(client, win) {
+  const N = config.broadcast.no_repeat_days * DAY;
+  const used = usedIds(win.start - N, win.start + N);
+  const menu = buildMenu({ ...win.day, startMs: win.start }, used);
+  const windowMs = win.end - win.start;
+  const ctx = { allowed: menu.allowed, windowMs, fixedEnd: win.fixedEnd };
   const s = menu.theme;
-  const seasonNote = s.theme === "none" ? "No holiday season today."
+  const tag = `${win.day.date} ${localTime(win.start)}`;
+  const seasonNote = s.theme === "none" ? "No holiday season right now."
     : `It's ${s.theme} season (the holiday is ${s.holidayDate}). Work in ${s.intensity > 0.7 ? "plenty of" : "some"} ${s.theme} material, from the holiday episodes and movies on the menu; not every block has to be themed.`;
-  const prompt = `Program ${day.weekday}, ${day.date}.
-
-${slots.length} slots of ${config.broadcast.block_minutes} minutes, starting at ${slots.map(localTime).join(", ")}.
-Each commercial break between two items in a block takes about ${Math.round(breakMs / 1000)} seconds.
+  const endNote = win.fixedEnd
+    ? `The channel signs off at ${localTime(win.end)}: the blocks must not run past it.`
+    : `That's until about ${localTime(win.end)}; running up to an hour or two past it is fine.`;
+  const prompt = `Program ${win.day.weekday}, ${win.day.date}, starting at ${localTime(win.start)}: about ${hours(windowMs)} hours. ${endNote}
+About ${config.broadcast.ad_minutes_per_hour} minutes of commercials per hour get added between items automatically.
 ${seasonNote}
 
 ${menu.text}`;
 
   const messages = [{ role: "user", content: prompt }];
-  let usage = { input: 0, output: 0 };
+  const usage = { input: 0, output: 0 };
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     let blocks;
     try {
@@ -248,37 +254,25 @@ ${menu.text}`;
       blocks = JSON.parse(text).blocks;
       messages.push({ role: "assistant", content: msg.content });
     } catch (e) {
-      log.warn(`schedule: ${day.date} attempt ${attempt} failed: ${e.message}`);
+      log.warn(`schedule: ${tag} attempt ${attempt} failed: ${e.message}`);
       break;
     }
     const problems = validate(blocks, ctx);
     if (!problems.length) {
       keepSeriesOrder(blocks, menu.allowed);
-      log.info(`schedule: ${day.date}: ${blocks.length} blocks from Claude (attempt ${attempt}; ${usage.input} in / ${usage.output} out tokens)`);
+      log.info(`schedule: ${tag}: ${blocks.length} blocks from Claude (attempt ${attempt}; ${usage.input} in / ${usage.output} out tokens)`);
       return { blocks, source: "claude", theme: s.theme, allowed: menu.allowed };
     }
-    log.info(`schedule: ${day.date} attempt ${attempt}: ${problems.length} problem(s), e.g. ${problems[0]}`);
-    messages.push({ role: "user", content: `That schedule has problems. Fix them and send the whole day again:\n- ${problems.join("\n- ")}` });
+    log.info(`schedule: ${tag} attempt ${attempt}: ${problems.length} problem(s), e.g. ${problems[0]}`);
+    messages.push({ role: "user", content: `That schedule has problems. Fix them and send the whole list again:\n- ${problems.join("\n- ")}` });
   }
-  log.warn(`schedule: ${day.date}: using the simple fallback schedule`);
-  return { blocks: fallbackDay(slots, menu.allowed, breakMs), source: "fallback", theme: s.theme, allowed: menu.allowed };
+  log.warn(`schedule: ${tag}: using the simple fallback schedule`);
+  return { blocks: fallbackBlocks(menu.allowed, windowMs), source: "fallback", theme: s.theme, allowed: menu.allowed };
 }
 
-// Consecutive runs of slots that nothing is scheduled over yet.
-function freeRuns(slots) {
-  const runs = [];
-  for (const t of slots) {
-    if (blocksBetween(t, t + blockMs()).length) continue;
-    const run = runs.at(-1);
-    if (run && run.at(-1) + blockMs() === t) run.push(t);
-    else runs.push([t]);
-  }
-  return runs;
-}
-
-// Program `days` days starting at fromMs (including the slot already under way). Only
-// free slots are programmed; with replace, everything after the current block is
-// thrown away first.
+// Program `days` days of air time from fromMs, in stretches of about a day, back to
+// back. Existing blocks are kept (and never overlapped); with replace, everything after
+// the current block is thrown away first. Block start/end times are worked out here.
 export async function generateSchedule({ fromMs = Date.now(), days = 7, replace = false } = {}) {
   const client = new Anthropic({ apiKey: secrets.anthropicKey });
   if (replace) {
@@ -287,19 +281,28 @@ export async function generateSchedule({ fromMs = Date.now(), days = 7, replace 
     log.info(`schedule: replacing ${deleteBlocksFrom(cut)} future blocks`);
     fromMs = cut;
   }
-  let day = localDay(fromMs);
-  for (let n = 0; n < days; n++, day = localDay(day.endMs + 1)) {
-    for (const slots of freeRuns(daySlots(day).filter((t) => t + blockMs() > fromMs))) {
-      const plan = await planDay(client, day, slots);
-      let t = slots[0];
-      const out = [];
-      for (const b of plan.blocks) {
-        const end = t + b.slots * blockMs();
-        const theme = plan.theme !== "none" && b.ids.some((id) => plan.allowed.get(id)?.holiday === plan.theme) ? plan.theme : null;
-        out.push({ start: t, end, label: b.label.trim(), ids: b.ids, theme });
-        t = end;
-      }
-      saveBlocks(out, plan.source);
+  const horizon = fromMs + days * DAY;
+  let t = gridFloor(fromMs);
+  while (t < horizon) {
+    const covering = blocksBetween(t, t + 1)[0];
+    if (covering) { t = covering.end_at; continue; }
+    const win = nextWindow(t);
+    const existing = nextBlockAfter(win.start);
+    if (existing && existing.start_at < win.end) { win.end = existing.start_at; win.fixedEnd = true; }
+    if (win.end - win.start < gridMs()) { t = win.end; continue; }
+
+    const plan = await planWindow(client, win);
+    let at = win.start;
+    const out = [];
+    for (const b of plan.blocks) {
+      const rows = b.ids.map((id) => plan.allowed.get(id)).filter(Boolean);
+      const { lengthMs } = blockLength(runOf(rows));
+      if (win.fixedEnd && at + lengthMs > win.end) break;
+      const theme = plan.theme !== "none" && rows.some((r) => r.holiday === plan.theme) ? plan.theme : null;
+      out.push({ start: at, end: at + lengthMs, label: b.label.trim(), ids: b.ids, theme });
+      at += lengthMs;
     }
+    saveBlocks(out, plan.source);
+    t = win.fixedEnd ? win.end : Math.max(at, win.start + gridMs());
   }
 }

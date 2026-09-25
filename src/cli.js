@@ -63,6 +63,22 @@ Object.assign(commands, {
     console.log(guideText().replace(/<t:(\d+):t>/g, (_, s) => new Date(s * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })));
   },
 
+  // Load new code/settings into the running services. The player waits until the TV is off.
+  async restart(which = "all") {
+    if (which === "all" || which === "bot") {
+      const { writeFileSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const { DATA_DIR } = await import("./config.js");
+      writeFileSync(join(DATA_DIR, "restart-bot"), "");
+      console.log("bot: restarts within ~10 s (after any schedule/tagging job in progress)");
+    }
+    if (which === "all" || which === "player") {
+      const { callPlayer } = await import("./local.js");
+      const r = await callPlayer("/restart", {});
+      console.log(`player: restarts ${r.restarting}`);
+    }
+  },
+
   // Test playlist: overrides the schedule until cleared (tv.cmd playlist --clear).
   async playlist(show, count = "3") {
     if (show === "--clear") {
@@ -110,7 +126,8 @@ if (!commands[cmd]) {
   tag [--dry|--sample|--redo]  tag the catalog with Claude (only untagged items unless --redo)
   schedule [days] [--replace]  program the schedule with Claude (default 7 days)
   guide                        print what's on today
-  playlist --clear             drop the test playlist; the TV follows the schedule`);
+  playlist --clear             drop the test playlist; the TV follows the schedule
+  restart [player|bot]         load new code/settings (player waits until the TV is off)`);
   process.exit(cmd === "help" ? 0 : 1);
 }
 await commands[cmd](...args);

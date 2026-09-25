@@ -16,12 +16,12 @@ export function localSecret() {
 }
 
 // For the bot: call the player.
-export async function callPlayer(path, body) {
+export async function callPlayer(path, body, timeoutMs = 60000) {
   const res = await fetch(`${PLAYER_URL}${path}`, {
     method: body === undefined ? "GET" : "POST",
     headers: { "x-tv-secret": localSecret(), "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `player said HTTP ${res.status}`);

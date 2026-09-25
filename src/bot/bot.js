@@ -17,6 +17,11 @@ import { scheduledUntil } from "../schedule/store.js";
 import { guideText } from "../schedule/guide.js";
 import { runTagging } from "../tagging/tagger.js";
 import { getMeta } from "../db.js";
+import { existsSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { DATA_DIR } from "../config.js";
+
+export const RESTART_FLAG = join(DATA_DIR, "restart-bot");
 
 // One background job at a time (sync, tagging, scheduling all write the catalog).
 const maintenance = {
@@ -245,6 +250,30 @@ export async function startBot() {
     const tick = () => maintenance.run(upkeep).catch((e) => log.error("bot: upkeep failed:", e.message));
     tick();
     setInterval(tick, 3600000).unref();
+    // Watchdog: if the player stops answering for 2 minutes (frozen, not just
+    // restarting), kill it; the service manager starts a fresh one.
+    let playerPid = null, misses = 0;
+    setInterval(async () => {
+      try {
+        const st = await callPlayer("/status", undefined, 5000);
+        playerPid = st.pid ?? playerPid;
+        misses = 0;
+      } catch {
+        if (++misses < 4 || !playerPid) return;
+        log.warn(`bot: player (pid ${playerPid}) hasn't answered for 2 minutes; killing it so it restarts`);
+        try { process.kill(playerPid); } catch (e) { log.warn(`bot: couldn't kill the player: ${e.message}`); }
+        playerPid = null;
+        misses = 0;
+      }
+    }, 30000).unref();
+
+    // tv.cmd restart drops this file; exit so the service manager starts a fresh copy.
+    setInterval(() => {
+      if (!existsSync(RESTART_FLAG)) return;
+      rmSync(RESTART_FLAG, { force: true });
+      log.info("bot: restarting to load new code/settings");
+      maintenance.run(() => process.exit(0));
+    }, 10000).unref();
   });
 
   await client.login(secrets.botToken);

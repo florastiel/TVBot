@@ -12,12 +12,17 @@ export function frameSize() {
   return { w: Math.round((h * 16) / 9 / 2) * 2, h };
 }
 
+// Set by the feed if Quick Sync fails; from then on this process encodes on the CPU.
+export const encoderState = { qsvBroken: false };
+export const usingQsv = () => config.encode.encoder === "qsv" && !encoderState.qsvBroken;
+const pixFmt = () => (usingQsv() ? "nv12" : "yuv420p");
+
 function videoCodecArgs() {
-  const { bitrate_kbps: b, max_bitrate_kbps: max, encoder } = config.encode;
+  const { bitrate_kbps: b, max_bitrate_kbps: max } = config.encode;
   const rate = ["-b:v", `${b}k`, "-maxrate:v", `${max}k`, "-bufsize:v", `${Math.round(b / 2)}k`];
   // Keyframe every second and no B-frames: what Discord's receiver expects.
   const common = ["-bf", "0", "-force_key_frames", "expr:gte(t,n_forced*1)"];
-  if (encoder === "qsv") return ["-c:v", "h264_qsv", "-preset", "veryfast", "-look_ahead", "0", ...rate, ...common];
+  if (usingQsv()) return ["-c:v", "h264_qsv", "-preset", "veryfast", "-look_ahead", "0", ...rate, ...common];
   return ["-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", ...rate, ...common];
 }
 
@@ -47,7 +52,7 @@ export function itemArgs(seg, offsetSec) {
   const silent = seg.audioStream === null || seg.audioStream === undefined;
   if (silent) args.push("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000");
 
-  const fit = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=${config.encode.encoder === "qsv" ? "nv12" : "yuv420p"}`;
+  const fit = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=${pixFmt()}`;
   let graph;
   if (seg.subs?.mode === "image") {
     // Picture subtitles are drawn at the source resolution, bottom-centered, then scaled with the video.
@@ -86,7 +91,7 @@ function cardArgs(seg, offsetSec) {
   const font = "C\\:/Windows/Fonts/arialbd.ttf";
   const text = `drawtext=fontfile='${font}':textfile='${filterPath(file)}':fontsize=${Math.round(h / 12)}:fontcolor=white:line_spacing=${Math.round(h / 30)}:text_align=C:x=(w-text_w)/2:y=(h-text_h)/2`;
   return ["-hide_banner", "-loglevel", "error", "-nostdin", "-nostats",
-    "-f", "lavfi", "-i", `color=c=0x14142a:s=${w}x${h}:r=${config.encode.frame_rate},${text},format=${config.encode.encoder === "qsv" ? "nv12" : "yuv420p"}`,
+    "-f", "lavfi", "-i", `color=c=0x14142a:s=${w}x${h}:r=${config.encode.frame_rate},${text},format=${pixFmt()}`,
     "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
     "-map", "0:v", "-map", "1:a", "-t", (seg.durationMs / 1000).toFixed(3),
     ...videoCodecArgs(), "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",

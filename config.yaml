@@ -10,9 +10,10 @@ discord:
 broadcast:
   timezone: America/New_York
   hours: "00:00-24:00"         # when the channel is on the air; default 24/7
-  block_minutes: 60            # normal block length (movies get a longer block)
-  commercials_per_break: [1, 2]  # random between min and max
-  clip_chance: 0.3             # chance a break also includes a clip (0 to 1)
+  grid_minutes: 15             # blocks start and end on these marks (:00 :15 :30 :45)
+  ad_minutes_per_hour: 5       # commercials/clips aimed for per hour, spread between shows
+  max_ad_minutes_per_hour: 8   # a block whose rounding leaves more than this gets re-planned
+  clip_chance: 0.3             # chance a break includes one of the clips (0 to 1)
   no_repeat_days: 14           # don't reuse an episode/movie within this many days
   idle_leave_minutes: 5        # leave voice after this long with nobody watching
 
@@ -40,7 +41,7 @@ encode:
   frame_rate: 30
   bitrate_kbps: 2500
   max_bitrate_kbps: 4000
-  encoder: software            # software (CPU) or qsv (Intel Quick Sync, needs the Intel driver)
+  encoder: qsv                 # software (CPU) or qsv (Intel Quick Sync, needs the Intel driver)
 
 entrance:
   max_seconds: 8               # uploads are trimmed to this
