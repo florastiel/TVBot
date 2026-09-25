@@ -98,6 +98,37 @@ const MIGRATIONS = [
   ALTER TABLE items ADD COLUMN cues TEXT;
   UPDATE items SET streams_checked = NULL;
   `,
+  `
+  -- Buckets: kinds of programming blocks ("Saturday Morning Cartoons", "Westerns").
+  -- Claude sorts the catalog into them (many-to-many) and plans the week as a grid of
+  -- bucket slots; code fills each slot with random picks from its bucket.
+  CREATE TABLE buckets (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,       -- the block label viewers see
+    about       TEXT,                -- what belongs in it
+    format      TEXT NOT NULL,       -- one_show | variety | movie | movie_series
+    dayparts    TEXT NOT NULL,       -- JSON array of morning | afternoon | evening | late
+    active_from TEXT,                -- MM-DD, for seasonal buckets (null = all year)
+    active_to   TEXT,
+    source      TEXT NOT NULL,       -- claude | auto (holiday tags) | fallback
+    retired     INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+  );
+  CREATE TABLE bucket_members (
+    bucket_id  INTEGER NOT NULL REFERENCES buckets(id) ON DELETE CASCADE,
+    show_title TEXT,                 -- a whole show...
+    item_id    INTEGER REFERENCES items(id) ON DELETE CASCADE, -- ...or one movie or episode
+    position   INTEGER NOT NULL DEFAULT 0  -- order, for movie series
+  );
+  CREATE INDEX bucket_members_bucket ON bucket_members (bucket_id);
+  -- The week's grid: from start_at until the next slot, blocks come from this bucket.
+  CREATE TABLE plan_slots (
+    start_at   INTEGER PRIMARY KEY,
+    bucket_id  INTEGER NOT NULL REFERENCES buckets(id),
+    created_at TEXT NOT NULL
+  );
+  ALTER TABLE blocks ADD COLUMN bucket_id INTEGER;
+  `,
 ];
 
 let db;

@@ -5,10 +5,10 @@ import { getDb, tx } from "../db.js";
 export function saveBlocks(blocks, source) {
   const now = new Date().toISOString();
   tx((db) => {
-    const addBlock = db.prepare("INSERT INTO blocks (start_at, end_at, label, theme, source, created_at) VALUES (?, ?, ?, ?, ?, ?)");
+    const addBlock = db.prepare("INSERT INTO blocks (start_at, end_at, label, theme, source, created_at, bucket_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
     const addItem = db.prepare("INSERT INTO block_items (block_id, position, item_id) VALUES (?, ?, ?)");
     for (const b of blocks) {
-      const id = addBlock.run(b.start, b.end, b.label, b.theme || null, source, now).lastInsertRowid;
+      const id = addBlock.run(b.start, b.end, b.label, b.theme || null, source, now, b.bucketId ?? null).lastInsertRowid;
       b.ids.forEach((itemId, i) => addItem.run(id, i, itemId));
     }
   });

@@ -49,13 +49,39 @@ Object.assign(commands, {
     await t.runTagging({ redo: flags.includes("--redo") });
   },
 
-  // Program the schedule with Claude. Days that already have blocks are kept unless --replace.
+  // Fill the schedule from the week's grid (free). --replace: new random picks after
+  // the current block. --replan: Claude lays out a new grid first.
   async schedule(...args) {
     const { generateSchedule } = await import("./schedule/generate.js");
     const { config } = await import("./config.js");
     const days = Number(args.find((a) => /^\d+$/.test(a)) || config.broadcast.plan_days);
-    await generateSchedule({ days, replace: args.includes("--replace") });
+    await generateSchedule({ days, replace: args.includes("--replace"), replan: args.includes("--replan") });
     await commands.guide();
+  },
+
+  // tv.cmd buckets             list the buckets
+  // tv.cmd buckets --build     Claude sorts the whole catalog into buckets (first time)
+  // tv.cmd buckets --new       Claude adds a handful of new ones (the weekly pass)
+  async buckets(...args) {
+    const b = await import("./schedule/buckets.js");
+    if (args.includes("--build")) await b.buildBuckets();
+    if (args.includes("--new")) await b.newBuckets();
+    for (const x of b.listBuckets()) {
+      const members = x.shows.length ? x.shows : x.items.map((id) => `#${id}`);
+      console.log(`${x.name} [${x.format}; ${x.dayparts.join("/")}${x.active_from ? `; ${x.active_from}..${x.active_to}` : ""}] ${members.length}: ${members.slice(0, 8).join(", ")}${members.length > 8 ? ", ..." : ""}`);
+    }
+  },
+
+  // tv.cmd plan [days]   print the grid (bucket slots) for the next days
+  async plan(days = "2") {
+    const { slotsBetween } = await import("./schedule/weekplan.js");
+    let date = "";
+    for (const s of slotsBetween(Date.now() - 86400000, Date.now() + Number(days) * 86400000)) {
+      const d = new Date(s.at);
+      const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      if (day !== date) console.log(`\n${(date = day)}`);
+      console.log(`  ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}  ${s.name}`);
+    }
   },
 
   // tv.cmd special "Scream marathon Saturday 8pm"   (or no text: Claude picks one)
@@ -139,7 +165,9 @@ if (!commands[cmd]) {
   bot                          run the remote-control bot
   playlist "<show>" [count]    set the test playlist to a few episodes of a show
   tag [--dry|--sample|--redo]  tag the catalog with Claude (only untagged items unless --redo)
-  schedule [days] [--replace]  program the schedule with Claude (default: plan_days)
+  schedule [days] [--replace|--replan]  fill the schedule from the week's grid (--replace: new picks, free; --replan: new grid from Claude)
+  buckets [--build|--new]      list the buckets (--build: Claude sorts the catalog; --new: a few new ones)
+  plan [days]                  print the grid of bucket slots
   guide                        print what's on today
   playlist --clear             drop the test playlist; the TV follows the schedule
   add commercial|clip <url...> download from YouTube etc. into rotation

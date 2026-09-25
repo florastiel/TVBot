@@ -13,7 +13,6 @@ const DEFAULTS = {
   discord: { guild_id: "", now_playing_channel_id: "", admin_user_id: "" },
   broadcast: {
     timezone: "America/New_York",
-    hours: "00:00-24:00",
     grid_minutes: 15,
     min_ad_minutes_per_hour: 2,
     max_show_block_minutes: 75,
@@ -23,7 +22,7 @@ const DEFAULTS = {
     clip_chance: 0.3,
     no_repeat_days: 14,
     plan_days: 1,
-    specials_per_week: 1,
+    specials_per_week: 0,
     idle_leave_minutes: 5,
   },
   plex: { server_name: "", libraries: [], include_unmatched: false, include_show_only_matches: true },

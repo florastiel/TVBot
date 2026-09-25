@@ -73,7 +73,8 @@ const COMMANDS = [
     .addSubcommand((s) => s.setName("skip").setDescription("Skip this episode or movie (the block goes on with its next one)"))
     .addSubcommand((s) => s.setName("skipblock").setDescription("Skip the rest of this block (the next block starts at the next quarter hour)"))
     .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex and local catalog now"))
-    .addSubcommand((s) => s.setName("regen").setDescription("Throw away the upcoming schedule and program it again"))
+    .addSubcommand((s) => s.setName("regen").setDescription("New random picks for the upcoming blocks (same lineup of block types)")
+      .addBooleanOption((o) => o.setName("new_grid").setDescription("Also have Claude lay out a new week of block types")))
     .addSubcommand((s) => s.setName("add").setDescription("Download a commercial or clip (YouTube link etc.) into rotation")
       .addStringOption((o) => o.setName("kind").setDescription("What it is").setRequired(true)
         .addChoices({ name: "commercial", value: "commercial" }, { name: "clip", value: "clip" }))
@@ -283,7 +284,8 @@ export async function startBot() {
         }
         if (sub === "regen") {
           await i.deferReply(ephemeral);
-          await maintenance.run(() => generateSchedule({ replace: true, days: config.broadcast.plan_days }));
+          const replan = i.options.getBoolean("new_grid") ?? false;
+          await maintenance.run(() => generateSchedule({ replace: true, replan, days: config.broadcast.plan_days }));
           return i.editReply("New schedule is ready (from the next block on). /schedule to see it.");
         }
       }

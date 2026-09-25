@@ -51,29 +51,6 @@ export function gridFloor(ms) {
   return day.startMs + Math.floor((ms - day.startMs) / gridMs()) * gridMs();
 }
 
-// On-air hours of a local day, e.g. "18:00-02:00" (wraps past midnight). 24/7 = the whole day.
-function onAir(day) {
-  const [from, to] = config.broadcast.hours.split("-").map((x) => x.split(":").map(Number));
-  const on = localToUtc(day.y, day.m, day.d, from[0], from[1]);
-  let off = to[0] === 24 ? day.endMs : localToUtc(day.y, day.m, day.d, to[0], to[1]);
-  if (off <= on) off += day.endMs - day.startMs;
-  return { on, off, allDay: on === day.startMs && off === day.endMs };
-}
-
-// The stretch of air time to program next, starting at `from`: the rest of that
-// day's on-air hours. For 24/7, a short remainder of a day is merged into the next day.
-export function nextWindow(from) {
-  let day = localDay(from);
-  for (let i = 0; i < 3; i++, day = localDay(day.endMs + 1)) {
-    const { on, off, allDay } = onAir(day);
-    if (from >= off) continue;
-    const start = Math.max(from, on);
-    if (allDay && off - start < 3 * 3600000) return { start, end: localDay(off + 1).endMs, day: localDay(start) };
-    return { start, end: off, day: localDay(start), fixedEnd: !allDay };
-  }
-  throw new Error("couldn't find on-air hours; check broadcast.hours in config.yaml");
-}
-
 // Holiday season for a date: Halloween in October, Thanksgiving through Thanksgiving
 // Day, then Christmas until the 25th. Plus how close to the day itself (0..1).
 export function season(day) {
