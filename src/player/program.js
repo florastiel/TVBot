@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { DATA_DIR, config } from "../config.js";
 import { getItem, toSegment, makeBreak, fillBreak, card } from "./segments.js";
 import { wantSpool } from "./spool.js";
-import { blockAt, nextBlockAfter } from "../schedule/store.js";
+import { blockAt, nextBlockAfter, blocksBetween } from "../schedule/store.js";
 import { localTime } from "../schedule/time.js";
 
 export const PLAYLIST_FILE = join(DATA_DIR, "playlist.json");
@@ -44,6 +44,7 @@ export class PlaylistProgram {
   }
 }
 
+const LOOKAHEAD_MS = 3 * 3600000; // how far ahead to download files that need it for subtitles
 const MIN_LEFT = 20000; // don't join the last 20 seconds of a show; go to the next thing
 const EDGE = 5 * 60000;  // never break within 5 minutes of the start/end of a show or another break
 
@@ -152,10 +153,11 @@ export class ScheduleProgram {
 
     for (let i = start; i < pieces.length; i++) {
       const p = pieces[i];
-      // Download ahead whatever comes next that needs it (subtitles inside the file).
+      // Download ahead (in airing order) whatever airs in the next few hours and needs
+      // it for subtitles, so even big movies are ready well before they start.
       const ahead = [...new Set(pieces.slice(i + 1).map((q) => q.row))];
-      if (nextBlock) ahead.push(...nextBlock.items.slice(0, 2));
-      wantSpool(ahead.slice(0, 3), this.plex);
+      for (const b of blocksBetween(block.end_at, block.end_at + LOOKAHEAD_MS)) ahead.push(...b.items);
+      wantSpool(ahead, this.plex);
       const up = upNextOf(i);
       const seekMs = p.from + (i === start ? offsetMs : 0);
       yield {
