@@ -73,8 +73,9 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 |---|---|---|
 | `/tv` | anyone in a voice channel | TV joins your voice channel and starts whatever is on now |
 | `/tvoff` | anyone | TV leaves |
-| `/tvpause`, Pause button | people in the TV's voice channel | emergency pause: picture and sound stop at once, the TV stays in the channel |
-| `/tvresume`, Resume button | people in the TV's voice channel | back on, with whatever is on now (it's live TV) |
+| `/tvpause`, Pause button | people in the TV's voice channel | emergency pause: the show cuts to a silent "Paused" card at once |
+| `/tvresume`, Resume button | people in the TV's voice channel | picks up at the second it was paused; the channel then catches up by cutting ads |
+| `/tvlive` | people in the TV's voice channel | forget the delay, jump to what the schedule says is on now |
 | `/schedule` | anyone | today's TV guide (only you see it) |
 | `/entrance set` + file | anyone | your join sound (first 8 s, volume evened out) |
 | `/entrance clear` | anyone (admin: anyone's) | remove a join sound |

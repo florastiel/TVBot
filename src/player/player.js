@@ -14,6 +14,7 @@ import { PLAYER_PORT, localSecret } from "../local.js";
 import { Feed } from "./feed.js";
 import { playMic } from "./mic.js";
 import { makeProgram } from "./program.js";
+import { card } from "./segments.js";
 
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
 // Written just before a restart so the fresh copy goes back to the same channel.
@@ -72,12 +73,13 @@ export class Player extends EventEmitter {
       throw e;
     }
     log.info(`player: joined voice ${channelId}`);
+    this.startStream();
     if (paused) {
       this.state = "paused";
+      this.session.paused = true;
       this.emitEvent("paused");
       return this.status();
     }
-    this.startStream();
     this.emitEvent("on");
     return this.status();
   }
@@ -88,7 +90,7 @@ export class Player extends EventEmitter {
     const abort = new AbortController();
     // t0: the wall-clock time the stream's first frame plays (Go Live takes a moment to
     // set up); corrected when the stream really starts.
-    const session = { feed, abort, skippedBreaks: new Set(), t0: Date.now() + 2000 };
+    const session = { feed, abort, skippedBreaks: new Set(), t0: Date.now() + 2000, paused: false, replay: null };
     this.session = session;
     this.state = "on";
     feed.on("closed", () => session === this.session && this.leave("stream stopped"));
@@ -112,23 +114,41 @@ export class Player extends EventEmitter {
     try { this.streamer.stopStream(); } catch { /* already stopped */ }
   }
 
-  // Emergency pause: picture and sound stop at once; the TV stays in the channel.
+  // Emergency pause: the show is cut off at once and a silent "Paused" card runs
+  // instead; the Go Live stays up, so nobody has to click Watch again.
   pause() {
-    if (this.state !== "on") return this.status();
-    this.stopStream();
+    const s = this.session;
+    if (this.state !== "on" || !s) return this.status();
     this.state = "paused";
+    s.paused = true;
+    s.pausing = true;
+    s.feed.skip();
     log.info("player: paused");
     this.emitEvent("paused");
     if (this.restartPending) this.restartNow(); // nothing to interrupt while paused
     return this.status();
   }
 
-  // Back on: live TV, so it picks up whatever is on now.
+  // Picks up exactly where it was paused. The channel is now running late; the
+  // schedule catches up by cutting commercial breaks (see ScheduleProgram).
   resume() {
-    if (this.state !== "paused") return this.status();
+    if (this.state !== "paused" || !this.session) return this.status();
+    this.state = "on";
+    this.session.paused = false;
     log.info("player: resumed");
-    this.startStream();
     this.emitEvent("on");
+    return this.status();
+  }
+
+  // Forget any delay and jump to what the schedule says is on right now.
+  goLive() {
+    const s = this.session;
+    if (!s) return this.status();
+    s.replay = null;
+    s.program?.goLive?.();
+    if (this.state === "paused") this.resume();
+    s.feed.skip();
+    log.info("player: back to the schedule");
     return this.status();
   }
 
@@ -136,10 +156,23 @@ export class Player extends EventEmitter {
     // Wall-clock time at which the next segment will start playing.
     const clock = () => session.t0 + session.feed.offsetSec * 1000;
     const program = makeProgram(this.plex, clock);
+    session.program = program;
+    const segments = program.segments();
     let inBreak = null;
     let failures = 0;
-    for (const seg of program.segments()) {
+    for (;;) {
       if (session !== this.session) return;
+      if (session.paused) {
+        await session.feed.play(card("Paused", 3000));
+        continue;
+      }
+      let seg = session.replay;
+      session.replay = null;
+      if (!seg) {
+        const next = segments.next();
+        if (next.done) return;
+        seg = next.value;
+      }
       if (seg.breakId && session.skippedBreaks.has(seg.breakId)) continue;
       if (inBreak && seg.breakId !== inBreak) {
         this.emitEvent("break-end", { breakId: inBreak });
@@ -152,10 +185,18 @@ export class Player extends EventEmitter {
         this.emitEvent("break-start", { breakId: inBreak });
       }
       this.now = seg;
-      if (!seg.breakId) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext) });
+      const isShow = seg.kind === "episode" || seg.kind === "movie";
+      if (isShow) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext) });
       log.info(`player: ${seg.breakId ? "break" : "now"}: ${seg.title} ${seg.subtitle || ""}`.trim());
 
+      const startedAt = clock();
       const r = await session.feed.play(seg);
+      if (session.pausing) {
+        // Cut off by a pause: a show is picked up again at the same second on resume.
+        session.pausing = false;
+        if (isShow) session.replay = { ...seg, seekMs: (seg.seekMs || 0) + Math.max(0, Date.now() - startedAt) };
+        continue;
+      }
       if (r.result === "error" && r.playedSec < 1) {
         // Broken file or server down: don't spin. Back off a little more each time.
         failures++;
@@ -262,6 +303,7 @@ export class Player extends EventEmitter {
       "POST /leave": () => this.leave("turned off"),
       "POST /pause": () => this.pause(),
       "POST /resume": () => this.resume(),
+      "POST /live": () => this.goLive(),
       "POST /skip-break": (b) => ({ skipped: this.skipBreak(b.breakId) }),
       "POST /skip-item": () => ({ skipped: this.skipItem() }),
       // Load new code/settings: right away if off or paused, otherwise at the next

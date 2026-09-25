@@ -51,9 +51,25 @@ export class ScheduleProgram {
     this.clock = clock;
   }
 
+  // Drop any delay: the next segment is whatever the schedule says is on now.
+  goLive() {
+    this.live = true;
+  }
+
   *segments() {
+    let caughtUpFrom = null; // running late: the block to play next, from its start
     for (;;) {
+      if (this.live) { this.live = false; caughtUpFrom = null; }
       const now = this.clock();
+      // Behind schedule (after a pause): don't skip ahead; play the next block from
+      // the top and let its commercial breaks shrink until the channel is on time.
+      if (caughtUpFrom) {
+        const block = caughtUpFrom;
+        caughtUpFrom = null;
+        const late = yield* this.playBlock(block, now, { fromStart: true });
+        if (late) caughtUpFrom = late;
+        continue;
+      }
       const block = blockAt(now);
       if (!block) {
         // Off the air (or nothing scheduled): a card until the next block, a minute at a time.
@@ -62,11 +78,18 @@ export class ScheduleProgram {
         yield card(next ? `Off the air\nBack at ${localTime(next.start_at)}` : "Off the air", wait);
         continue;
       }
-      yield* this.playBlock(block, now);
+      const before = this.clock();
+      const late = yield* this.playBlock(block, now);
+      if (late) caughtUpFrom = late;
+      // Safety net: a block that played nothing must still move the clock forward,
+      // or this loop would spin forever.
+      if (this.clock() === before && !this.live) yield card("", Math.max(1000, block.end_at - before));
     }
   }
 
-  *playBlock(block, now) {
+  // Plays one block. Returns the next block if this one finished late (so it can be
+  // played from its start), otherwise nothing.
+  *playBlock(block, now, { fromStart = false } = {}) {
     const items = block.items.filter((r) => r.present && r.playable);
     const nextBlock = nextBlockAfter(block.end_at);
     const upNextOf = (i) => items[i + 1] || nextBlock?.items[0] || null;
@@ -76,10 +99,10 @@ export class ScheduleProgram {
     const total = items.reduce((n, r) => n + r.duration_ms, 0);
     const gap = items.length ? Math.max(0, (block.end_at - block.start_at - total) / items.length) : 0;
     let t = block.start_at;
-    let start = items.length;
+    let start = fromStart ? 0 : items.length;
     let seekMs = 0;
     let breakFirstMs = 0;
-    for (let i = 0; i < items.length; i++) {
+    for (let i = 0; !fromStart && i < items.length; i++) {
       const dur = items[i].duration_ms;
       if (now < t + dur) {
         start = i;
@@ -97,12 +120,14 @@ export class ScheduleProgram {
     for (let i = start; i < items.length; i++) {
       const up = upNextOf(i);
       yield { ...toSegment(items[i], this.plex, { seekMs: i === start ? seekMs : 0 }), upNext: up ? toSegment(up, this.plex) : null };
+      if (this.live) return null;
       if (i < items.length - 1) {
         // Share whatever time is left over equally between the remaining breaks, so the
         // next block still starts on time even if a break was skipped or ran long.
         const rest = items.slice(i + 1).reduce((n, r) => n + r.duration_ms, 0);
         const budgetMs = (block.end_at - this.clock() - rest) / (items.length - 1 - i + 1);
         if (budgetMs > 3000) yield* makeBreak(this.plex, { theme: block.theme, budgetMs });
+        if (this.live) return null;
       }
     }
 
@@ -111,5 +136,7 @@ export class ScheduleProgram {
       const nextTitle = nextBlock?.items[0] ? toSegment(nextBlock.items[0], this.plex).title : null;
       yield* fillBreak(this.plex, left, { theme: block.theme, upNextTitle: nextTitle });
     }
+    // Finished late (more than half a minute): the next block starts from its top.
+    return this.clock() > block.end_at + 30000 && nextBlock?.start_at === block.end_at ? nextBlock : null;
   }
 }

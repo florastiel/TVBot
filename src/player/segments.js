@@ -114,7 +114,8 @@ export function fillBreak(plex, ms, { theme = null, upNextTitle = null } = {}) {
   remember(rows);
   const breakId = newBreakId();
   const segs = rows.map((r) => toSegment(r, plex, { breakId }));
-  if (left > 3000) segs.push(card(upNextTitle ? `Up next\n${upNextTitle}` : "Stay tuned", left, { breakId }));
+  // Whatever is left, even a second, so the block always runs right up to its end.
+  if (left >= 500) segs.push(card(upNextTitle ? `Up next\n${upNextTitle}` : "Stay tuned", left, { breakId }));
   return segs;
 }
 

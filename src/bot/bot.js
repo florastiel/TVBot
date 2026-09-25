@@ -56,7 +56,8 @@ const COMMANDS = [
   new SlashCommandBuilder().setName("tv").setDescription("Turn on the TV in the voice channel you're in"),
   new SlashCommandBuilder().setName("tvoff").setDescription("Turn off the TV"),
   new SlashCommandBuilder().setName("tvpause").setDescription("Emergency pause: stop the picture and sound right now"),
-  new SlashCommandBuilder().setName("tvresume").setDescription("Turn the picture back on (picks up whatever is on now)"),
+  new SlashCommandBuilder().setName("tvresume").setDescription("Pick up where it was paused"),
+  new SlashCommandBuilder().setName("tvlive").setDescription("Jump back to what the schedule says is on right now"),
   new SlashCommandBuilder().setName("tvadmin").setDescription("TV admin controls")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((s) => s.setName("skip").setDescription("Skip whatever is playing (e.g. a broken file)"))
@@ -209,10 +210,11 @@ export async function startBot() {
       // Pause / resume: anyone watching in the TV's voice channel.
       const pauseCmd = (i.isChatInputCommand() && i.commandName === "tvpause") || (i.isButton() && i.customId === "tv:pause");
       const resumeCmd = (i.isChatInputCommand() && i.commandName === "tvresume") || (i.isButton() && i.customId === "tv:resume");
-      if (pauseCmd || resumeCmd) {
+      const liveCmd = i.isChatInputCommand() && i.commandName === "tvlive";
+      if (pauseCmd || resumeCmd || liveCmd) {
         if (!(await inTvChannel(i))) return i.reply({ content: "Only people in the TV's voice channel can do that.", ...ephemeral });
-        await callPlayer(pauseCmd ? "/pause" : "/resume", {});
-        return i.reply({ content: pauseCmd ? "Paused." : "Back on.", ...ephemeral });
+        await callPlayer(pauseCmd ? "/pause" : resumeCmd ? "/resume" : "/live", {});
+        return i.reply({ content: pauseCmd ? "Paused." : resumeCmd ? "Picking up where it left off." : "Jumping to what's on now.", ...ephemeral });
       }
       if (i.isChatInputCommand() && ["tv", "tvoff", "tvadmin"].includes(i.commandName)) {
         if (i.commandName === "tv") {
