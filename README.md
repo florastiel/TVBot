@@ -11,16 +11,16 @@ files) is next. Until then the two parts are started by hand (see *Running it*).
 ## How it fits together
 
 ```
-  coupbot (bot)  --HTTP on 127.0.0.1-->  player (the streamer account)  -->  Go Live in voice
-  /tv /tvoff /schedule                   ffmpeg per item -> one continuous stream
-  /entrance /tvadmin                     jingle + entrance sounds over its mic
+  TVbot (bot)    --HTTP on 127.0.0.1-->  player (the streamer account)  -->  Go Live in voice
+  /tv /tvoff /tvpause /schedule          ffmpeg per item -> one continuous stream
+  /entrance /tvadmin                     entrance sounds over its mic
        |                                        |
        +---------- data\tv.db (SQLite) ---------+
                  catalog, tags, schedule
 ```
 
 - **Player** (`tv.cmd player`): the throwaway account. Joins voice, streams, notices
-  kicks and an empty channel, plays mic sounds. Every show and commercial is encoded
+  kicks and an empty channel, plays entrance sounds. Every show and commercial is encoded
   to the same 720p format and spliced into one unbroken stream, so viewers never get
   kicked out of the stream between items.
 - **Bot** (`tv.cmd bot`): slash commands, the Skip button, now-playing posts. Also
@@ -63,7 +63,8 @@ tv.cmd bot
 ```
 
 To load new code or settings: `tv.cmd restart`. The bot restarts right away; the
-player waits until the TV is off, so nobody gets cut off. If the player ever freezes,
+player restarts at the next commercial break (in place of the ads) and comes back to
+the same channel by itself after about 20 seconds; viewers click Watch again. If the player ever freezes,
 the bot notices after 2 minutes and kills it, and the service starts a fresh one.
 
 ## Discord commands
@@ -72,6 +73,8 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 |---|---|---|
 | `/tv` | anyone in a voice channel | TV joins your voice channel and starts whatever is on now |
 | `/tvoff` | anyone | TV leaves |
+| `/tvpause`, Pause button | people in the TV's voice channel | emergency pause: picture and sound stop at once, the TV stays in the channel |
+| `/tvresume`, Resume button | people in the TV's voice channel | back on, with whatever is on now (it's live TV) |
 | `/schedule` | anyone | today's TV guide (only you see it) |
 | `/entrance set` + file | anyone | your join sound (first 8 s, volume evened out) |
 | `/entrance clear` | anyone (admin: anyone's) | remove a join sound |

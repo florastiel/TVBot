@@ -2,21 +2,22 @@
 // channel. Controlled by the bot over local HTTP (see src/local.js).
 import http from "node:http";
 import { EventEmitter } from "node:events";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Client } from "@lng2004/discord.js-selfbot-v13";
 import { Streamer, playStream } from "@dank074/discord-video-stream";
-import { config, secrets, ENTRANCE_DIR } from "../config.js";
+import { config, secrets, ENTRANCE_DIR, DATA_DIR } from "../config.js";
 import { log } from "../log.js";
 import { Plex } from "../plex.js";
 import { PLAYER_PORT, localSecret } from "../local.js";
 import { Feed } from "./feed.js";
-import { playMic, prepareSound } from "./mic.js";
+import { playMic } from "./mic.js";
 import { makeProgram } from "./program.js";
-import { execFileSync } from "node:child_process";
 
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
+// Written just before a restart so the fresh copy goes back to the same channel.
+const RESUME_FILE = join(DATA_DIR, "resume.json");
 
 // What the bot is allowed to see about a segment (never the input URL: it has a token).
 const publicSeg = (s) => s && { itemId: s.itemId, kind: s.kind, title: s.title, subtitle: s.subtitle, breakId: s.breakId };
@@ -24,12 +25,13 @@ const publicSeg = (s) => s && { itemId: s.itemId, kind: s.kind, title: s.title, 
 export class Player extends EventEmitter {
   constructor() {
     super();
-    this.state = "off"; // off | starting | on
+    this.state = "off"; // off | starting | on | paused
     this.channelId = null;
     this.now = null;
-    this.session = null; // { feed, abort, skippedBreaks }
+    this.session = null; // the running stream: { feed, abort, skippedBreaks, t0 }
     this.micQueue = Promise.resolve();
     this.idleSince = null;
+    this.restartPending = false;
   }
 
   async start() {
@@ -40,17 +42,8 @@ export class Player extends EventEmitter {
     log.info(`player: logged in as ${this.streamer.client.user.tag}`);
     this.streamer.client.on("voiceStateUpdate", (before, after) => this.onVoiceState(before, after));
     setInterval(() => this.checkIdle(), 30000).unref();
-    this.jingleMs = 0;
-    if (this.jingle()) {
-      try {
-        const f = await prepareSound(this.jingle());
-        const out = execFileSync(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f]);
-        this.jingleMs = Math.round(Number(out) * 1000) || 0;
-      } catch (e) {
-        log.warn(`player: jingle not usable: ${e.message}`);
-      }
-    }
     this.serve();
+    await this.resumeAfterRestart();
   }
 
   status() {
@@ -61,8 +54,11 @@ export class Player extends EventEmitter {
     this.emit("event", { type, ...data, status: this.status() });
   }
 
-  async join(channelId) {
-    if (this.state !== "off" && this.channelId === channelId) return this.status();
+  async join(channelId, { paused = false } = {}) {
+    if (this.state !== "off" && this.channelId === channelId) {
+      if (this.state === "paused") return this.resume();
+      return this.status();
+    }
     if (this.state !== "off") await this.leave("moved");
     this.state = "starting";
     this.channelId = channelId;
@@ -76,15 +72,23 @@ export class Player extends EventEmitter {
       throw e;
     }
     log.info(`player: joined voice ${channelId}`);
+    if (paused) {
+      this.state = "paused";
+      this.emitEvent("paused");
+      return this.status();
+    }
+    this.startStream();
+    this.emitEvent("on");
+    return this.status();
+  }
 
-    // The first show starts encoding right away (it just buffers), while the jingle
-    // plays; then a short pause so Discord's own "went live" sound doesn't step on it.
+  // Start Go Live with whatever is on right now.
+  startStream() {
     const feed = new Feed();
     const abort = new AbortController();
-    // t0: the wall-clock time the stream's first frame plays. Estimated now (jingle,
-    // pause, Go Live setup), corrected when the stream really starts.
-    const preroll = (this.jingle() ? this.jingleMs + config.entrance.tv_join_pause_seconds * 1000 : 0) + 2000;
-    const session = { feed, abort, skippedBreaks: new Set(), t0: Date.now() + preroll };
+    // t0: the wall-clock time the stream's first frame plays (Go Live takes a moment to
+    // set up); corrected when the stream really starts.
+    const session = { feed, abort, skippedBreaks: new Set(), t0: Date.now() + 2000 };
     this.session = session;
     this.state = "on";
     feed.on("closed", () => session === this.session && this.leave("stream stopped"));
@@ -92,25 +96,40 @@ export class Player extends EventEmitter {
       log.error("player: playback loop crashed:", e);
       if (session === this.session) this.leave("error");
     });
-    this.emitEvent("on");
-
-    (async () => {
-      if (this.jingle()) {
-        await this.mic(this.jingle());
-        await sleep(config.entrance.tv_join_pause_seconds * 1000);
-      }
-      if (session !== this.session) return;
-      session.t0 = Date.now() + 1000;
-      await playStream(feed.output, this.streamer, { type: "go-live" }, abort.signal);
-    })()
+    session.t0 = Date.now() + 1000;
+    playStream(feed.output, this.streamer, { type: "go-live" }, abort.signal)
       .catch((e) => !abort.signal.aborted && log.warn(`player: stream ended: ${e.message}`))
       .finally(() => session === this.session && this.leave("stream stopped"));
+  }
+
+  // Stop Go Live but stay in the voice channel.
+  stopStream() {
+    const s = this.session;
+    this.session = null;
+    this.now = null;
+    s?.abort.abort();
+    s?.feed.close();
+    try { this.streamer.stopStream(); } catch { /* already stopped */ }
+  }
+
+  // Emergency pause: picture and sound stop at once; the TV stays in the channel.
+  pause() {
+    if (this.state !== "on") return this.status();
+    this.stopStream();
+    this.state = "paused";
+    log.info("player: paused");
+    this.emitEvent("paused");
+    if (this.restartPending) this.restartNow(); // nothing to interrupt while paused
     return this.status();
   }
 
-  jingle() {
-    const f = config.entrance.tv_join_sound;
-    return f && existsSync(f) ? f : null;
+  // Back on: live TV, so it picks up whatever is on now.
+  resume() {
+    if (this.state !== "paused") return this.status();
+    log.info("player: resumed");
+    this.startStream();
+    this.emitEvent("on");
+    return this.status();
   }
 
   async run(session) {
@@ -127,6 +146,8 @@ export class Player extends EventEmitter {
         inBreak = null;
       }
       if (seg.breakId && !inBreak) {
+        // A restart was asked for: use this commercial break for it instead of ads.
+        if (this.restartPending) return this.restartNow();
         inBreak = seg.breakId;
         this.emitEvent("break-start", { breakId: inBreak });
       }
@@ -158,29 +179,39 @@ export class Player extends EventEmitter {
 
   async leave(reason) {
     if (this.state === "off") return this.status();
-    const s = this.session;
-    this.session = null;
+    this.stopStream();
     this.state = "off";
     const channelId = this.channelId;
     this.channelId = null;
-    this.now = null;
-    s?.abort.abort();
-    s?.feed.close();
-    try { this.streamer.stopStream(); } catch { /* already stopped */ }
     try { this.streamer.leaveVoice(); } catch { /* already gone */ }
     log.info(`player: left voice (${reason})`);
     this.emitEvent("off", { reason, channelId });
-    if (this.restartWhenOff) this.restartNow();
+    if (this.restartPending) this.restartNow();
     return this.status();
   }
 
-  // Exit; the service manager starts a fresh copy about 10 seconds later.
+  // Exit; the service manager starts a fresh copy about 10 seconds later, which goes
+  // back into the same channel (see resumeAfterRestart).
   restartNow() {
+    if (this.state !== "off" && this.channelId) {
+      writeFileSync(RESUME_FILE, JSON.stringify({ channelId: this.channelId, paused: this.state === "paused", at: Date.now() }));
+      this.emitEvent("restarting");
+    }
     log.info("player: restarting to load new code/settings");
     setTimeout(() => process.exit(0), 500);
   }
 
-  // Sounds over the mic, one at a time. Resolves when this one has finished.
+  async resumeAfterRestart() {
+    if (!existsSync(RESUME_FILE)) return;
+    let r;
+    try { r = JSON.parse(readFileSync(RESUME_FILE, "utf8")); } catch { /* unreadable: ignore */ }
+    rmSync(RESUME_FILE, { force: true });
+    if (!r?.channelId || Date.now() - r.at > 3 * 60000) return;
+    log.info(`player: back after a restart; rejoining ${r.channelId}`);
+    await this.join(r.channelId, { paused: r.paused }).catch((e) => log.warn(`player: couldn't rejoin: ${e.message}`));
+  }
+
+  // Sounds over the mic (entrance sounds), one at a time.
   mic(file) {
     this.micQueue = this.micQueue
       .then(() => playMic(this.streamer, file))
@@ -190,21 +221,22 @@ export class Player extends EventEmitter {
 
   onVoiceState(before, after) {
     const me = this.streamer.client.user.id;
-    if (this.state === "off") return;
+    const inVoice = this.state === "on" || this.state === "paused";
+    if (!inVoice) return;
     // Kicked, disconnected, or dragged to another channel: stop cleanly.
     if (after.id === me) {
-      if (after.channelId !== this.channelId && this.state === "on") this.leave(after.channelId ? "moved by someone" : "disconnected");
+      if (after.channelId !== this.channelId) this.leave(after.channelId ? "moved by someone" : "disconnected");
       return;
     }
     // Someone arrived: play their entrance sound if they have one.
-    if (after.channelId === this.channelId && before.channelId !== this.channelId && this.state === "on") {
+    if (after.channelId === this.channelId && before.channelId !== this.channelId) {
       const f = existsSync(ENTRANCE_DIR) && readdirSync(ENTRANCE_DIR).find((n) => n.startsWith(`${after.id}.`) && !n.endsWith(".tmp"));
       if (f) this.mic(join(ENTRANCE_DIR, f));
     }
   }
 
   checkIdle() {
-    if (this.state !== "on") return;
+    if (this.state !== "on" && this.state !== "paused") return;
     const ch = this.streamer.client.channels.cache.get(this.channelId);
     const me = this.streamer.client.user.id;
     const people = ch?.members?.filter((m) => m.id !== me && !m.user.bot).size ?? 1;
@@ -228,13 +260,16 @@ export class Player extends EventEmitter {
       "GET /status": () => this.status(),
       "POST /join": (b) => this.join(String(b.channelId)),
       "POST /leave": () => this.leave("turned off"),
+      "POST /pause": () => this.pause(),
+      "POST /resume": () => this.resume(),
       "POST /skip-break": (b) => ({ skipped: this.skipBreak(b.breakId) }),
       "POST /skip-item": () => ({ skipped: this.skipItem() }),
-      // Load new code/settings. Never cuts off the stream: waits until the TV is off.
+      // Load new code/settings: right away if off or paused, otherwise at the next
+      // commercial break (the TV comes back to the same channel by itself).
       "POST /restart": () => {
-        this.restartWhenOff = true;
-        if (this.state === "off") this.restartNow();
-        return { restarting: this.state === "off" ? "now" : "when the TV is turned off" };
+        this.restartPending = true;
+        if (this.state === "off" || this.state === "paused") this.restartNow();
+        return { restarting: this.state === "on" ? "at the next commercial break" : "now" };
       },
     };
 

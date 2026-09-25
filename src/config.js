@@ -25,7 +25,7 @@ const DEFAULTS = {
   language: { audio: "eng", subtitles: "eng", hardsubbed_shows: [] },
   local: { shows: "", movies: "", clips: "", commercials: "" },
   encode: { height: 720, frame_rate: 30, bitrate_kbps: 2500, max_bitrate_kbps: 4000, encoder: "software" },
-  entrance: { max_seconds: 8, loudness_lufs: -28, tv_join_sound: "", tv_join_pause_seconds: 1.5 },
+  entrance: { max_seconds: 8, loudness_lufs: -32 },
   player: { port: 7651 },
   claude: { model: "claude-sonnet-5" },
 };

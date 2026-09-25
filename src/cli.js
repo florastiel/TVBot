@@ -75,7 +75,7 @@ Object.assign(commands, {
     if (which === "all" || which === "player") {
       const { callPlayer } = await import("./local.js");
       const r = await callPlayer("/restart", {});
-      console.log(`player: restarts ${r.restarting}`);
+      console.log(`player: restarts ${r.restarting}${r.restarting === "now" ? "" : " (the TV comes back to the same channel by itself)"}`);
     }
   },
 
@@ -127,7 +127,7 @@ if (!commands[cmd]) {
   schedule [days] [--replace]  program the schedule with Claude (default 7 days)
   guide                        print what's on today
   playlist --clear             drop the test playlist; the TV follows the schedule
-  restart [player|bot]         load new code/settings (player waits until the TV is off)`);
+  restart [player|bot]         load new code/settings (player: at the next commercial break)`);
   process.exit(cmd === "help" ? 0 : 1);
 }
 await commands[cmd](...args);

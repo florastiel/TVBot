@@ -1,6 +1,6 @@
 // Play a short sound through the streamer account's "microphone" (its voice
 // connection), so everyone in the channel hears it, not just stream viewers.
-// Used for the TV-time jingle and entrance sounds.
+// Used for entrance sounds.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";

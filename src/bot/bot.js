@@ -55,6 +55,8 @@ const ephemeral = { flags: MessageFlags.Ephemeral };
 const COMMANDS = [
   new SlashCommandBuilder().setName("tv").setDescription("Turn on the TV in the voice channel you're in"),
   new SlashCommandBuilder().setName("tvoff").setDescription("Turn off the TV"),
+  new SlashCommandBuilder().setName("tvpause").setDescription("Emergency pause: stop the picture and sound right now"),
+  new SlashCommandBuilder().setName("tvresume").setDescription("Turn the picture back on (picks up whatever is on now)"),
   new SlashCommandBuilder().setName("tvadmin").setDescription("TV admin controls")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((s) => s.setName("skip").setDescription("Skip whatever is playing (e.g. a broken file)"))
@@ -75,6 +77,10 @@ export async function startBot() {
   let playerStatus = { state: "off" };
   let breakMsg = null;
   let nowPlayingMsg = null; // only the latest one stays up
+  let pausedMsg = null;
+
+  const button = (id, text, style = ButtonStyle.Secondary) =>
+    new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(id).setLabel(text).setStyle(style));
 
   const remove = (m) => m?.delete().catch(() => {});
   const removeLater = (m, ms) => m && setTimeout(() => remove(m), ms).unref();
@@ -100,7 +106,7 @@ export async function startBot() {
     const ch = await client.channels.fetch(config.discord.now_playing_channel_id).catch(() => null);
     if (!ch?.isTextBased()) return;
     const msgs = await ch.messages.fetch({ limit: 100 });
-    const ours = msgs.filter((m) => m.author.id === client.user.id && /^(Now playing:|Commercial break|Commercials skipped by)/.test(m.content));
+    const ours = msgs.filter((m) => m.author.id === client.user.id && /^(Now playing:|Commercial break|Commercials skipped by|TV paused|TV restarting)/.test(m.content));
     for (const m of ours.values()) await remove(m);
     if (ours.size) log.info(`bot: cleaned up ${ours.size} old TV posts`);
   }
@@ -124,13 +130,25 @@ export async function startBot() {
     } else if (e.type === "off") {
       await clearBreakMsg();
       await remove(nowPlayingMsg);
-      nowPlayingMsg = null;
+      await remove(pausedMsg);
+      nowPlayingMsg = pausedMsg = null;
     } else if (e.type === "show") {
       const lines = [`Now playing: ${label(e.show)}`];
       if (e.upNext) lines.push(`Up next: ${label(e.upNext)}`);
       const old = nowPlayingMsg;
-      nowPlayingMsg = await post(config.discord.now_playing_channel_id, lines.join("\n"));
+      nowPlayingMsg = await post(config.discord.now_playing_channel_id, lines.join("\n"), { components: [button("tv:pause", "Pause")] });
       await remove(old);
+    } else if (e.type === "paused") {
+      await clearBreakMsg();
+      await remove(nowPlayingMsg);
+      nowPlayingMsg = null;
+      pausedMsg ??= await post(config.discord.now_playing_channel_id, "TV paused", { components: [button("tv:resume", "Resume", ButtonStyle.Primary)] });
+    } else if (e.type === "on") {
+      await remove(pausedMsg);
+      pausedMsg = null;
+    } else if (e.type === "restarting") {
+      await clearBreakMsg();
+      removeLater(await post(config.discord.now_playing_channel_id, "TV restarting, back in about 20 seconds (click Watch again when it's back)"), 90000);
     }
   }
 
@@ -160,6 +178,10 @@ export async function startBot() {
     }
   }
 
+  const inTvChannel = async (i) => {
+    const vc = await voiceOf(i);
+    return vc && vc === playerStatus.channelId;
+  };
   const isAdmin = (userId) => config.discord.admin_user_id && userId === String(config.discord.admin_user_id);
   const voiceOf = async (interaction) => {
     const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
@@ -183,6 +205,14 @@ export async function startBot() {
         if (target.id !== i.user.id && !isAdmin(i.user.id)) return i.reply({ content: "You can only clear your own entrance sound.", ...ephemeral });
         const had = clearEntrance(target.id);
         return i.reply({ content: had ? "Entrance sound removed." : "No entrance sound to remove.", ...ephemeral });
+      }
+      // Pause / resume: anyone watching in the TV's voice channel.
+      const pauseCmd = (i.isChatInputCommand() && i.commandName === "tvpause") || (i.isButton() && i.customId === "tv:pause");
+      const resumeCmd = (i.isChatInputCommand() && i.commandName === "tvresume") || (i.isButton() && i.customId === "tv:resume");
+      if (pauseCmd || resumeCmd) {
+        if (!(await inTvChannel(i))) return i.reply({ content: "Only people in the TV's voice channel can do that.", ...ephemeral });
+        await callPlayer(pauseCmd ? "/pause" : "/resume", {});
+        return i.reply({ content: pauseCmd ? "Paused." : "Back on.", ...ephemeral });
       }
       if (i.isChatInputCommand() && ["tv", "tvoff", "tvadmin"].includes(i.commandName)) {
         if (i.commandName === "tv") {
