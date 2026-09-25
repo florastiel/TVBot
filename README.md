@@ -66,6 +66,18 @@ Adapter" with an error). To enable it:
    Some older drivers only enable Quick Sync with a display attached; an HDMI dummy
    plug (~$8) fixes that if the test fails headless.
 
+## Planned extras (not built yet)
+
+- **Entrance sounds.** `/entrance` + an uploaded audio/video file; the bot keeps the
+  first 8 seconds (configurable), evens out the volume, and saves it per user.
+  `/entrance clear` removes yours; the admin can clear anyone's. When that person
+  joins the voice channel while the TV is on, the streamer account plays it over
+  its "microphone" so everyone in the channel hears it, not just stream viewers.
+  Needs a feasibility test (mic audio alongside Go Live) during step 3.
+- **English subtitles** burned into the picture when a file has them (nice-to-have).
+- **Mid-show commercial breaks** at the original ad-break points (blackdetect /
+  silencedetect), per the original plan's "later" list.
+
 ## Heads up
 
 Streaming from a user account ("selfbot") is against Discord's Terms of Service.
