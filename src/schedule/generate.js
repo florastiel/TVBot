@@ -83,7 +83,8 @@ export function nextInOrder(title, count, used, beforeMs) {
     LEFT JOIN tags t ON t.item_id = i.id
     WHERE i.show_title = ? AND b.start_at < ? AND COALESCE(t.holiday, 'none') = 'none'
     ORDER BY b.start_at DESC, bi.position DESC LIMIT 1`).get(title, beforeMs)?.id;
-  const start = last ? eps.findIndex((e) => e.id === last) + 1 : 0;
+  // Never aired before: jump in anywhere; from then on it continues in order.
+  const start = last ? eps.findIndex((e) => e.id === last) + 1 : Math.floor(Math.random() * eps.length);
   const out = [];
   for (let k = 0; k < eps.length && out.length < count; k++) {
     const e = eps[(start + k) % eps.length];

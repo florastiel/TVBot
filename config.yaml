@@ -35,7 +35,8 @@ shows:
 
 language:
   audio: eng                   # preferred audio language
-  subtitles: eng               # subtitles to show when the audio isn't in that language
+  subtitles: eng               # subtitle language
+  always_subtitles: true       # show subtitles whenever a file has them, even with English audio
   # Shows whose foreign-audio files have subtitles burned into the picture (no subtitle
   # track). Exact show title as Plex shows it. Otherwise those files are skipped.
   hardsubbed_shows: []

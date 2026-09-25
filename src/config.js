@@ -28,7 +28,7 @@ const DEFAULTS = {
   },
   plex: { server_name: "", libraries: [], include_unmatched: false, include_show_only_matches: true },
   shows: { random: [], never: [] },
-  language: { audio: "eng", subtitles: "eng", hardsubbed_shows: [] },
+  language: { audio: "eng", subtitles: "eng", always_subtitles: true, hardsubbed_shows: [] },
   local: { shows: "", movies: "", clips: "", commercials: "" },
   encode: { height: 720, frame_rate: 30, bitrate_kbps: 2500, max_bitrate_kbps: 4000, encoder: "software" },
   entrance: { max_seconds: 8, loudness_lufs: -32 },
