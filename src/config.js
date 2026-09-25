@@ -24,6 +24,7 @@ const DEFAULTS = {
   local: { shows: "", movies: "", clips: "", commercials: "" },
   encode: { height: 720, frame_rate: 30, bitrate_kbps: 2500, max_bitrate_kbps: 4000, encoder: "software" },
   entrance: { max_seconds: 8, tv_join_sound: "" },
+  player: { port: 7651 },
   claude: { model: "claude-sonnet-5" },
 };
 

@@ -3,9 +3,9 @@
 # Secrets (tokens, API key) do NOT go here; they live in .env.
 
 discord:
-  guild_id: ""                 # your server (right-click server > Copy ID)
+  guild_id: ""   # your server (right-click server > Copy ID)
   now_playing_channel_id: ""   # text channel for "now playing" posts
-  admin_user_id: ""            # you; can skip shows, force sync, regenerate schedule
+  admin_user_id: ""   # you; can skip shows, force sync, regenerate schedule
 
 broadcast:
   timezone: America/New_York
@@ -45,6 +45,9 @@ encode:
 entrance:
   max_seconds: 8               # uploads are trimmed to this
   tv_join_sound: C:\Users\tyler\Downloads\mr-tenna-says-its-tv-time.mp3
+
+player:
+  port: 7651                   # local-only port the bot uses to talk to the player
 
 claude:
   model: claude-sonnet-5       # used for tagging and weekly scheduling

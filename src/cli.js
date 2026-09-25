@@ -2,6 +2,8 @@
 import { getDb, getMeta } from "./db.js";
 import { runSync } from "./catalog/index.js";
 import { schedulableSql } from "./catalog/schedulable.js";
+import { savePlaylist } from "./player/program.js";
+import { describe } from "./player/segments.js";
 
 const commands = {
   async sync() {
@@ -28,9 +30,45 @@ const commands = {
   },
 };
 
+Object.assign(commands, {
+  async player() {
+    const { Player } = await import("./player/player.js");
+    await new Player().start();
+  },
+
+  async bot() {
+    const { startBot } = await import("./bot/bot.js");
+    await startBot();
+  },
+
+  // Test playlist for the player until the real schedule exists (step 5).
+  async playlist(show, count = "3") {
+    if (!show) throw new Error('usage: tv.cmd playlist "<show name>" [episodes]');
+    const rows = getDb().prepare(`SELECT * FROM items WHERE show_title = ? COLLATE NOCASE AND ${schedulableSql()}
+      ORDER BY season, episode`).all(show);
+    if (!rows.length) {
+      const like = getDb().prepare(`SELECT DISTINCT show_title FROM items WHERE show_title LIKE ? AND ${schedulableSql()} LIMIT 10`)
+        .all(`%${show}%`).map((r) => r.show_title);
+      throw new Error(`no schedulable episodes of "${show}"${like.length ? `. Did you mean: ${like.join(" / ")}` : ""}`);
+    }
+    const start = Math.floor(Math.random() * Math.max(1, rows.length - Number(count)));
+    const pick = rows.slice(start, start + Number(count));
+    savePlaylist(pick.map((r) => r.id));
+    for (const r of pick) {
+      const d = describe(r);
+      console.log(`${d.title} ${d.subtitle}  (${Math.round(r.duration_ms / 60000)} min)`);
+    }
+  },
+});
+
 const [cmd = "help", ...args] = process.argv.slice(2);
 if (!commands[cmd]) {
-  console.log("commands:\n  sync    pull the catalog from Plex + local folders, import tags.csv files\n  stats   show what's in the catalog");
+  console.log(`commands:
+  sync                         pull the catalog from Plex + local folders, import tags.csv files
+  stats                        show what's in the catalog
+  player                       run the streamer (the throwaway account)
+  bot                          run the remote-control bot
+  playlist "<show>" [count]    set the test playlist to a few episodes of a show`);
   process.exit(cmd === "help" ? 0 : 1);
 }
 await commands[cmd](...args);
