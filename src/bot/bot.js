@@ -20,7 +20,7 @@ import { scheduledUntil } from "../schedule/store.js";
 import { guideText } from "../schedule/guide.js";
 import { runTagging } from "../tagging/tagger.js";
 import { getMeta, getDb } from "../db.js";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "../config.js";
 
@@ -304,6 +304,7 @@ export async function startBot() {
     if (!config.discord.now_playing_channel_id) log.warn("bot: discord.now_playing_channel_id not set; no now-playing posts");
     if (!config.discord.admin_user_id) log.warn("bot: discord.admin_user_id not set; /tvadmin is locked");
     await registerCommands().catch((e) => log.error("bot: couldn't register commands:", e.message));
+    try { writeFileSync(join(DATA_DIR, "app-id.txt"), client.application.id); } catch { /* presence just shows less */ }
     await cleanUpOldPosts().catch((e) => log.warn(`bot: cleanup failed: ${e.message}`));
     followPlayer();
     // Keep the catalog, tags and schedule topped up. Hourly check; cheap when nothing's due.

@@ -163,6 +163,7 @@ export class ScheduleProgram {
       yield {
         ...toSegment(p.row, this.plex, { seekMs }),
         durationMs: p.to, // play up to the end of this piece
+        fullDurationMs: p.row.duration_ms, // for the rich presence progress bar
         continuation: p.from > 0 && i !== start, // back from a break inside the same show: no new "now playing"
         upNext: up ? toSegment(up, this.plex) : null,
       };

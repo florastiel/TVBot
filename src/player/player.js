@@ -3,6 +3,7 @@
 import http from "node:http";
 import { EventEmitter } from "node:events";
 import { existsSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { RichPresence } from "./presence.js";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Client } from "@lng2004/discord.js-selfbot-v13";
@@ -43,6 +44,7 @@ export class Player extends EventEmitter {
     await this.streamer.client.login(secrets.streamerToken);
     log.info(`player: logged in as ${this.streamer.client.user.tag}`);
     this.streamer.client.on("voiceStateUpdate", (before, after) => this.onVoiceState(before, after));
+    this.presence = new RichPresence(this.streamer.client);
     setInterval(() => this.checkIdle(), 30000).unref();
     cleanSpool();
     this.serve();
@@ -127,6 +129,7 @@ export class Player extends EventEmitter {
     s.feed.skip();
     log.info("player: paused");
     this.emitEvent("paused");
+    this.presence.paused();
     if (this.restartPending) this.restartNow(); // nothing to interrupt while paused
     return this.status();
   }
@@ -185,10 +188,12 @@ export class Player extends EventEmitter {
         if (this.restartPending) return this.restartNow();
         inBreak = seg.breakId;
         this.emitEvent("break-start", { breakId: inBreak });
+        this.presence.commercials();
       }
       this.now = seg;
       const isShow = seg.kind === "episode" || seg.kind === "movie";
       if (isShow && !seg.continuation) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext) });
+      if (isShow) this.presence.show(seg);
       log.info(`player: ${seg.breakId ? "break" : "now"}: ${seg.title} ${seg.subtitle || ""}`.trim());
 
       const startedAt = clock();
@@ -228,6 +233,7 @@ export class Player extends EventEmitter {
     this.channelId = null;
     try { this.streamer.leaveVoice(); } catch { /* already gone */ }
     log.info(`player: left voice (${reason})`);
+    this.presence.clear();
     this.emitEvent("off", { reason, channelId });
     if (this.restartPending) this.restartNow();
     return this.status();
