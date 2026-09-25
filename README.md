@@ -81,7 +81,7 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 | `/entrance set` + file | anyone | your join sound (first 8 s, volume evened out) |
 | `/entrance clear` | anyone (admin: anyone's) | remove a join sound |
 | Skip commercials button (on the break message in the posting channel) | people in the TV's voice channel | ends the current break |
-| `/tvadmin skip` | admin | drop the rest of the current show or movie (also from the schedule); other shows fill the time it leaves, not ads |
+| `/tvadmin skip` | admin | drop the rest of the current show or movie (also from the schedule); the rest of the day moves up (see *Skipping*) |
 | `/tvadmin sync` | admin | re-read the catalog now |
 | `/tvadmin regen` | admin | throw away the upcoming schedule and program a new week (specials stay) |
 | `/tvadmin add` + kind + links | admin | download commercials/clips from YouTube (etc.) straight into rotation |
@@ -144,6 +144,9 @@ foreign-audio items need them to be scheduled at all.
 - shows: `shows\<Show Name>\...\Show.Name.S01E02.Episode.Title.mkv`
 - movies: `movies\Movie Title (1994).mkv`
 - commercials / clips: anything, subfolders fine
+- shorts: `shorts\<Series>\Series S01E02.mkv`. Short shows (2–15 min, e.g. short anime)
+  that are never scheduled on their own; they fill the odd minutes after a skip (below).
+  Run `tv.cmd sync` (or wait for the weekly one) after adding files.
 
 **Tagging commercials and clips** is by hand: each of those folders gets a
 `tags.csv`. Sync adds a blank row for new files; fill in `decade` (90s, 1990s, 1994
@@ -190,6 +193,15 @@ be and starts that show at the right point. A block's ad time is spread evenly a
 the breaks after each show (clips count as commercials; whole files, so a break can
 run a few seconds long). If a break is skipped, the next show starts early and the
 last break makes up the difference; a plain "Up next" card covers any last seconds.
+
+**Skipping** (`/tvadmin skip`) drops the rest of the show or movie and takes it off the
+schedule. The rest of the day then moves up by whole quarter hours, so the next block
+starts as soon as possible (the guide times change with it; the bot plans the next day
+correspondingly sooner). Specials keep their announced time: the move stops there. The
+odd minutes that can't move get, in order: an episode of a show with nothing scheduled
+later if one fits (in-order shows continue where they left off), then shorts from the
+shorts folder (each series in order, no repeats within 2 days), then a couple of
+minutes of ads. Whatever fills in is saved into the schedule, so it counts as aired.
 
 ## Optional: turning on Quick Sync
 

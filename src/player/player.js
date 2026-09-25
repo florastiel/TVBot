@@ -193,7 +193,7 @@ export class Player extends EventEmitter {
         this.presence.commercials({ endsAt, nextTitle: seg.nextTitle });
       }
       this.now = seg;
-      const isShow = seg.kind === "episode" || seg.kind === "movie";
+      const isShow = seg.kind === "episode" || seg.kind === "movie" || seg.kind === "short";
       if (isShow) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext) });
       if (isShow) this.presence.show(seg);
       log.info(`player: ${seg.breakId ? "break" : "now"}: ${seg.title} ${seg.subtitle || ""}`.trim());
@@ -229,7 +229,7 @@ export class Player extends EventEmitter {
     const s = this.session;
     if (!s) return false;
     const seg = this.now;
-    if (seg && (seg.kind === "episode" || seg.kind === "movie")) {
+    if (seg && (seg.kind === "episode" || seg.kind === "movie" || seg.kind === "short")) {
       s.program?.skipItem?.(seg.itemId);
       if (seg.blockId) removeFromBlock(seg.blockId, seg.itemId);
       log.info(`player: skipped ${seg.title} ${seg.subtitle || ""}`.trim());

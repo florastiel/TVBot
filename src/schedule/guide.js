@@ -9,8 +9,9 @@ function titles(items) {
   for (const r of items) {
     const last = out.at(-1);
     if (r.kind === "movie") out.push({ text: `${r.title}${r.year ? ` (${r.year})` : ""}` });
-    else if (last?.show === r.show_title) last.eps.push(`S${r.season ?? "?"}E${r.episode ?? "?"}`);
-    else out.push({ show: r.show_title, eps: [`S${r.season ?? "?"}E${r.episode ?? "?"}`] });
+    else if (r.season == null || r.episode == null) out.push({ text: r.show_title && r.show_title !== r.title ? `${r.show_title}: ${r.title}` : r.title });
+    else if (last?.show === r.show_title) last.eps.push(`S${r.season}E${r.episode}`);
+    else out.push({ show: r.show_title, eps: [`S${r.season}E${r.episode}`] });
   }
   return out.map((t) => t.text ?? `${t.show} (${t.eps.join(", ")})`).join(", ");
 }

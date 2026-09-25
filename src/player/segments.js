@@ -7,7 +7,7 @@ import { SUBS_DIR } from "../catalog/plexSync.js";
 import { spooledPath } from "./spool.js";
 
 export function describe(row) {
-  if (row.kind === "episode") {
+  if (row.kind === "episode" || row.kind === "short") {
     const se = row.season != null && row.episode != null ? ` S${row.season}E${row.episode}` : "";
     return { title: row.show_title || row.title, subtitle: `${se.trim()}${row.title && row.title !== row.show_title ? ` "${row.title}"` : ""}`.trim() };
   }

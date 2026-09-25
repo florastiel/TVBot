@@ -29,7 +29,7 @@ const DEFAULTS = {
   plex: { server_name: "", libraries: [], include_unmatched: false, include_show_only_matches: true },
   shows: { random: [], never: [] },
   language: { audio: "eng", subtitles: "eng", always_subtitles: true, hardsubbed_shows: [] },
-  local: { shows: "", movies: "", clips: "", commercials: "" },
+  local: { shows: "", movies: "", clips: "", commercials: "", shorts: "" },
   encode: { height: 720, frame_rate: 30, bitrate_kbps: 2500, max_bitrate_kbps: 4000, encoder: "software", hw_decode: false },
   entrance: { max_seconds: 8, loudness_lufs: -32 },
   player: { port: 7651, spool_max_gb: 30, spool_max_mbps: 20, spool_max_file_gb: 8 },

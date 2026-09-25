@@ -8,11 +8,11 @@ import { join } from "node:path";
 import { DATA_DIR, config } from "../config.js";
 import { getItem, toSegment, makeBreak, fillBreak, card } from "./segments.js";
 import { wantSpool } from "./spool.js";
-import { blockAt, nextBlockAfter, blocksBetween, usedIds, appendToBlock } from "../schedule/store.js";
+import { blockAt, nextBlockAfter, blocksBetween, usedIds, appendToBlock, shiftEarlier } from "../schedule/store.js";
 import { inOrder, nextInOrder } from "../schedule/generate.js";
 import { getDb } from "../db.js";
 import { schedulableSql } from "../catalog/schedulable.js";
-import { localTime } from "../schedule/time.js";
+import { localTime, gridCeil, gridMs } from "../schedule/time.js";
 
 export const PLAYLIST_FILE = join(DATA_DIR, "playlist.json");
 
@@ -181,17 +181,23 @@ export class ScheduleProgram {
         upNext: up ? toSegment(up, this.plex) : null,
       };
       if (this.live) return null;
-      if (i < pieces.length - 1) {
+      const remaining = pieces.slice(i + 1).filter((q) => !this.skipped.has(q.row.id));
+      const rest = remaining.reduce((n, q) => n + len(q), 0);
+      // Just skipped: the rest of the day moves up now, keeping only what the rest of
+      // this block needs (its shows plus the minimum ads).
+      if (this.skipped.has(p.row.id)) this.pullUp(block, rest / (1 - config.broadcast.min_ad_minutes_per_hour / 60));
+      if (remaining.length) {
         // Share whatever time is left over equally between the remaining breaks, so the
         // next block still starts on time even if a break was skipped or ran long.
-        const rest = pieces.slice(i + 1).reduce((n, q) => n + len(q), 0);
-        const budgetMs = (block.end_at - this.clock() - rest) / (pieces.length - 1 - i + 1);
-        if (budgetMs > 3000) yield* before(makeBreak(this.plex, { theme: block.theme, budgetMs }), pieces[i + 1].row);
+        const budgetMs = (block.end_at - this.clock() - rest) / (remaining.length + 1);
+        if (budgetMs > 3000) yield* before(makeBreak(this.plex, { theme: block.theme, budgetMs }), remaining[0].row);
         if (this.live) return null;
       }
     }
 
-    // A long gap (a skipped movie, a removed item) gets episodes, not an hour of ads.
+    // Content ran out early (a skip): the rest of the day moves up by whole grid steps,
+    // so the next block starts sooner. Whatever can't move gets shows, not ads.
+    this.pullUp(block);
     yield* this.fillWithShows(block);
     if (this.live) return null;
 
@@ -204,25 +210,58 @@ export class ScheduleProgram {
     return this.clock() > block.end_at + 30000 && nextBlock?.start_at === block.end_at ? nextBlock : null;
   }
 
-  // Episodes until the gap to the block's end is no more than one break long, with
-  // short breaks in between. Only shows with nothing scheduled later (so nothing airs
-  // twice); in-order shows continue where they left off. Shows from this block first.
-  // Each one is saved into the block as it starts.
+  pullUp(block, needMs = 0) {
+    const end = gridCeil(this.clock() + needMs + 60000);
+    const by = block.end_at - end;
+    if (by < gridMs()) return;
+    if (shiftEarlier(block.id, block.end_at, by)) block.end_at = end;
+  }
+
+  // Fills the rest of the block: episodes while a whole one fits (only shows with
+  // nothing scheduled later, so nothing airs twice; in-order shows continue where they
+  // left off; this block's shows first), then shorts (the shorts folder), leaving a
+  // couple of minutes for ads. Each one is saved into the block as it starts.
   *fillWithShows(block) {
     const maxBreak = config.broadcast.max_break_minutes * 60000;
     const minute = 60000;
+    const adsAtEnd = 3 * minute;
     for (;;) {
       const left = block.end_at - this.clock();
-      if (left <= maxBreak + minute) return;
-      const row = this.fillerEpisode(block, left - minute);
+      const row = (left > maxBreak + minute && this.fillerEpisode(block, left - minute))
+        || (left > adsAtEnd && this.fillerShort(left - minute));
       if (!row) return;
       appendToBlock(block.id, row.id);
       yield { ...toSegment(row, this.plex), blockId: block.id, upNext: null };
       if (this.live) return;
-      const after = block.end_at - this.clock();
-      if (after > maxBreak + minute) yield* makeBreak(this.plex, { theme: block.theme, budgetMs: Math.min(2 * minute, after - maxBreak) });
+      const after = block.end_at - this.clock() - adsAtEnd;
+      const budgetMs = Math.min(row.kind === "short" ? 45000 : 2 * minute, after);
+      if (budgetMs > 15000) yield* makeBreak(this.plex, { theme: block.theme, budgetMs });
       if (this.live) return;
     }
+  }
+
+  // A short that fits: each series continues from its last aired one; nothing that
+  // aired in the last 2 days.
+  fillerShort(maxMs) {
+    const db = getDb();
+    const now = this.clock();
+    const recent = usedIds(now - 2 * 86400000, now + 86400000);
+    const all = db.prepare(`SELECT * FROM items i WHERE i.kind = 'short' AND ${schedulableSql("i")}
+      ORDER BY i.show_title, i.season IS NULL, i.season, i.episode IS NULL, i.episode, i.title`).all();
+    const series = (r) => r.show_title ?? r.title;
+    const last = new Map(db.prepare(`SELECT i.id, i.show_title, i.title FROM block_items bi JOIN blocks b ON b.id = bi.block_id
+      JOIN items i ON i.id = bi.item_id WHERE i.kind = 'short' ORDER BY b.start_at, bi.position`).all().map((r) => [series(r), r.id]));
+    const picks = [];
+    for (const [name, eps] of Map.groupBy(all, series)) {
+      const k = eps.findIndex((e) => e.id === last.get(name));
+      for (let j = 1; j <= eps.length; j++) {
+        const e = eps[(k + j) % eps.length];
+        if (recent.has(e.id) || this.skipped.has(e.id)) continue;
+        if (e.duration_ms && e.duration_ms <= maxMs) picks.push(e);
+        break;
+      }
+    }
+    return picks[Math.floor(Math.random() * picks.length)] || null;
   }
 
   fillerEpisode(block, maxMs) {

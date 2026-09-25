@@ -46,6 +46,7 @@ local:
   movies: D:\data\tv\movies          # Movie Title (1994).mkv
   clips: D:\data\tv\clips            # tag in clips\tags.csv
   commercials: D:\data\tv\commercials  # tag in commercials\tags.csv
+  shorts: D:\data\tv\shorts        # <Series>\Series S01E02.mkv; short (2-15 min) shows that fill gaps after a skip
 
 encode:
   height: 720

@@ -9,7 +9,7 @@ import { chooseTracks, fromFfprobeStreams } from "./tracks.js";
 
 const run = promisify(execFile);
 const VIDEO = new Set([".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts", ".webm", ".flv"]);
-const FOLDERS = { shows: "episode", movies: "movie", clips: "clip", commercials: "commercial" };
+const FOLDERS = { shows: "episode", movies: "movie", clips: "clip", commercials: "commercial", shorts: "short" };
 
 function walk(dir) {
   const out = [];
@@ -27,7 +27,7 @@ const tidy = (s) => s.replace(/[._]+/g, " ").replace(/\s+/g, " ").trim();
 export function parsePath(kind, root, file) {
   const rel = relative(root, file);
   const name = basename(file, extname(file));
-  if (kind === "episode") {
+  if (kind === "episode" || kind === "short") {
     const show = rel.split(sep).length > 1 ? rel.split(sep)[0] : null;
     const m = name.match(/[Ss](\d{1,2})[ ._-]*[Ee](\d{1,3})|(\d{1,2})x(\d{2,3})/);
     const season = m ? Number(m[1] ?? m[3]) : null;

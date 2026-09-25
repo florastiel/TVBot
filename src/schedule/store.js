@@ -48,6 +48,24 @@ export function appendToBlock(blockId, itemId) {
   db.prepare("INSERT INTO block_items (block_id, position, item_id) VALUES (?, ?, ?)").run(blockId, pos, itemId);
 }
 
+// A skip freed time in block `blockId` (ending at endAt): it now ends `by` ms earlier
+// and the blocks after it move up by the same amount. Stops at a special (it keeps its
+// announced time; the block just before it keeps its end, and shows fill the spare
+// time) or at a gap. Returns false if nothing could move.
+export function shiftEarlier(blockId, endAt, by) {
+  return tx((db) => {
+    const at = db.prepare("SELECT * FROM blocks WHERE start_at = ? ORDER BY id LIMIT 1");
+    const run = [];
+    for (let t = endAt, b; (b = at.get(t)) && b.source !== "special"; t = b.end_at) run.push(b);
+    if (!run.length) return false;
+    const special = at.get(run.at(-1).end_at)?.source === "special";
+    db.prepare("UPDATE blocks SET end_at = ? WHERE id = ?").run(endAt - by, blockId);
+    const set = db.prepare("UPDATE blocks SET start_at = ?, end_at = ? WHERE id = ?");
+    run.forEach((b, i) => set.run(b.start_at - by, special && i === run.length - 1 ? b.end_at : b.end_at - by, b.id));
+    return true;
+  });
+}
+
 // How far the schedule runs without a gap, starting now. (A special planned for next
 // week doesn't count as "the schedule is planned until next week".)
 export function scheduledUntil(fromMs = Date.now()) {
