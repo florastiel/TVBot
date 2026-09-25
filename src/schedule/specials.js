@@ -8,7 +8,7 @@ import { config, secrets } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
 import { schedulableSql } from "../catalog/schedulable.js";
-import { blockLength, generateSchedule, nextInOrder } from "./generate.js";
+import { blockLength, generateSchedule, nextInOrder, inOrder } from "./generate.js";
 import { localDay, localTime, localToUtc, gridMs } from "./time.js";
 import { saveBlocks, usedIds, scheduledUntil } from "./store.js";
 import { withScheduleLock } from "./lock.js";
@@ -134,7 +134,7 @@ function expand(sp, cat, used, { fromMs, toMs }) {
     } else if (it.show) {
       if (!cat.shows.has(it.show)) { problems.push(`${name}: there's no show called "${it.show}" in the catalog.`); continue; }
       const want = Math.max(1, it.episodes);
-      const eps = (config.shows?.in_order || []).includes(it.show)
+      const eps = inOrder(it.show)
         ? nextInOrder(it.show, want, used, Date.now())
         : db.prepare(`SELECT * FROM items i WHERE i.kind = 'episode' AND i.show_title = ? AND ${schedulableSql("i")} ORDER BY random()`)
           .all(it.show).filter((e) => !used.has(e.id)).slice(0, want);

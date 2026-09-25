@@ -27,7 +27,7 @@ const DEFAULTS = {
     idle_leave_minutes: 5,
   },
   plex: { server_name: "", libraries: [], include_unmatched: false, include_show_only_matches: true },
-  shows: { in_order: [], never: [] },
+  shows: { random: [], never: [] },
   language: { audio: "eng", subtitles: "eng", hardsubbed_shows: [] },
   local: { shows: "", movies: "", clips: "", commercials: "" },
   encode: { height: 720, frame_rate: 30, bitrate_kbps: 2500, max_bitrate_kbps: 4000, encoder: "software" },

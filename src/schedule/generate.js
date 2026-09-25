@@ -51,7 +51,7 @@ Rules:
 - A block holds items that go together (same show, or shows with a similar feel), in a sensible order. Mix it up; don't run the same show all day.
 - A movie always gets a block to itself. Blocks of episodes run at most ${config.broadcast.max_show_block_minutes} minutes (commercials included), so about three half-hour episodes or one or two hour-long ones.
 - Regular blocks are not marathons: don't use "Marathon" in labels (marathons are separate specials).
-- Only use ids from the menu, and each id at most once. Episodes don't have to air in order (reruns, like real TV).
+- Only use ids from the menu, and each id at most once. Use a show's episodes in the order listed, unless the show is marked "any order".
 - label: a short plain description of the block in 1 to 3 words, like "Sitcoms", "Cartoons", "Halloween Specials", "Movie", "Late Night Anime". No puns, no punctuation, no emoji, no day names.
 - Kids and family shows fit mornings and afternoons; adult shows fit late evening and night. Put the strongest material in the evening.`;
 
@@ -68,7 +68,8 @@ function describeShow(s) {
     .filter(Boolean).join(", ");
 }
 
-const inOrder = (title) => (config.shows?.in_order || []).includes(title);
+// Shows play their episodes in order unless listed under shows.random.
+export const inOrder = (title) => !(config.shows?.random || []).includes(title);
 
 // For shows set to air in order: the next `count` episodes after the last one that
 // aired before `beforeMs` (holiday episodes aired out of order don't count), wrapping
@@ -107,14 +108,14 @@ export function buildMenu(day, used) {
   const byShow = Map.groupBy(episodes.filter((e) => !used.has(e.id)), (e) => e.show_title);
   const shows = new Map(db.prepare("SELECT * FROM shows").all().map((s) => [s.title, s]));
 
-  lines.push("SHOWS (a random pick of episode ids, each with its length in minutes)");
+  lines.push("SHOWS (episode ids with their length in minutes; listed in airing order unless marked any order)");
   for (const [title, eps] of [...byShow].sort((a, b) => a[0].localeCompare(b[0]))) {
     const ordered = inOrder(title);
     const pick = ordered ? nextInOrder(title, EPISODES_PER_SHOW, used, day.startMs) : eps.slice(0, EPISODES_PER_SHOW);
     if (!pick.length) continue;
     pick.forEach((e) => allowed.set(e.id, e));
     if (ordered) order.set(title, pick.map((e) => e.id));
-    lines.push(`- ${title}${ordered ? " (in order: use these ids in this order)" : ""} | ${describeShow(shows.get(title))} | ${pick.map((e) => `${e.id} (${min1(e.duration_ms)})`).join(", ")}`);
+    lines.push(`- ${title}${ordered ? "" : " (any order)"} | ${describeShow(shows.get(title))} | ${pick.map((e) => `${e.id} (${min1(e.duration_ms)})`).join(", ")}`);
   }
 
   // Holiday material for the season: all of it is on the menu.

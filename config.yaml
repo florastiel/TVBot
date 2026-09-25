@@ -30,7 +30,7 @@ plex:
 
 shows:
   # Exact show titles as Plex shows them (tv.cmd stats / the TV guide).
-  in_order: []                 # these air their episodes in order (picking up where they left off); the rest are random
+  random: []                   # these play random episodes; every other show plays in order, picking up where it left off
   never: []                    # these never get scheduled
 
 language:

@@ -160,8 +160,9 @@ words, and no block's rounding leaves more than `max_ad_minutes_per_hour` of ads
 Problems go back to Claude (3 tries), then a simple code-built schedule is used.
 Roughly $0.25 per day of schedule with Sonnet 5.
 
-**Episode order.** Episodes air in random order, like reruns. Shows listed under
-`shows.in_order` in config.yaml air in order instead, picking up where they left off.
+**Episode order.** Shows air their episodes in order, picking up where they left off
+(and wrapping around after the finale). Shows listed under `shows.random` in
+config.yaml play random episodes instead, like reruns.
 Shows under `shows.never` are never scheduled.
 
 **Specials** (marathons, themed nights) take over the regular schedule for a few hours.
