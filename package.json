@@ -6,6 +6,7 @@
     "node": ">=22.4.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@dank074/discord-video-stream": "^7.0.0",
     "@lng2004/discord.js-selfbot-v13": "^3.7.2",
     "csv-parse": "^7.0.3",

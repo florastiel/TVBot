@@ -51,6 +51,28 @@ const MIGRATIONS = [
 
   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
   `,
+  `
+  -- Show-level facts and tags (mood, audience... are per show, not per episode).
+  CREATE TABLE shows (
+    title      TEXT PRIMARY KEY,
+    summary    TEXT,
+    year       INTEGER,
+    genres     TEXT,               -- JSON array
+    vibes      TEXT,               -- JSON array, e.g. ["goofy","cozy"]
+    audience   TEXT,               -- kids | family | teen | adult
+    kids       INTEGER,
+    animated   INTEGER,
+    anime      INTEGER,
+    origin     TEXT,               -- us | uk | canada | japan | korea | other
+    decade     INTEGER,
+    holiday    TEXT,               -- the whole show is a holiday special
+    tag_source TEXT,
+    tagged_at  TEXT
+  );
+  ALTER TABLE tags ADD COLUMN audience TEXT;
+  ALTER TABLE tags ADD COLUMN anime INTEGER;
+  ALTER TABLE tags ADD COLUMN origin TEXT;
+  `,
 ];
 
 let db;

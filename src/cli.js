@@ -41,6 +41,14 @@ Object.assign(commands, {
     await startBot();
   },
 
+  // Claude tagging. --dry: estimate only. --sample: tiny direct test, not saved. --redo: retag everything.
+  async tag(...flags) {
+    const t = await import("./tagging/tagger.js");
+    if (flags.includes("--dry")) return t.dryRun({ redo: flags.includes("--redo") });
+    if (flags.includes("--sample")) return t.sample();
+    await t.runTagging({ redo: flags.includes("--redo") });
+  },
+
   // Test playlist for the player until the real schedule exists (step 5).
   async playlist(show, count = "3") {
     if (!show) throw new Error('usage: tv.cmd playlist "<show name>" [episodes]');
@@ -68,7 +76,8 @@ if (!commands[cmd]) {
   stats                        show what's in the catalog
   player                       run the streamer (the throwaway account)
   bot                          run the remote-control bot
-  playlist "<show>" [count]    set the test playlist to a few episodes of a show`);
+  playlist "<show>" [count]    set the test playlist to a few episodes of a show
+  tag [--dry|--sample|--redo]  tag the catalog with Claude (only untagged items unless --redo)`);
   process.exit(cmd === "help" ? 0 : 1);
 }
 await commands[cmd](...args);

@@ -67,6 +67,10 @@ export async function syncPlex(plex) {
       air_date = excluded.air_date, match = excluded.match, media_path = excluded.media_path,
       video_height = excluded.video_height, source_updated = excluded.source_updated, present = 1`);
 
+  // Show-level facts for tagging. Tag columns are never touched here.
+  const upsertShow = db.prepare(`INSERT INTO shows (title, summary, year, genres) VALUES (?, ?, ?, ?)
+    ON CONFLICT (title) DO UPDATE SET summary = excluded.summary, year = excluded.year, genres = excluded.genres`);
+
   const seen = new Set();
   for (const section of sections) {
     const t0 = Date.now();
@@ -82,6 +86,9 @@ export async function syncPlex(plex) {
       continue;
     }
     tx(() => {
+      for (const s of shows.values()) {
+        upsertShow.run(s.title, s.summary || null, s.year ?? null, JSON.stringify((s.Genre || []).map((g) => g.tag)));
+      }
       for (const it of items) {
         const row = baseRow(it, section, shows.get(String(it.grandparentRatingKey)));
         upsert.run(row);

@@ -76,6 +76,10 @@ export async function scanLocal() {
         seen.add(f);
       }
     });
+    if (kind === "episode") {
+      db.exec(`INSERT OR IGNORE INTO shows (title) SELECT DISTINCT show_title FROM items
+        WHERE source = 'local' AND kind = 'episode' AND show_title IS NOT NULL`);
+    }
     log.info(`local: ${key}: ${files.length} files`);
   }
 
