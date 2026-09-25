@@ -54,12 +54,19 @@ function importFolder(kind, root) {
     }
   });
 
-  if (added) {
+  // Rows for files that are gone (the folder itself is here, so they were deleted).
+  const present = new Set(items.map((it) => relative(root, it.source_key).toLowerCase()));
+  const kept = rows.filter((r) => present.has(String(r.filename || "").trim().toLowerCase()));
+  const dropped = rows.length - kept.length;
+  rows.length = 0;
+  rows.push(...kept);
+
+  if (added || dropped) {
     rows.sort((a, b) => String(a.filename).localeCompare(String(b.filename)));
     try {
       // BOM so Excel reads accented filenames correctly.
       writeFileSync(file, "﻿" + stringify(rows, { header: true, columns: COLUMNS }));
-      log.info(`tags: added ${added} new ${kind} file(s) to ${file}`);
+      log.info(`tags: ${file}: ${added} new file(s) added, ${dropped} deleted file(s) removed`);
     } catch (e) {
       log.warn(`tags: couldn't update ${file} (${e.code}). Is it open in Excel? Close it and sync again.`);
     }
