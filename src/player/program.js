@@ -8,7 +8,10 @@ import { join } from "node:path";
 import { DATA_DIR, config } from "../config.js";
 import { getItem, toSegment, makeBreak, fillBreak, card } from "./segments.js";
 import { wantSpool } from "./spool.js";
-import { blockAt, nextBlockAfter, blocksBetween } from "../schedule/store.js";
+import { blockAt, nextBlockAfter, blocksBetween, usedIds, appendToBlock } from "../schedule/store.js";
+import { inOrder, nextInOrder } from "../schedule/generate.js";
+import { getDb } from "../db.js";
+import { schedulableSql } from "../catalog/schedulable.js";
 import { localTime } from "../schedule/time.js";
 
 export const PLAYLIST_FILE = join(DATA_DIR, "playlist.json");
@@ -79,6 +82,12 @@ export class ScheduleProgram {
   constructor(plex, clock) {
     this.plex = plex;
     this.clock = clock;
+    this.skipped = new Set(); // item ids skipped for good (their remaining pieces are dropped)
+  }
+
+  // Drop the rest of this show/movie; the time it leaves gets other episodes.
+  skipItem(itemId) {
+    this.skipped.add(itemId);
   }
 
   // Drop any delay: the next segment is whatever the schedule says is on now.
@@ -155,6 +164,7 @@ export class ScheduleProgram {
 
     for (let i = start; i < pieces.length; i++) {
       const p = pieces[i];
+      if (this.skipped.has(p.row.id)) continue;
       // Download ahead (in airing order) whatever airs in the next few hours and needs
       // it for subtitles, so even big movies are ready well before they start.
       const ahead = [...new Set(pieces.slice(i + 1).map((q) => q.row))];
@@ -167,6 +177,7 @@ export class ScheduleProgram {
         durationMs: p.to, // play up to the end of this piece
         fullDurationMs: p.row.duration_ms, // for the rich presence progress bar
         continuation: p.from > 0 && i !== start, // back from a break inside the same show: no new "now playing"
+        blockId: block.id,
         upNext: up ? toSegment(up, this.plex) : null,
       };
       if (this.live) return null;
@@ -180,6 +191,10 @@ export class ScheduleProgram {
       }
     }
 
+    // A long gap (a skipped movie, a removed item) gets episodes, not an hour of ads.
+    yield* this.fillWithShows(block);
+    if (this.live) return null;
+
     const left = block.end_at - this.clock();
     if (left > 1000) {
       const nextTitle = nextBlock?.items[0] ? toSegment(nextBlock.items[0], this.plex).title : null;
@@ -187,5 +202,47 @@ export class ScheduleProgram {
     }
     // Finished late (more than half a minute): the next block starts from its top.
     return this.clock() > block.end_at + 30000 && nextBlock?.start_at === block.end_at ? nextBlock : null;
+  }
+
+  // Episodes until the gap to the block's end is no more than one break long, with
+  // short breaks in between. Only shows with nothing scheduled later (so nothing airs
+  // twice); in-order shows continue where they left off. Shows from this block first.
+  // Each one is saved into the block as it starts.
+  *fillWithShows(block) {
+    const maxBreak = config.broadcast.max_break_minutes * 60000;
+    const minute = 60000;
+    for (;;) {
+      const left = block.end_at - this.clock();
+      if (left <= maxBreak + minute) return;
+      const row = this.fillerEpisode(block, left - minute);
+      if (!row) return;
+      appendToBlock(block.id, row.id);
+      yield { ...toSegment(row, this.plex), blockId: block.id, upNext: null };
+      if (this.live) return;
+      const after = block.end_at - this.clock();
+      if (after > maxBreak + minute) yield* makeBreak(this.plex, { theme: block.theme, budgetMs: Math.min(2 * minute, after - maxBreak) });
+      if (this.live) return;
+    }
+  }
+
+  fillerEpisode(block, maxMs) {
+    const db = getDb();
+    const now = this.clock();
+    const used = usedIds(now - config.broadcast.no_repeat_days * 86400000, now + 30 * 86400000);
+    const later = new Set(db.prepare(`SELECT DISTINCT i.show_title FROM block_items bi JOIN blocks b ON b.id = bi.block_id
+      JOIN items i ON i.id = bi.item_id WHERE b.start_at >= ? AND i.show_title IS NOT NULL`).all(block.end_at).map((r) => r.show_title));
+    const shows = db.prepare(`SELECT DISTINCT i.show_title FROM items i WHERE i.kind = 'episode' AND ${schedulableSql("i")}
+      AND i.duration_ms <= ?`).all(maxMs).map((r) => r.show_title).filter((t) => t && !later.has(t));
+    const mine = new Set(block.items.map((r) => r.show_title));
+    shows.sort(() => Math.random() - 0.5).sort((x, y) => mine.has(y) - mine.has(x));
+    for (const title of shows.slice(0, 40)) {
+      const eps = inOrder(title)
+        ? nextInOrder(title, 1, used, Number.MAX_SAFE_INTEGER)
+        : db.prepare(`SELECT * FROM items i WHERE i.kind = 'episode' AND i.show_title = ? AND ${schedulableSql("i")}
+            ORDER BY random() LIMIT 20`).all(title).filter((r) => !used.has(r.id));
+      const row = eps.find((r) => r.duration_ms <= maxMs && !this.skipped.has(r.id));
+      if (row) return row;
+    }
+    return null;
   }
 }

@@ -81,7 +81,7 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 | `/entrance set` + file | anyone | your join sound (first 8 s, volume evened out) |
 | `/entrance clear` | anyone (admin: anyone's) | remove a join sound |
 | Skip commercials button (on the break message in the posting channel) | people in the TV's voice channel | ends the current break |
-| `/tvadmin skip` | admin | skip whatever is playing (broken file) |
+| `/tvadmin skip` | admin | drop the rest of the current show or movie (also from the schedule); other shows fill the time it leaves, not ads |
 | `/tvadmin sync` | admin | re-read the catalog now |
 | `/tvadmin regen` | admin | throw away the upcoming schedule and program a new week (specials stay) |
 | `/tvadmin add` + kind + links | admin | download commercials/clips from YouTube (etc.) straight into rotation |

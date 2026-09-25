@@ -16,6 +16,7 @@ import { Feed } from "./feed.js";
 import { playMic } from "./mic.js";
 import { cleanSpool } from "./spool.js";
 import { makeProgram } from "./program.js";
+import { removeFromBlock } from "../schedule/store.js";
 import { card } from "./segments.js";
 
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
@@ -222,8 +223,18 @@ export class Player extends EventEmitter {
     return s.feed.skip();
   }
 
+  // Admin skip: drops the rest of the current show or movie (all its remaining pieces),
+  // takes it out of the schedule, and cuts to what's next.
   skipItem() {
-    return this.session?.feed.skip() ?? false;
+    const s = this.session;
+    if (!s) return false;
+    const seg = this.now;
+    if (seg && (seg.kind === "episode" || seg.kind === "movie")) {
+      s.program?.skipItem?.(seg.itemId);
+      if (seg.blockId) removeFromBlock(seg.blockId, seg.itemId);
+      log.info(`player: skipped ${seg.title} ${seg.subtitle || ""}`.trim());
+    }
+    return s.feed.skip();
   }
 
   async leave(reason) {

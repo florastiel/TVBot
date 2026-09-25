@@ -35,6 +35,19 @@ export const nextBlockAfter = (ms) =>
 export const blocksBetween = (from, to) =>
   getDb().prepare("SELECT * FROM blocks WHERE end_at > ? AND start_at < ? ORDER BY start_at").all(from, to).map(withItems);
 
+// Take one item out of a block (a skipped show), so it doesn't come back.
+export function removeFromBlock(blockId, itemId) {
+  return getDb().prepare("DELETE FROM block_items WHERE block_id = ? AND item_id = ?").run(blockId, itemId).changes;
+}
+
+// Add an item to the end of a block (a show that filled a gap), so the guide, the
+// no-repeat rule and in-order shows know it aired.
+export function appendToBlock(blockId, itemId) {
+  const db = getDb();
+  const pos = db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS p FROM block_items WHERE block_id = ?").get(blockId).p;
+  db.prepare("INSERT INTO block_items (block_id, position, item_id) VALUES (?, ?, ?)").run(blockId, pos, itemId);
+}
+
 // How far the schedule runs without a gap, starting now. (A special planned for next
 // week doesn't count as "the schedule is planned until next week".)
 export function scheduledUntil(fromMs = Date.now()) {
