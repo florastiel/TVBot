@@ -88,6 +88,18 @@ Object.assign(commands, {
 });
 
 const [cmd = "help", ...args] = process.argv.slice(2);
+
+// The long-running parts: log anything that escapes, then exit so the service
+// manager restarts a clean process instead of limping along.
+if (cmd === "player" || cmd === "bot") {
+  const { log } = await import("./log.js");
+  const die = (kind) => (e) => {
+    log.error(`${cmd}: ${kind}:`, e);
+    setTimeout(() => process.exit(1), 500);
+  };
+  process.on("uncaughtException", die("crashed"));
+  process.on("unhandledRejection", die("unhandled error"));
+}
 if (!commands[cmd]) {
   console.log(`commands:
   sync                         pull the catalog from Plex + local folders, import tags.csv files

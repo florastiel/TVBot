@@ -1,90 +1,160 @@
 # tvchannel
 
-A fake cable TV channel for the Discord server. A throwaway Discord account Go Live
-streams a schedule of shows, movies and commercials into a voice channel; a normal
-bot is the remote control.
+A fake cable TV channel for the Discord server. A throwaway Discord account
+("the streamer account") Go Live streams a schedule of shows, movies and commercials into a voice
+channel, on the wall clock like real TV; a normal bot (coupbot) is the remote control.
+Claude tags the catalog once and programs the schedule each week.
 
-**Status: step 2 of 6 done (catalog).** Next: the controller bot + player.
+**Status: steps 1–5 built.** Step 6 (run as an auto-starting Windows service with log
+files) is next. Until then the two parts are started by hand (see *Running it*).
+
+## How it fits together
+
+```
+  coupbot (bot)  --HTTP on 127.0.0.1-->  player (the streamer account)  -->  Go Live in voice
+  /tv /tvoff /schedule                   ffmpeg per item -> one continuous stream
+  /entrance /tvadmin                     jingle + entrance sounds over its mic
+       |                                        |
+       +---------- data\tv.db (SQLite) ---------+
+                 catalog, tags, schedule
+```
+
+- **Player** (`tv.cmd player`): the throwaway account. Joins voice, streams, notices
+  kicks and an empty channel, plays mic sounds. Every show and commercial is encoded
+  to the same 720p format and spliced into one unbroken stream, so viewers never get
+  kicked out of the stream between items.
+- **Bot** (`tv.cmd bot`): slash commands, the Skip button, now-playing posts. Also
+  does the upkeep: weekly catalog sync + tagging new items, and keeps at least 2 days
+  scheduled (programs a new week when it runs low).
 
 ## Why it runs natively (not Docker)
 
 Docker Desktop on Windows runs containers inside WSL2, which can't reach the Intel
 iGPU's Quick Sync encoder (only NVIDIA GPUs get passed through). So this runs
-directly on glados with a portable Node + ffmpeg kept in `tools\`, with nothing
-installed system-wide.
-
-Quick Sync isn't required. CPU encoding (libx264) turns 1080p into 720p at about
-8x real time on the i5-8500T, so one stream uses roughly 1/8 of the CPU.
+directly on glados with a portable Node + ffmpeg in `tools\`, nothing installed
+system-wide. CPU encoding is plenty anyway: 1080p to 720p runs ~8x real time.
 
 ## Setup (one time)
 
 Already done on glados: `tools\node` (Node 24 LTS), `tools\ffmpeg` (BtbN build),
 `npm install`. If you ever rebuild from scratch:
 
-1. Download the Node 24 Windows x64 zip from nodejs.org and unzip it to `tools\node`.
-2. Download `ffmpeg-master-latest-win64-gpl.zip` from github.com/BtbN/FFmpeg-Builds
-   and unzip it to `tools\ffmpeg`.
+1. Unzip the Node 24 Windows x64 zip (nodejs.org) to `tools\node`.
+2. Unzip `ffmpeg-master-latest-win64-gpl.zip` (github.com/BtbN/FFmpeg-Builds) to `tools\ffmpeg`.
 3. `tools\node\npm install`, then `tools\node\npm install-scripts approve node-av zeromq`
    and `tools\node\npm rebuild node-av zeromq`.
 
-Copy `.env.example` to `.env` and fill it in. `.env` is gitignored; never commit it.
+Copy `.env.example` to `.env` and fill it in: `STREAMER_TOKEN` (the streamer account),
+`BOT_TOKEN` (coupbot), `PLEX_TOKEN`, `ANTHROPIC_API_KEY`, `GUILD_ID`. `.env` is
+gitignored; never commit it.
 
-## Running things
+**If the player log says "invalid token"**: the streamer account's token was reset (logging out
+of that browser session does it). Log in to the streamer account in an incognito window, F12 →
+Network → click a channel → copy the `authorization` header into `STREAMER_TOKEN`,
+then close the window *without* logging out.
 
-Everything goes through `tv.cmd`, which points Node at the portable tools:
+## Running it
+
+Two terminals (until step 6 makes them a service):
 
 ```
-tv.cmd poc\stream.js data\testclip.mp4          stream the test clip
-tv.cmd poc\stream.js data\testclip.mp4 60       same, starting 60s in (seek test)
-tv.cmd poc\plex.js                              list Plex servers + connections
-tv.cmd poc\plex.js pick                         print a direct URL for one episode
-tv.cmd poc\stream.js "<that URL>"               stream it
+tv.cmd player
+tv.cmd bot
 ```
 
-Press Ctrl+C to stop; the account leaves the voice channel.
+Restarting the **bot** is always safe. Restarting the **player** cuts off the stream,
+so do it when the TV is off.
 
-`data\testclip.mp4` is a generated 2-minute color-bar clip with a 440 Hz beep and
-an on-screen timestamp, so you can check picture, audio and seeking at a glance.
+## Discord commands
+
+| Command | Who | What |
+|---|---|---|
+| `/tv` | anyone in a voice channel | TV joins your voice channel and starts whatever is on now |
+| `/tvoff` | anyone | TV leaves |
+| `/schedule` | anyone | today's TV guide (only you see it) |
+| `/entrance set` + file | anyone | your join sound (first 8 s, volume evened out) |
+| `/entrance clear` | anyone (admin: anyone's) | remove a join sound |
+| Skip commercials button | people in the TV's voice channel | ends the current break |
+| `/tvadmin skip` | admin | skip whatever is playing (broken file) |
+| `/tvadmin sync` | admin | re-read the catalog now |
+| `/tvadmin regen` | admin | throw away the upcoming schedule and program a new week |
+
+The bot keeps the channel tidy: only the latest "Now playing" post stays up, skip
+notes vanish after a minute, and the Skip button disappears when the break ends.
+
+## Command line
+
+```
+tv.cmd sync                          pull the catalog from Plex + local folders (~30 s)
+tv.cmd stats                         what's in the catalog, why things can't be scheduled
+tv.cmd tag                           tag anything untagged with Claude (batch, half price)
+tv.cmd tag --dry                     estimate what tagging would cost, no API calls
+tv.cmd tag --redo                    retag everything
+tv.cmd schedule [days] [--replace]   program the schedule (default 7 days; keeps existing days)
+tv.cmd guide                         print today's guide
+tv.cmd playlist "<show>" [count]     test override: loop a few episodes instead of the schedule
+tv.cmd playlist --clear              back to the schedule
+```
 
 ## Settings
 
-Everything you'd want to change is in **`config.yaml`** (comments explain each
-line). Secrets live in `.env`. After editing either, restart the TV (step 6 adds
-the service; until then just re-run the command).
+Everything you'd want to change is in **`config.yaml`** (comments explain each line):
+broadcast hours, block length, commercials per break, clip chance, no-repeat window,
+idle timeout, encode size/bitrate, Plex server + libraries, local folders, jingle and
+volume, Claude model. Restart the part that uses a setting after changing it (player
+for playback/sound settings, bot for the rest).
 
 ## The catalog
 
-```
-tv.cmd sync      pull everything from Plex + local folders, import tags.csv files (~30s)
-tv.cmd stats     what's in the catalog and why things can't be scheduled
-```
-
-The catalog lives in `data	v.db` (SQLite). Sync is safe to run any time; it only
-re-reads audio/subtitle details for items Plex says changed.
-
-**What gets scheduled.** Plex items come in three flavors:
+Lives in `data\tv.db`. Plex items come in three flavors:
 - *fully identified*: title, summary, air date, all there.
 - *show-only*: Plex knows the show but not the episode (King of the Hill "Episode
-  101"). Included by default; set `plex.include_show_only_matches: false` to drop them.
-- *unidentified*: raw filenames (all of "Other Media"). Excluded unless you set
+  101"). Scheduled by default; `plex.include_show_only_matches: false` drops them.
+- *unidentified*: raw filenames (all of "Other Media"). Off the schedule unless
   `plex.include_unmatched: true`.
 
 **Language.** English audio is picked when the file has it. Foreign-audio items need
-English subtitles: picture-based subtitle tracks are drawn on live, and separate
-`.srt` files are downloaded to `data\subs`. Items whose subtitles are a text track
-*inside* the video file are skipped for now (planned). Foreign-audio files with no
-subtitle track at all are skipped, unless you list the show under
-`language.hardsubbed_shows` because its subtitles are burned into the picture.
+English subtitles: picture-based tracks are drawn on live, separate `.srt` files are
+downloaded to `data\subs`. Items whose subtitles are a text track *inside* the file
+are skipped for now; the easy fix is for the Plex owner to extract them to separate
+files (Bazarr, or MKVToolNix's mkvextract), which sync then picks up automatically.
+Foreign-audio files with no subtitle track are skipped unless the show is listed
+under `language.hardsubbed_shows`.
 
 **Local files** go in the folders under `local:` in config.yaml:
 - shows: `shows\<Show Name>\...\Show.Name.S01E02.Episode.Title.mkv`
 - movies: `movies\Movie Title (1994).mkv`
-- commercials / clips: anything, subfolders are fine
+- commercials / clips: anything, subfolders fine
 
-**Tagging commercials and clips.** Each of those folders gets a `tags.csv`. Every
-sync adds a blank row for new files; fill in `decade` (90s, 1990s, 1994 all work),
-`holiday` (halloween / thanksgiving / christmas / none) and `notes` in Excel, save,
-and the next sync imports it. Close Excel before syncing, or sync can't add new rows.
+**Tagging commercials and clips** is by hand: each of those folders gets a
+`tags.csv`. Sync adds a blank row for new files; fill in `decade` (90s, 1990s, 1994
+all work), `holiday` (halloween / thanksgiving / christmas / none) and `notes` in
+Excel, save, and the next sync imports it. Close Excel before syncing.
+`D:\data\tv\commercials\_TEST` and `clips\_TEST` hold fake test files; delete them
+once real ones are in.
+
+**Tagging shows and movies** is by Claude, once (`tv.cmd tag`; cached forever):
+vibe, audience (kids/family/teen/adult), animated, anime, country, decade, and which
+episodes are Halloween/Thanksgiving/Christmas episodes. The first full pass cost $1.17.
+
+## The schedule
+
+Claude programs one day at a time from a menu: each show's next few episodes in
+order, in-season holiday episodes, and a sample of movies not aired recently. It
+returns blocks (a 1–3 word label, how many slots, which items). Code checks every
+answer: ids must be from the menu, nothing repeats within `no_repeat_days`, items plus
+breaks must fit, a movie gets its own block, labels must be plain words. Problems go
+back to Claude (3 tries), then a simple code-built schedule is used instead. Code
+assigns all start times. Roughly $0.10 per day of schedule with Sonnet 5.
+
+Seasons: Halloween material through October, Thanksgiving until Thanksgiving Day,
+then Christmas until the 25th, ramping up as the day gets closer.
+
+**Playback follows the wall clock.** `/tv` works out where the current block "should"
+be and starts that show at the right point. Breaks between shows shrink or grow so
+each block still starts on time; if a break is skipped, the next show starts early.
+Leftover time at the end of a block is filled with commercials and clips, and a plain
+"Up next" card covers the last few seconds.
 
 ## Optional: turning on Quick Sync
 
@@ -94,32 +164,23 @@ Adapter" with an error). To enable it:
 1. Download **Intel Graphics – Windows DCH Drivers** for 7th–10th gen (v31.0.101.2145
    or newer) from Intel's
    [UHD Graphics 630 support page](https://www.intel.com/content/www/us/en/support/products/126790/graphics/processor-graphics/intel-uhd-graphics-family/intel-uhd-graphics-630.html).
-   Get the **.zip** if offered, otherwise the .exe.
-2. Run the installer. On Windows Server it often refuses ("system does not meet
-   minimum requirements"). If so, unzip the download (7-Zip opens the .exe too),
-   then Device Manager → right-click **Microsoft Basic Display Adapter** → Update
-   driver → Browse my computer → Let me pick → Have Disk → select
-   `Graphics\iigd_dch.inf`.
-3. Reboot if asked. The screen/RDP session may flicker once.
+2. Run the installer. On Windows Server it often refuses. If so, unzip the download
+   (7-Zip opens the .exe too), then Device Manager → right-click **Microsoft Basic
+   Display Adapter** → Update driver → Browse my computer → Let me pick → Have Disk →
+   select `Graphics\iigd_dch.inf`.
+3. Reboot if asked.
 4. Test: `tools\ffmpeg\bin\ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=30 -t 5 -c:v h264_qsv -f null -`.
-   If there's no "Invalid argument" error, it works. Then set `ENCODER=qsv` in `.env`.
-   Some older drivers only enable Quick Sync with a display attached; an HDMI dummy
-   plug (~$8) fixes that if the test fails headless.
+   No "Invalid argument" error means it works; then set `encode.encoder: qsv` in
+   config.yaml. If it fails with no monitor attached, an HDMI dummy plug fixes that.
 
-## Planned extras (not built yet)
+## Not built yet
 
-- **Entrance sounds.** `/entrance` + an uploaded audio/video file; the bot keeps the
-  first 8 seconds (configurable), evens out the volume, and saves it per user.
-  `/entrance clear` removes yours; the admin can clear anyone's. When that person
-  joins the voice channel while the TV is on, the streamer account plays it over
-  its "microphone" so everyone in the channel hears it, not just stream viewers.
-  Needs a feasibility test (mic audio alongside Go Live) during step 3.
-- **English subtitles** burned into the picture when a file has them (nice-to-have).
-- **Mid-show commercial breaks** at the original ad-break points (blackdetect /
-  silencedetect), per the original plan's "later" list.
+- Subtitles that are a text track inside the video file (see *Language*).
+- Mid-show commercial breaks at the original ad-break points (blackdetect /
+  silencedetect could find them ahead of time).
 
 ## Heads up
 
 Streaming from a user account ("selfbot") is against Discord's Terms of Service.
 That's why a throwaway account does it: the worst case is that account gets banned,
-not yours. The controller bot (step 3) is a normal, allowed bot.
+not yours. The controller bot is a normal, allowed bot.

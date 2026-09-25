@@ -43,7 +43,7 @@ Rules:
 - A movie always gets a block to itself, with enough slots for its length plus breaks.
 - Fill each block well: the items' running time plus the commercial breaks between them must fit inside the block, and should use most of it. The leftover time at the end of a block gets filled with short commercials automatically.
 - Use a show's episodes in the order the menu lists them. Only use ids from the menu, and each id at most once.
-- label: a short plain description of the block in 1 to 3 words, like "Sitcoms", "Saturday Cartoons", "Halloween Specials", "Movie", "Late Night Anime". No puns, no punctuation, no emoji.
+- label: a short plain description of the block in 1 to 3 words, like "Sitcoms", "Saturday Cartoons", "Halloween Specials", "Movie", "Late Night Anime". No puns, no punctuation, no emoji, no day names.
 - Kids and family shows fit mornings and afternoons; adult shows fit late evening and night. Put the strongest material in the evening.`;
 
 // ---------- the menu ----------
@@ -70,8 +70,11 @@ export function buildMenu(day, used) {
     ORDER BY i.show_title, i.season IS NULL OR i.season = 0, i.season, i.episode IS NULL, i.episode, i.id`).all();
   const byShow = Map.groupBy(episodes, (e) => e.show_title);
   const shows = new Map(db.prepare("SELECT * FROM shows").all().map((s) => [s.title, s]));
+  // Where each show left off. Holiday episodes aired out of order don't count.
   const lastAired = db.prepare(`SELECT i.id FROM block_items bi JOIN blocks b ON b.id = bi.block_id JOIN items i ON i.id = bi.item_id
-    WHERE i.show_title = ? AND b.start_at < ? ORDER BY b.start_at DESC, bi.position DESC LIMIT 1`);
+    LEFT JOIN tags t ON t.item_id = i.id
+    WHERE i.show_title = ? AND b.start_at < ? AND COALESCE(t.holiday, 'none') = 'none'
+    ORDER BY b.start_at DESC, bi.position DESC LIMIT 1`);
 
   lines.push("SHOWS (episode ids in airing order; typical episode length in minutes)");
   for (const [title, eps] of byShow) {
@@ -154,7 +157,7 @@ export function validate(blocks, { slotCount, allowed, breakMs }) {
     const lengthMs = b.slots * blockMs();
     const runMs = rows.reduce((n, r) => n + (r.duration_ms || 0), 0) + Math.max(0, rows.length - 1) * breakMs;
     if (runMs > lengthMs) {
-      problems.push(`${name}: its items run ${mins(runMs)} minutes with breaks, but ${b.slots} slot(s) is only ${mins(lengthMs)} minutes. Use more slots or fewer items.`);
+      problems.push(`${name}: its items run ${(runMs / 60000).toFixed(1)} minutes with breaks, but ${b.slots} slot(s) is only ${mins(lengthMs)} minutes. Use more slots or fewer items.`);
     } else if (rows.length && runMs < lengthMs * 0.5) {
       problems.push(`${name}: its items fill only ${mins(runMs)} of ${mins(lengthMs)} minutes. Add items or use fewer slots.`);
     }
@@ -168,7 +171,7 @@ function keepSeriesOrder(blocks, allowed) {
   const byShow = new Map();
   blocks.forEach((b) => b.ids.forEach((id, pos) => {
     const r = allowed.get(id);
-    if (r.kind !== "episode") return;
+    if (r.kind !== "episode" || (r.holiday && r.holiday !== "none")) return; // holiday picks stay where they are
     if (!byShow.has(r.show_title)) byShow.set(r.show_title, []);
     byShow.get(r.show_title).push({ b, pos, r });
   }));
@@ -261,9 +264,21 @@ ${menu.text}`;
   return { blocks: fallbackDay(slots, menu.allowed, breakMs), source: "fallback", theme: s.theme, allowed: menu.allowed };
 }
 
-// Program `days` days starting at fromMs. With replace, anything already scheduled from
-// the next slot onward is thrown away first; otherwise days that already have blocks
-// are skipped.
+// Consecutive runs of slots that nothing is scheduled over yet.
+function freeRuns(slots) {
+  const runs = [];
+  for (const t of slots) {
+    if (blocksBetween(t, t + blockMs()).length) continue;
+    const run = runs.at(-1);
+    if (run && run.at(-1) + blockMs() === t) run.push(t);
+    else runs.push([t]);
+  }
+  return runs;
+}
+
+// Program `days` days starting at fromMs (including the slot already under way). Only
+// free slots are programmed; with replace, everything after the current block is
+// thrown away first.
 export async function generateSchedule({ fromMs = Date.now(), days = 7, replace = false } = {}) {
   const client = new Anthropic({ apiKey: secrets.anthropicKey });
   if (replace) {
@@ -274,18 +289,17 @@ export async function generateSchedule({ fromMs = Date.now(), days = 7, replace 
   }
   let day = localDay(fromMs);
   for (let n = 0; n < days; n++, day = localDay(day.endMs + 1)) {
-    const slots = daySlots(day).filter((t) => t >= fromMs);
-    if (!slots.length) continue;
-    if (blocksBetween(slots[0], slots[0] + 1).length) continue; // already programmed
-    const plan = await planDay(client, day, slots);
-    let t = slots[0];
-    const out = [];
-    for (const b of plan.blocks) {
-      const end = t + b.slots * blockMs();
-      const theme = b.ids.some((id) => plan.allowed.get(id)?.holiday === plan.theme) ? plan.theme : null;
-      out.push({ start: t, end, label: b.label.trim(), ids: b.ids, theme });
-      t = end;
+    for (const slots of freeRuns(daySlots(day).filter((t) => t + blockMs() > fromMs))) {
+      const plan = await planDay(client, day, slots);
+      let t = slots[0];
+      const out = [];
+      for (const b of plan.blocks) {
+        const end = t + b.slots * blockMs();
+        const theme = plan.theme !== "none" && b.ids.some((id) => plan.allowed.get(id)?.holiday === plan.theme) ? plan.theme : null;
+        out.push({ start: t, end, label: b.label.trim(), ids: b.ids, theme });
+        t = end;
+      }
+      saveBlocks(out, plan.source);
     }
-    saveBlocks(out, plan.source);
   }
 }
