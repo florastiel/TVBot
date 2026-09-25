@@ -148,7 +148,8 @@ episodes are Halloween/Thanksgiving/Christmas episodes. The first full pass cost
 
 ## The schedule
 
-Claude programs one day at a time from a menu: a few random episodes of each show
+Claude programs `plan_days` ahead (1 by default; the bot tops it up when less than 12
+hours are left), one day at a time, from a menu: a few random episodes of each show
 (reruns in any order, like real TV), in-season holiday episodes, and a sample of
 movies, all skipping anything aired within `no_repeat_days`. It
 returns blocks (a 1–3 word label and which items). Code works out each block's length:
