@@ -25,7 +25,8 @@ async function expand(url) {
     "--print", "%(id)s\t%(duration)s\t%(playlist_title)s\t%(title)s", url], { maxBuffer: 16 << 20 });
   return stdout.trim().split("\n").filter(Boolean).map((line) => {
     const [id, secs, playlist, ...title] = line.split("\t");
-    const folder = !single && playlist && playlist !== "NA" ? playlist.replace(/[<>:"/\\|?*]+/g, "").trim().slice(0, 60) : null;
+    // Folder named after the playlist (Windows doesn't allow a trailing dot).
+    const folder = !single && playlist && playlist !== "NA" ? playlist.replace(/[<>:"/\\|?*]+/g, "").trim().replace(/[. ]+$/, "").slice(0, 60) : null;
     return { id, url: `https://www.youtube.com/watch?v=${id}`, seconds: Number(secs), title: title.join("\t"), folder };
   });
 }
