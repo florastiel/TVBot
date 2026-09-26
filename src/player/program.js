@@ -23,8 +23,9 @@ export function clearPlaylist() {
   rmSync(PLAYLIST_FILE, { force: true });
 }
 
-export function makeProgram(plex, clock) {
-  return existsSync(PLAYLIST_FILE) ? new PlaylistProgram(plex) : new ScheduleProgram(plex, clock);
+// resume: { blockId, itemId, seekMs } from before a restart (see Player.restartNow).
+export function makeProgram(plex, clock, resume = null) {
+  return existsSync(PLAYLIST_FILE) ? new PlaylistProgram(plex) : new ScheduleProgram(plex, clock, resume);
 }
 
 // Loops the item ids in data/playlist.json with a commercial break after each show.
@@ -108,9 +109,10 @@ export function planPieces(items) {
 
 export class ScheduleProgram {
   // clock(): wall-clock ms at which the next segment will start playing.
-  constructor(plex, clock) {
+  constructor(plex, clock, resume = null) {
     this.plex = plex;
     this.clock = clock;
+    this.resume = resume; // used once, for the first block, if it is still on
     this.skipped = new Set(); // item ids skipped for good (their remaining pieces are dropped)
   }
 
@@ -156,7 +158,9 @@ export class ScheduleProgram {
         continue;
       }
       const before = this.clock();
-      const late = yield* this.playBlock(block, now);
+      const resume = this.resume?.blockId === block.id ? this.resume : null;
+      this.resume = null;
+      const late = yield* this.playBlock(block, now, { resume });
       if (late) caughtUpFrom = late;
       // Safety net: a block that played nothing must still move the clock forward,
       // or this loop would spin forever.
@@ -166,7 +170,7 @@ export class ScheduleProgram {
 
   // Plays one block. Returns the next block if this one finished late and the schedule
   // couldn't move (a special comes next), so it can be played from its start.
-  *playBlock(block, now, { fromStart = false } = {}) {
+  *playBlock(block, now, { fromStart = false, resume = null } = {}) {
     const items = block.items.filter((r) => r.present && r.playable);
     const nextBlock = nextBlockAfter(block.end_at);
     const pieces = planPieces(items);
@@ -191,6 +195,13 @@ export class ScheduleProgram {
       t += dur;
       if (now < t + gap) { start = i + 1; break; } // between pieces: straight to the next one
       t += gap;
+    }
+
+    // Back from a restart: the exact spot the old copy stopped at (a little before it, see
+    // Player.restartNow), not where the wall clock says, which can differ by minutes.
+    if (resume) {
+      const at = pieces.findIndex((p) => p.row.id === resume.itemId && p.from <= resume.seekMs && resume.seekMs < p.to);
+      if (at >= 0) { start = at; offsetMs = resume.seekMs - pieces[at].from; }
     }
 
     this.block = block;

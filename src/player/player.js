@@ -23,6 +23,17 @@ import { card } from "./segments.js";
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
 // Written just before a restart so the fresh copy goes back to the same channel.
 const RESUME_FILE = join(DATA_DIR, "resume.json");
+// A restart takes about 20 seconds, so the fresh copy starts this far before the end of
+// the piece that was on: nobody misses anything, and the last bit plays again.
+const RESUME_REWIND_MS = 20000;
+
+// Where to pick up after a restart that happens at a break inside a show: the end of the
+// piece that just played, minus the rewind. Nothing after a show's last piece (the next
+// thing is simply what the schedule says).
+function resumeHint(seg) {
+  if (!seg?.blockId || seg.durationMs >= (seg.fullDurationMs ?? Infinity) - 1000) return null;
+  return { blockId: seg.blockId, itemId: seg.itemId, seekMs: Math.max(seg.seekMs || 0, seg.durationMs - RESUME_REWIND_MS) };
+}
 
 // What the bot is allowed to see about a segment (never the input URL: it has a token).
 const publicSeg = (s) => s && { itemId: s.itemId, kind: s.kind, title: s.title, subtitle: s.subtitle, breakId: s.breakId };
@@ -84,7 +95,7 @@ export class Player extends EventEmitter {
     this.emit("event", { type, ...data, status: this.status() });
   }
 
-  async join(channelId, { paused = false } = {}) {
+  async join(channelId, { paused = false, resume = null } = {}) {
     if (this.state !== "off" && this.channelId === channelId) {
       if (this.state === "paused") return this.resume();
       return this.status();
@@ -103,7 +114,7 @@ export class Player extends EventEmitter {
       throw e;
     }
     log.info(`player: joined voice ${channelId}`);
-    this.startStream();
+    this.startStream(resume);
     if (paused) {
       this.state = "paused";
       this.session.paused = true;
@@ -115,12 +126,12 @@ export class Player extends EventEmitter {
   }
 
   // Start Go Live with whatever is on right now.
-  startStream() {
+  startStream(resume = null) {
     const feed = new Feed();
     const abort = new AbortController();
     // t0: the wall-clock time the stream's first frame plays (Go Live takes a moment to
     // set up); corrected when the stream really starts.
-    const session = { feed, abort, skippedBreaks: new Set(), t0: Date.now() + 2000, paused: false, replay: null };
+    const session = { feed, abort, skippedBreaks: new Set(), t0: Date.now() + 2000, paused: false, replay: null, resume };
     this.session = session;
     this.state = "on";
     feed.on("closed", () => session === this.session && this.leave("stream stopped"));
@@ -188,10 +199,11 @@ export class Player extends EventEmitter {
   async run(session) {
     // Wall-clock time at which the next segment will start playing.
     const clock = () => session.t0 + session.feed.offsetSec * 1000;
-    const program = makeProgram(this.plex, clock);
+    const program = makeProgram(this.plex, clock, session.resume);
     session.program = program;
     const segments = program.segments();
     let inBreak = null;
+    let lastShow = null; // the last show/movie piece that played (where a restart at a break picks up)
     let failures = 0;
     for (;;) {
       if (session !== this.session) return;
@@ -224,7 +236,7 @@ export class Player extends EventEmitter {
       }
       if (seg.breakId && !inBreak) {
         // A restart was asked for: use this commercial break for it instead of ads.
-        if (this.restartPending) return this.restartNow();
+        if (this.restartPending) return this.restartNow(resumeHint(lastShow));
         inBreak = seg.breakId;
         const endsAt = Date.now() + (seg.breakTotalMs ?? 0) - (seg.breakAtMs ?? 0);
         this.emitEvent("break-start", { breakId: inBreak, endsAt, nextTitle: seg.nextTitle ?? null });
@@ -232,6 +244,7 @@ export class Player extends EventEmitter {
       }
       this.now = seg;
       const isShow = seg.kind === "episode" || seg.kind === "movie" || seg.kind === "short";
+      if (isShow) lastShow = seg;
       if (isShow) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext) });
       if (isShow) this.presence.show(seg);
       log.info(`player: ${seg.breakId ? "break" : "now"}: ${seg.title} ${seg.subtitle || ""}`.trim());
@@ -303,9 +316,10 @@ export class Player extends EventEmitter {
 
   // Exit; the service manager starts a fresh copy about 10 seconds later, which goes
   // back into the same channel (see resumeAfterRestart).
-  restartNow() {
+  // resume: where in the schedule to pick up again (see resumeHint), if it is known.
+  restartNow(resume = null) {
     if (this.state !== "off" && this.channelId) {
-      writeFileSync(RESUME_FILE, JSON.stringify({ channelId: this.channelId, paused: this.state === "paused", at: Date.now() }));
+      writeFileSync(RESUME_FILE, JSON.stringify({ channelId: this.channelId, paused: this.state === "paused", at: Date.now(), resume }));
       this.emitEvent("restarting");
     }
     log.info("player: restarting to load new code/settings");
@@ -322,7 +336,7 @@ export class Player extends EventEmitter {
     rmSync(RESUME_FILE, { force: true });
     if (!r?.channelId || Date.now() - r.at > 3 * 60000) return;
     log.info(`player: back after a restart; rejoining ${r.channelId}`);
-    await this.join(r.channelId, { paused: r.paused }).catch((e) => log.warn(`player: couldn't rejoin: ${e.message}`));
+    await this.join(r.channelId, { paused: r.paused, resume: r.resume ?? null }).catch((e) => log.warn(`player: couldn't rejoin: ${e.message}`));
   }
 
   // Sounds over the mic (entrance sounds), one at a time.
