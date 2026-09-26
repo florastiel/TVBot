@@ -19,6 +19,7 @@ const DEFAULTS = {
     inside_spots: 1,
     episode_breaks: 1,
     variety_folders: [],
+    standing_slots: [],
     break_every_minutes: 8,
     max_spot_minutes: 3,
     max_show_block_minutes: 75,

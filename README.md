@@ -254,6 +254,11 @@ David Lynch). Code checks it, removes the regular blocks it overlaps, and re-fil
 gaps around it. `specials_per_week` has Claude add some by itself (0 by default; the
 weekly grid already has marathons).
 
+**Standing slots** are the same block at the same time every week, whatever Claude's
+grid says: `broadcast.standing_slots` in config.yaml (Saturday 05:30-12:15 is Saturday
+Morning Cartoons). Claude is told about them, and they're stamped onto every new grid;
+the grid's block at the end time carries on after (or the next one starts early).
+
 Seasons: Halloween material through October, Thanksgiving until Thanksgiving Day,
 then Christmas until the 25th.
 

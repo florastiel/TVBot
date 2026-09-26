@@ -133,6 +133,7 @@ export async function planWeek({ fromMs = Date.now(), count = 7 } = {}) {
   const prompt = `Lay out the grid for ${days.map((d) => `${d.weekday} ${d.date}`).join(", ")} (dates as YYYY-MM-DD in your answer).
 ${seasons.length ? `It's ${seasons.join("; ")}.` : ""}
 ${specials.length ? `Specials already scheduled: ${specials.map((s) => `"${s.label}" ${localDay(s.a).date} ${localTime(s.a)}-${localTime(s.z)}`).join("; ")}` : ""}
+${standingText()}
 
 BUCKETS (name | format | dayparts | season | size | recent use | about)
 ${bucketLines(buckets, days).join("\n")}`;
@@ -171,7 +172,62 @@ ${bucketLines(buckets, days).join("\n")}`;
     const put = db.prepare("INSERT INTO plan_slots (start_at, bucket_id, created_at) VALUES (?, ?, ?)");
     for (const s of slots) put.run(s.at, s.bucket.id, now);
   });
+  applyStandingSlots(days[0].startMs, days.at(-1).endMs);
   return slots;
+}
+
+// Standing slots (broadcast.standing_slots): the same bucket at the same time every week,
+// whatever the grid says, e.g. { day: saturday, from: "05:30", to: "12:15", bucket:
+// "Saturday Morning Cartoons" }. Whatever the grid had on at `to` carries on after it.
+const standingRules = () => (config.broadcast.standing_slots || []).filter((r) => r?.day && r.from && r.to && r.bucket);
+const hm = (s) => String(s).split(":").map(Number);
+const onDay = (r, day) => day.weekday.toLowerCase().startsWith(String(r.day).trim().toLowerCase().slice(0, 3));
+
+function standingText() {
+  const rules = standingRules();
+  return rules.length
+    ? `Standing slots (code puts these in by itself every week, over whatever you plan there; plan the rest of those days as usual): ${rules.map((r) => `${r.day} ${r.from}-${r.to} ${r.bucket}`).join("; ")}.`
+    : "";
+}
+
+// Stamp the standing slots onto the saved grid of every already-planned day in [fromMs, toMs).
+export function applyStandingSlots(fromMs, toMs) {
+  const rules = standingRules();
+  if (!rules.length) return 0;
+  const buckets = new Map(listBuckets().map((b) => [b.name.toLowerCase(), b]));
+  let applied = 0;
+  tx((db) => {
+    const planned = db.prepare("SELECT 1 FROM plan_slots WHERE start_at >= ? AND start_at < ? LIMIT 1");
+    const onAt = db.prepare("SELECT bucket_id FROM plan_slots WHERE start_at <= ? ORDER BY start_at DESC LIMIT 1");
+    const startsAt = db.prepare("SELECT 1 FROM plan_slots WHERE start_at = ?");
+    const nextStart = db.prepare("SELECT start_at FROM plan_slots WHERE start_at > ? ORDER BY start_at LIMIT 1");
+    const move = db.prepare("UPDATE plan_slots SET start_at = ? WHERE start_at = ?");
+    const clear = db.prepare("DELETE FROM plan_slots WHERE start_at >= ? AND start_at < ?");
+    const put = db.prepare("INSERT INTO plan_slots (start_at, bucket_id, created_at) VALUES (?, ?, ?)");
+    const now = new Date().toISOString();
+    for (let day = localDay(fromMs); day.startMs < toMs; day = localDay(day.endMs + 1)) {
+      if (!planned.get(day.startMs, day.endMs)) continue; // not planned yet; its planWeek will do it
+      for (const r of rules.filter((x) => onDay(x, day))) {
+        const b = buckets.get(String(r.bucket).trim().toLowerCase());
+        if (!b) { log.warn(`plan: standing slot "${r.bucket}": no bucket by that name`); continue; }
+        const a = localToUtc(day.y, day.m, day.d, ...hm(r.from)), z = localToUtc(day.y, day.m, day.d, ...hm(r.to));
+        if (!(z > a)) continue;
+        const after = startsAt.get(z) ? null : onAt.get(z)?.bucket_id;
+        const next = nextStart.get(z)?.start_at;
+        clear.run(a, z);
+        put.run(a, b.id, now);
+        if (after && after !== b.id) {
+          // The grid's next slot starts soon after anyway: start it at `to` instead of a
+          // scrap of the old one.
+          if (next && next - z < MIN_SLOT) move.run(z, next);
+          else put.run(z, after, now);
+        }
+        applied++;
+      }
+    }
+  });
+  if (applied) log.info(`plan: ${applied} standing slot(s) put in`);
+  return applied;
 }
 
 // The saved grid, for printing: [{ at, name }]
