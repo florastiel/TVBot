@@ -196,10 +196,20 @@ plus the grid). `/tvadmin regen` (or `tv.cmd schedule --replace`) re-fills the u
 blocks with new random picks for free; add `new_grid` (`--replan`) to have Claude lay
 out a new grid too.
 
-**Episode order.** The first time a show airs it starts at a random episode; after that
-it continues in order, picking up where it left off (and wrapping around after the finale). Shows listed under `shows.random` in
-config.yaml play random episodes instead, like reruns.
-Shows under `shows.never` are never scheduled.
+**Episode order.** Claude marks each show serialized (a continuing story: Loki,
+Interview With The Vampire, most anime) or episodic (sitcoms, anthologies: Fresh Prince,
+Black Mirror). Episodic shows play random episodes, like reruns. Serialized ones play in
+order, picking up where they left off; one that hasn't aired in 30 days (or ever) starts
+over from its first episode, and that block is billed "Series Premiere" (there's also an
+automatic Series Premiere bucket of serialized shows). Override per show in config.yaml:
+`shows.random` (always random), `shows.in_order` (always in order). Shows under
+`shows.never` are never scheduled. `tv.cmd tag --order` redoes the serialized/episodic
+call for new shows (the weekly upkeep does it too).
+
+**Special episodes.** Claude reads episode titles and flags musical episodes and beach
+episodes (`tv.cmd tag --episodes`; weekly for new ones). They become automatic "Musical
+Episodes" and "Beach Episodes" (mid-May to mid-September) buckets. Files in the shorts
+folder make an automatic "Shorts" bucket.
 
 **Specials** (a marathon or themed night on request) take over the schedule for a few
 hours: `/tvadmin special` or `tv.cmd special "..."`. A separate Claude call sees the
@@ -211,11 +221,23 @@ weekly grid already has marathons).
 Seasons: Halloween material through October, Thanksgiving until Thanksgiving Day,
 then Christmas until the 25th.
 
-**Playback follows the wall clock.** `/tv` works out where the current block "should"
-be and starts that show at the right point. A block's ad time is spread evenly across
-the breaks after each show (clips count as commercials; whole files, so a break can
-run a few seconds long). If a break is skipped, the next show starts early and the
-last break makes up the difference; a plain "Up next" card covers any last seconds.
+**Playback follows the wall clock, and the clock follows playback.** `/tv` works out
+where the current block should be and starts that show at the right point. While the TV
+is on, each block ends when its shows (and breaks) are actually done, and the rest of
+the day moves to match, earlier or later; planned times are only rounded to 5 minutes.
+Specials keep their announced times.
+
+**Commercials.** Breaks go where the show had them originally: download-ahead fetches
+every Plex show and movie airing in the next 3 hours (same total transfer from the Plex
+server, just earlier; played from the local copy) and scans it for moments where the
+picture goes black and the sound goes silent together; local files are scanned in place
+(about 1-5 minutes per episode, at low priority). Anime that uses a mid-episode eyecatch
+instead gets a break at a chapter mark near its middle; long movies without either get
+one about every 30 minutes. Inside a show a break is one commercial (a minute at most),
+or two if both are `short_spot_seconds` or shorter. Between shows: `between_spots`
+videos (the first is a clip `clip_chance` of the time). Nothing longer than
+`max_spot_minutes` airs. `D:\data\tv\ad-lengths.csv` lists every commercial and clip
+with its length.
 
 **Skipping**: `/tvadmin skip` drops the rest of the show or movie and takes it off the
 schedule; `/tvadmin skipblock` does that for everything left in the block. The rest of the day then moves up by whole quarter hours, so the next block

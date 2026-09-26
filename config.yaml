@@ -30,7 +30,8 @@ plex:
 
 shows:
   # Exact show titles as Plex shows them (tv.cmd stats / the TV guide).
-  random: []                   # these play random episodes; every other show plays in order, picking up where it left off
+  random: []                   # always random episodes (overrides Claude's serialized/episodic call)
+  in_order: []                 # always in order
   never: []                    # these never get scheduled
 
 language:

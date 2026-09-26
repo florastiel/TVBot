@@ -40,6 +40,7 @@ export function listBuckets({ all = false } = {}) {
     const m = mem.all(b.id);
     b.shows = m.filter((x) => x.show_title).map((x) => x.show_title);
     b.items = m.filter((x) => x.item_id).map((x) => x.item_id);
+    b.premiere = b.source === "auto" && b.name === PREMIERE;
   }
   return rows;
 }
@@ -68,9 +69,45 @@ const HOLIDAYS = [
   { theme: "christmas", name: "Christmas", from: "11-24", to: "12-25" },
 ];
 
+// Code-made buckets (auto, fallback) are updated in place, since the week's grid points
+// at them: same name and source = same bucket. Ones no longer wanted are retired.
+function syncBuckets(db, source, list) {
+  const find = db.prepare("SELECT id FROM buckets WHERE source = ? AND name = ?");
+  const upd = db.prepare(`UPDATE buckets SET about = ?, format = ?, dayparts = ?, active_from = ?, active_to = ?, retired = 0 WHERE id = ?`);
+  for (const b of list) {
+    const have = find.get(source, b.name);
+    if (!have) { saveBucket(db, b, source); continue; }
+    upd.run(b.about || null, b.format, JSON.stringify(b.dayparts), b.active_from || null, b.active_to || null, have.id);
+    db.prepare("DELETE FROM bucket_members WHERE bucket_id = ?").run(have.id);
+    addMembers(db, have.id, b.shows || [], b.items || []);
+  }
+  const keep = list.map((b) => b.name);
+  db.prepare(`UPDATE buckets SET retired = 1 WHERE source = ? ${keep.length ? `AND name NOT IN (${keep.map(() => "?").join(",")})` : ""}`).run(source, ...keep);
+}
+
+export const PREMIERE = "Series Premiere";
+
 export function refreshHolidayBuckets() {
   tx((db) => {
-    db.prepare("DELETE FROM buckets WHERE source = 'auto'").run();
+    const want = [];
+    // Serialized shows from episode one (fill.js only takes ones not aired lately).
+    const serial = db.prepare(`SELECT s.title FROM shows s WHERE s.serialized = 1 AND COALESCE(s.audience, '') != 'kids'
+      AND EXISTS (SELECT 1 FROM items i WHERE i.show_title = s.title AND i.kind = 'episode' AND ${schedulableSql("i")})`).all().map((r) => r.title);
+    if (serial.length >= MIN_MEMBERS.one_show) {
+      want.push({ name: PREMIERE, about: "a serialized show from its first episode", format: "one_show", dayparts: ["afternoon", "evening", "late"], shows: serial });
+    }
+    // Special episodes found from their titles (tagging/episodes.js).
+    for (const [theme, name, from, to] of [["musical", "Musical Episodes", null, null], ["beach", "Beach Episodes", "05-15", "09-15"]]) {
+      const eps = db.prepare(`SELECT i.id FROM item_themes t JOIN items i ON i.id = t.item_id WHERE t.theme = ? AND ${schedulableSql("i")}`).all(theme).map((r) => r.id);
+      if (eps.length >= MIN_MEMBERS.variety) {
+        want.push({ name, about: `${theme} episodes of regular shows`, format: "variety", dayparts: ["afternoon", "evening", "late"], items: eps, active_from: from, active_to: to });
+      }
+    }
+    // Everything in the shorts folder.
+    const shorts = db.prepare(`SELECT i.id FROM items i WHERE i.kind = 'short' AND ${schedulableSql("i")}`).all().map((r) => r.id);
+    if (shorts.length >= MIN_MEMBERS.variety) {
+      want.push({ name: "Shorts", about: "short shows back to back", format: "variety", dayparts: ["morning", "afternoon", "evening", "late"], items: shorts });
+    }
     for (const h of HOLIDAYS) {
       const eps = db.prepare(`SELECT i.id FROM items i JOIN tags t ON t.item_id = i.id
         WHERE t.holiday = ? AND i.kind = 'episode' AND ${schedulableSql("i")}`).all(h.theme).map((r) => r.id);
@@ -78,14 +115,15 @@ export function refreshHolidayBuckets() {
         WHERE t.holiday = ? AND i.kind = 'movie' AND ${schedulableSql("i")}`).all(h.theme).map((r) => r.id);
       const base = { active_from: h.from, active_to: h.to };
       if (eps.length >= MIN_MEMBERS.variety) {
-        saveBucket(db, { ...base, name: `${h.name} Episodes`, about: `${h.theme} episodes of regular shows`, format: "variety",
-          dayparts: ["morning", "afternoon", "evening", "late"], items: eps }, "auto");
+        want.push({ ...base, name: `${h.name} Episodes`, about: `${h.theme} episodes of regular shows`, format: "variety",
+          dayparts: ["morning", "afternoon", "evening", "late"], items: eps });
       }
       if (movies.length >= MIN_MEMBERS.movie) {
-        saveBucket(db, { ...base, name: `${h.name} Movies`, about: `${h.theme} movies`, format: "movie",
-          dayparts: ["afternoon", "evening", "late"], items: movies }, "auto");
+        want.push({ ...base, name: `${h.name} Movies`, about: `${h.theme} movies`, format: "movie",
+          dayparts: ["afternoon", "evening", "late"], items: movies });
       }
     }
+    syncBuckets(db, "auto", want);
   });
 }
 
@@ -328,9 +366,10 @@ function catchAll(cat) {
   const shows = [...cat.ids.values()].filter((t) => t.kind === "show" && !inShows.has(t.title)).map((t) => t.title);
   const movies = [...cat.ids.values()].filter((t) => t.kind === "movie" && !inItems.has(t.id)).map((t) => t.id);
   tx((d) => {
-    d.prepare("DELETE FROM buckets WHERE source = 'fallback'").run();
-    if (shows.length) saveBucket(d, { name: "Reruns", about: "titles no other bucket took", format: "one_show", dayparts: ["afternoon", "evening", "late"], shows }, "fallback");
-    if (movies.length) saveBucket(d, { name: "Movie", about: "movies no other bucket took", format: "movie", dayparts: ["afternoon", "evening", "late"], items: movies }, "fallback");
+    const want = [];
+    if (shows.length) want.push({ name: "Reruns", about: "titles no other bucket took", format: "one_show", dayparts: ["afternoon", "evening", "late"], shows });
+    if (movies.length) want.push({ name: "Movie", about: "movies no other bucket took", format: "movie", dayparts: ["afternoon", "evening", "late"], items: movies });
+    syncBuckets(d, "fallback", want);
   });
   return shows.length + movies.length;
 }
@@ -360,7 +399,7 @@ ${cat.text}`, listBuckets());
 // The weekly pass: a handful of new buckets for the next two weeks (seasonal and event
 // ideas especially), the whole catalog checked against them, and titles that have no
 // bucket yet (new to the catalog) sorted into all of them.
-export async function newBuckets({ count = 5 } = {}) {
+export async function newBuckets({ count = 5, request = null } = {}) {
   const client = new Anthropic({ apiKey: secrets.anthropicKey });
   refreshHolidayBuckets();
   const cat = catalog();
@@ -369,7 +408,7 @@ export async function newBuckets({ count = 5 } = {}) {
 ${existing.map(bucketLine).join("\n")}
 
 The next two weeks: ${upcomingDates(14).join(", ")}.
-Define up to ${count} new buckets that would make these weeks fun: seasonal or event ideas especially (holidays, notable dates, "Shark Week" style themes), or fresh angles on the catalog nobody has used yet. Don't duplicate existing buckets, and only define ones the catalog below can fill.
+${request ? `The admin asked for these buckets: ${request}. Define each one the catalog below can fill (skip one only if an existing bucket is really the same thing, or the catalog has too little for it).` : `Define up to ${count} new buckets that would make these weeks fun: seasonal or event ideas especially (holidays, notable dates, "Shark Week" style themes), or fresh angles on the catalog nobody has used yet. Don't duplicate existing buckets, and only define ones the catalog below can fill.`}
 
 CATALOG
 ${cat.text}`, listBuckets());

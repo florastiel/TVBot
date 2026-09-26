@@ -32,23 +32,30 @@ export function blockLength(contentMs, items = 1) {
   return { lengthMs, adMs: lengthMs - contentMs };
 }
 
-// Shows play their episodes in order unless listed under shows.random.
-export const inOrder = (title) => !(config.shows?.random || []).includes(title);
+// Serialized shows air in order, episodic ones in any order (Claude decides per show;
+// shows.random / shows.in_order in config.yaml override it). Undecided: in order.
+export const inOrder = (title) => {
+  if ((config.shows?.random || []).includes(title)) return false;
+  if ((config.shows?.in_order || []).includes(title)) return true;
+  return getDb().prepare("SELECT serialized FROM shows WHERE title = ?").get(title)?.serialized !== 0;
+};
 
-// For shows set to air in order: the next `count` episodes after the last one that
-// aired before `beforeMs` (holiday episodes aired out of order don't count), wrapping
-// around at the end of the series.
+const RESTART_MS = 30 * DAY;
+
+// For in-order shows: the next `count` episodes after the last one that aired before
+// `beforeMs` (holiday episodes aired out of order don't count), wrapping around after
+// the finale. A show that hasn't aired in RESTART_MS (or ever) starts over from its
+// first episode, a series premiere.
 export function nextInOrder(title, count, used, beforeMs) {
   const db = getDb();
   const eps = db.prepare(`SELECT i.* FROM items i LEFT JOIN tags t ON t.item_id = i.id
     WHERE i.kind = 'episode' AND i.show_title = ? AND ${schedulableSql("i")} AND COALESCE(t.holiday, 'none') = 'none'
     ORDER BY i.season IS NULL OR i.season = 0, i.season, i.episode IS NULL, i.episode, i.id`).all(title);
-  const last = db.prepare(`SELECT i.id FROM block_items bi JOIN blocks b ON b.id = bi.block_id JOIN items i ON i.id = bi.item_id
+  const last = db.prepare(`SELECT i.id, b.start_at FROM block_items bi JOIN blocks b ON b.id = bi.block_id JOIN items i ON i.id = bi.item_id
     LEFT JOIN tags t ON t.item_id = i.id
     WHERE i.show_title = ? AND b.start_at < ? AND COALESCE(t.holiday, 'none') = 'none'
-    ORDER BY b.start_at DESC, bi.position DESC LIMIT 1`).get(title, beforeMs)?.id;
-  // Never aired before: jump in anywhere; from then on it continues in order.
-  const start = last ? eps.findIndex((e) => e.id === last) + 1 : Math.floor(Math.random() * eps.length);
+    ORDER BY b.start_at DESC, bi.position DESC LIMIT 1`).get(title, beforeMs);
+  const start = last && beforeMs - last.start_at < RESTART_MS ? eps.findIndex((e) => e.id === last.id) + 1 : 0;
   const out = [];
   for (let k = 0; k < eps.length && out.length < count; k++) {
     const e = eps[(start + k) % eps.length];

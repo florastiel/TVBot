@@ -46,7 +46,13 @@ Object.assign(commands, {
     const t = await import("./tagging/tagger.js");
     if (flags.includes("--dry")) return t.dryRun({ redo: flags.includes("--redo") });
     if (flags.includes("--sample")) return t.sample();
+    const { tagOrder } = await import("./tagging/order.js");
+    const { tagEpisodeThemes } = await import("./tagging/episodes.js");
+    if (flags.includes("--order")) return tagOrder({ redo: flags.includes("--redo") });
+    if (flags.includes("--episodes")) return tagEpisodeThemes({ redo: flags.includes("--redo") });
     await t.runTagging({ redo: flags.includes("--redo") });
+    await tagOrder({ redo: flags.includes("--redo") });
+    await tagEpisodeThemes({ redo: flags.includes("--redo") });
   },
 
   // Fill the schedule from the week's grid (free). --replace: new random picks after
@@ -65,7 +71,8 @@ Object.assign(commands, {
   async buckets(...args) {
     const b = await import("./schedule/buckets.js");
     if (args.includes("--build")) await b.buildBuckets();
-    if (args.includes("--new")) await b.newBuckets();
+    const request = args.filter((a) => !a.startsWith("--")).join(" ") || null;
+    if (args.includes("--new")) await b.newBuckets({ request });
     for (const x of b.listBuckets()) {
       const members = x.shows.length ? x.shows : x.items.map((id) => `#${id}`);
       console.log(`${x.name} [${x.format}; ${x.dayparts.join("/")}${x.active_from ? `; ${x.active_from}..${x.active_to}` : ""}] ${members.length}: ${members.slice(0, 8).join(", ")}${members.length > 8 ? ", ..." : ""}`);
@@ -164,9 +171,9 @@ if (!commands[cmd]) {
   player                       run the streamer (the throwaway account)
   bot                          run the remote-control bot
   playlist "<show>" [count]    set the test playlist to a few episodes of a show
-  tag [--dry|--sample|--redo]  tag the catalog with Claude (only untagged items unless --redo)
+  tag [--dry|--sample|--redo|--order|--episodes]  tag the catalog with Claude (only untagged items unless --redo; --order: serialized/episodic; --episodes: musical/beach episodes)
   schedule [days] [--replace|--replan]  fill the schedule from the week's grid (--replace: new picks, free; --replan: new grid from Claude)
-  buckets [--build|--new]      list the buckets (--build: Claude sorts the catalog; --new: a few new ones)
+  buckets [--build|--new ["ideas"]]  list the buckets (--build: Claude sorts the catalog; --new: a few new ones, or the ones asked for)
   plan [days]                  print the grid of bucket slots
   guide                        print what's on today
   playlist --clear             drop the test playlist; the TV follows the schedule

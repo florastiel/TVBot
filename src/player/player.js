@@ -35,6 +35,7 @@ export class Player extends EventEmitter {
     this.session = null; // the running stream: { feed, abort, skippedBreaks, t0 }
     this.micQueue = Promise.resolve();
     this.idleSince = null;
+    this.viewers = null;
     this.restartPending = false;
   }
 
@@ -45,6 +46,17 @@ export class Player extends EventEmitter {
     await this.streamer.client.login(secrets.streamerToken);
     log.info(`player: logged in as ${this.streamer.client.user.tag}`);
     this.streamer.client.on("voiceStateUpdate", (before, after) => this.onVoiceState(before, after));
+    // Who is actually watching the Go Live: Discord tells the streamer in STREAM_CREATE /
+    // STREAM_UPDATE events (viewer_ids).
+    this.streamer.client.on("raw", (p) => {
+      if (p?.t !== "STREAM_CREATE" && p?.t !== "STREAM_UPDATE") return;
+      const ids = p.d?.viewer_ids;
+      if (!Array.isArray(ids)) return;
+      const me = this.streamer.client.user.id;
+      const n = ids.filter((id) => id !== me).length;
+      if (n !== this.viewers) log.info(`player: ${n} watching the stream`);
+      this.viewers = n;
+    });
     this.presence = new RichPresence(this.streamer.client);
     setInterval(() => this.checkIdle(), 30000).unref();
     cleanSpool();
@@ -53,7 +65,7 @@ export class Player extends EventEmitter {
   }
 
   status() {
-    return { state: this.state, channelId: this.channelId, now: publicSeg(this.now), pid: process.pid };
+    return { state: this.state, channelId: this.channelId, now: publicSeg(this.now), pid: process.pid, inChannel: this.people(), viewers: this.viewers ?? null };
   }
 
   emitEvent(type, data = {}) {
@@ -69,6 +81,7 @@ export class Player extends EventEmitter {
     this.state = "starting";
     this.channelId = channelId;
     this.idleSince = null;
+    this.viewers = null;
     try {
       if (!this.plex.base) await this.plex.connect();
       await this.streamer.joinVoice(guildId(), channelId);
@@ -308,16 +321,30 @@ export class Player extends EventEmitter {
     }
   }
 
-  checkIdle() {
-    if (this.state !== "on" && this.state !== "paused") return;
-    const ch = this.streamer.client.channels.cache.get(this.channelId);
+  // People (not bots, not the TV itself) in the TV's voice channel, from the server's
+  // voice states.
+  people() {
+    if (!this.channelId) return 0;
     const me = this.streamer.client.user.id;
-    const people = ch?.members?.filter((m) => m.id !== me && !m.user.bot).size ?? 1;
-    if (people > 0) {
+    const guild = this.streamer.client.channels.cache.get(this.channelId)?.guild
+      || this.streamer.client.guilds.cache.get(config.discord.guild_id);
+    if (!guild) return 1; // can't tell: assume someone's there
+    return guild.voiceStates.cache.filter((v) => v.channelId === this.channelId && v.id !== me && !v.member?.user?.bot).size;
+  }
+
+  // Leaves after idle_leave_minutes with nobody in the channel, or nobody watching the
+  // stream (when Discord says who's watching).
+  checkIdle() {
+    if (this.state !== "on" && this.state !== "paused") { this.idleSince = null; return; }
+    const people = this.people();
+    const watching = this.viewers ?? people;
+    if (people > 0 && watching > 0) {
       this.idleSince = null;
     } else {
       this.idleSince ??= Date.now();
-      if (Date.now() - this.idleSince >= config.broadcast.idle_leave_minutes * 60000) this.leave("nobody watching");
+      if (Date.now() - this.idleSince >= config.broadcast.idle_leave_minutes * 60000) {
+        this.leave(people ? "nobody watching the stream" : "nobody in the channel");
+      }
     }
   }
 

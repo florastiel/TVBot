@@ -71,7 +71,9 @@ const fits = (rows, room) => {
 function pickBlock(bucket, at, room, ctx) {
   const today = ctx.dayShows(at);
   if (bucket.format === "one_show") {
-    const shows = stalest(bucket.shows.filter((s) => !today.has(s)), (s) => ctx.showLast.get(s));
+    let shows = stalest(bucket.shows.filter((s) => !today.has(s)), (s) => ctx.showLast.get(s));
+    // The premiere bucket: only serialized shows that would start from episode one.
+    if (bucket.premiere) shows = shows.filter((s) => inOrder(s) && !(ctx.showLast.get(s) > at - 30 * DAY));
     for (const show of shows.slice(0, TRIES)) {
       const eps = episodesOf(show, 6, at, ctx);
       for (let k = eps.length; k >= 1; k--) {
@@ -124,9 +126,13 @@ function pickBlock(bucket, at, room, ctx) {
   return null;
 }
 
+// A serialized show starting from its very first episode gets billed as a premiere.
+const isPremiere = (rows) => rows[0]?.kind === "episode" && inOrder(rows[0].show_title) && rows[0].season === 1 && rows[0].episode === 1;
+
 function place(bucket, at, pick, ctx) {
   const theme = bucket.source === "auto" ? season(localDay(at)).theme : null;
-  saveBlocks([{ start: at, end: at + pick.lengthMs, label: bucket.name, ids: pick.rows.map((r) => r.id), theme: theme !== "none" ? theme : null, bucketId: bucket.id }], "bucket");
+  const label = bucket.format === "one_show" && isPremiere(pick.rows) ? "Series Premiere" : bucket.name;
+  saveBlocks([{ start: at, end: at + pick.lengthMs, label, ids: pick.rows.map((r) => r.id), theme: theme && theme !== "none" ? theme : null, bucketId: bucket.id }], "bucket");
   for (const r of pick.rows) {
     ctx.used.add(r.id);
     if (r.show_title) { ctx.showLast.set(r.show_title, at); ctx.dayShows(at).add(r.show_title); }

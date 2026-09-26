@@ -9,7 +9,7 @@ import { log } from "../log.js";
 
 const FFMPEG = () => process.env.FFMPEG_PATH || "ffmpeg";
 const EDGE_MS = 60000;  // ignore the first/last minute (cold open fade-ins, credits)
-const MERGE_MS = 60000; // black+silence moments closer than this are one break
+const MERGE_MS = 90000; // black+silence moments closer than this are one break
 
 // ms positions of black+silence moments in the file.
 export function detectBreaks(file, { audioStream = null } = {}) {

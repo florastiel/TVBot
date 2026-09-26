@@ -19,6 +19,8 @@ import { localDay, localTime } from "../schedule/time.js";
 import { scheduledUntil } from "../schedule/store.js";
 import { guideText } from "../schedule/guide.js";
 import { runTagging } from "../tagging/tagger.js";
+import { tagOrder } from "../tagging/order.js";
+import { tagEpisodeThemes } from "../tagging/episodes.js";
 import { getMeta, getDb } from "../db.js";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -44,6 +46,8 @@ async function upkeep() {
     log.info("bot: weekly catalog sync");
     await runSync();
     await runTagging().catch((e) => log.warn(`bot: tagging failed: ${e.message}`));
+    await tagOrder().catch((e) => log.warn(`bot: order tagging failed: ${e.message}`));
+    await tagEpisodeThemes().catch((e) => log.warn(`bot: episode theme tagging failed: ${e.message}`));
   }
   const until = scheduledUntil();
   if (until < Date.now() + 12 * 3600000) {

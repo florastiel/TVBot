@@ -135,6 +135,19 @@ const MIGRATIONS = [
   ALTER TABLE items ADD COLUMN ad_cues TEXT;
   ALTER TABLE items ADD COLUMN ad_cues_checked INTEGER;
   `,
+  `
+  -- 1 = serialized (air in order), 0 = episodic (any order); NULL = not decided yet.
+  ALTER TABLE shows ADD COLUMN serialized INTEGER;
+  `,
+  `
+  -- Special episodes (musical, beach, ...), found from episode titles.
+  CREATE TABLE item_themes (
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    theme   TEXT NOT NULL,
+    PRIMARY KEY (item_id, theme)
+  );
+  ALTER TABLE items ADD COLUMN themes_checked INTEGER;
+  `,
 ];
 
 let db;
