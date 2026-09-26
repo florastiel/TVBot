@@ -51,6 +51,15 @@ Copy `.env.example` to `.env` and fill it in: `STREAMER_TOKEN` (the streamer acc
 `RD_TOKEN` (real-debrid.com/apitoken). `.env` is
 gitignored; never commit it.
 
+**YouTube sign-in (for age-restricted videos in the drop threads)**: yt-dlp uses browser
+cookies, not OAuth. In a private/incognito window, sign in to YouTube (an adult,
+age-verified account; a spare one is safest), then open youtube.com/robots.txt in that
+same window and export its cookies in Netscape format (e.g. the "Get cookies.txt
+LOCALLY" extension, allowed in incognito). Save as `data\youtube-cookies.txt` and close
+the window without signing out (signing out kills those cookies). Used automatically when
+the file is there; if the drop threads start saying the saved sign-in didn't work,
+export a fresh one.
+
 **If the player log says "invalid token"**: the streamer account's token was reset (logging out
 of that browser session does it). Log in to the streamer account in an incognito window, F12 →
 Network → click a channel → copy the `authorization` header into `STREAMER_TOKEN`,
@@ -78,6 +87,7 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 | `/tvpause`, Pause button | people in the TV's voice channel | emergency pause: the show cuts to a silent "Paused" card at once |
 | `/tvresume`, Resume button | people in the TV's voice channel | picks up at the second it was paused; the channel then catches up by cutting ads |
 | `/tvlive` | people in the TV's voice channel | forget the delay, jump to what the schedule says is on now |
+| `/tvhelp` | anyone | posts how to use the TV in the channel (for everyone; replaces the previous help post) |
 | `/schedule` | anyone | refreshes today's TV guide post in the TV channel by editing it (no new copy, no notifications) and tells only you, with a link (a private reply you can dismiss); `week: True` shows you the week instead (only you see it) |
 | `/entrance set` + file | anyone | your join sound (first 8 s, volume evened out) |
 | `/entrance clear` | anyone (admin: anyone's) | remove a join sound |

@@ -102,6 +102,47 @@ export function guideMessages(days) {
 
 const ANYONE_ADMIN = String(config.discord.admin_user_id).trim() === "*";
 
+// /tvhelp: how to use the TV, for everyone (posted in the channel, not private).
+function helpEmbeds() {
+  const thread = (id, name) => (id ? `<#${id}>` : `the ${name} thread`);
+  const d = config.discord;
+  return [
+    new EmbedBuilder().setTitle("📺 How to use the TV").setDescription([
+      "**Watch**",
+      "• Join a voice channel and type `/tv`. The TV joins and starts whatever the schedule says is on right now, like real TV.",
+      "• Click **Watch** on the stream in the voice channel to see it (after the TV restarts, click it again).",
+      "• `/tvoff` turns it off. It also leaves by itself when nobody's watching.",
+      "",
+      "**Pause and catch up** (people in the TV's voice channel)",
+      "• `/tvpause` or the **Pause** button: freezes it on a \"Paused\" card. `/tvresume` picks up at the same second, and the TV catches up by cutting ads.",
+      "• `/tvlive`: skip the catch-up and jump to what's on now.",
+      "• **Skip commercials** button (on the break message): ends the current break.",
+      "",
+      "**What's on**",
+      "• The **Today on TV** post in this channel has the day's lineup; it updates itself at midnight.",
+      "• `/schedule` refreshes it (no new post, nobody gets pinged). `/schedule week: True` shows you the week's lineup privately.",
+      "• Weekday nights have themes (heists and spies Monday, sci-fi Tuesday, whodunits and classics Wednesday, prestige and musicals Thursday, blockbusters Friday); Saturday mornings are cartoons, 5:30 to 12:15.",
+    ].join("\n")),
+    new EmbedBuilder().setTitle("🎬 Add stuff").setDescription([
+      `• ${thread(d.drop_thread_id, "Commercials")}: post YouTube links or video files and they become **commercials**.`,
+      `• ${thread(d.clip_thread_id, "Clips")}: same, as **clips** (short bits between shows).`,
+      `• ${thread(d.eyecatch_thread_id, "Eyecatchers")}: same, as **eyecatches** (the little bumpers around a mid-show break; a minute at most).`,
+      "The bot reacts ⏳, then ✅ or ⚠️ with a reply saying what went in or why not (too long, unavailable...). Commercials and clips can be up to 10 minutes. New ones can air at the next break.",
+      "",
+      "**Your entrance sound**",
+      `• \`/entrance set\` with a sound or video file: it plays when you join the TV's voice channel (first ${config.entrance.max_seconds} seconds). \`/entrance clear\` removes it.`,
+    ].join("\n")),
+    new EmbedBuilder().setTitle(ANYONE_ADMIN ? "🛠️ Controls (anyone can use these for now)" : "🛠️ Admin controls").setDescription([
+      "• `/tvadmin skip`: skip this episode or movie.",
+      "• `/tvadmin skipblock`: skip the rest of this block.",
+      "• `/tvadmin special`: plan a marathon or themed special, e.g. \"Scream marathon Saturday 8pm\".",
+      "• `/tvadmin regen`: new random picks for the upcoming blocks.",
+      "• `/tvadmin sync`: re-read the whole catalog now (takes a few minutes).",
+      "• `/tvadmin add`: add commercials or clips by link (the threads above are easier).",
+    ].join("\n")),
+  ];
+}
+
 const COMMANDS = [
   new SlashCommandBuilder().setName("tv").setDescription("Turn on the TV in the voice channel you're in"),
   new SlashCommandBuilder().setName("tvoff").setDescription("Turn off the TV"),
@@ -122,6 +163,7 @@ const COMMANDS = [
       .addStringOption((o) => o.setName("urls").setDescription("One or more links, separated by spaces").setRequired(true)))
     .addSubcommand((s) => s.setName("special").setDescription("Plan a marathon or themed special")
       .addStringOption((o) => o.setName("request").setDescription('e.g. "Scream marathon Saturday 8pm" or "Ghibli afternoon Sunday"').setRequired(true))),
+  new SlashCommandBuilder().setName("tvhelp").setDescription("Post how to use the TV (replaces the last help post)"),
   new SlashCommandBuilder().setName("schedule").setDescription("Refresh today's TV guide post in the TV channel")
     .addBooleanOption((o) => o.setName("week").setDescription("Show me the whole week's lineup of block types instead (only you see it)")),
   new SlashCommandBuilder().setName("entrance").setDescription("Your sound when you join the TV's voice channel")
@@ -457,6 +499,18 @@ export async function startBot() {
           await maintenance.run(() => generateSchedule({ replace: true, replan, days: config.broadcast.plan_days }));
           return i.editReply("New schedule is ready (from the next block on). /schedule to see it.");
         }
+      }
+      if (i.isChatInputCommand() && i.commandName === "tvhelp") {
+        // Posted for everyone; the previous help post is removed so there's only ever one.
+        await i.reply({ embeds: helpEmbeds(), allowedMentions: { parse: [] } });
+        const msg = await i.fetchReply();
+        const prev = JSON.parse(getMeta("help_post") || "null");
+        if (prev && prev.id !== msg.id) {
+          const ch = await client.channels.fetch(prev.channelId).catch(() => null);
+          await remove(await ch?.messages.fetch(prev.id).catch(() => null));
+        }
+        setMeta("help_post", JSON.stringify({ channelId: msg.channelId, id: msg.id }));
+        return;
       }
       if (i.isChatInputCommand() && i.commandName === "schedule") {
         if (i.options.getBoolean("week")) {
