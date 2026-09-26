@@ -399,16 +399,33 @@ ${cat.text}`, listBuckets());
 // The weekly pass: a handful of new buckets for the next two weeks (seasonal and event
 // ideas especially), the whole catalog checked against them, and titles that have no
 // bucket yet (new to the catalog) sorted into all of them.
-export async function newBuckets({ count = 5, request = null } = {}) {
+// thin: instead, new buckets for the titles that have only one bucket (often a loose fit
+// the first pass had to force); "show" or "movie" for only those.
+export async function newBuckets({ count = 5, request = null, thin = false } = {}) {
   const client = new Anthropic({ apiKey: secrets.anthropicKey });
   refreshHolidayBuckets();
   const cat = catalog();
   const existing = listBuckets().filter((b) => b.source === "claude");
+  let ask;
+  if (thin) {
+    const homes = new Map();
+    for (const b of existing) for (const k of [...b.shows, ...b.items]) homes.set(k, [...(homes.get(k) || []), b.name]);
+    const lonely = [...cat.ids].filter(([, t]) => (thin === true || thin === t.kind) && (homes.get(t.kind === "show" ? t.title : t.id) || []).length === 1)
+      .map(([id, t]) => `${id} ${t.title} [now only in: ${homes.get(t.kind === "show" ? t.title : t.id)[0]}]`);
+    ask = `These titles are each in only one bucket, and it's often a loose fit (the first pass had to put them somewhere):
+${lonely.join("\n")}
+
+Define up to ${count} new buckets that would be better, more natural homes for them: group them by what they really are (genre, tone, era, franchise, audience). Each new bucket needs enough titles to fill it; it can and should also take fitting titles from the rest of the catalog below. Don't duplicate existing buckets.`;
+  } else if (request) {
+    ask = `The admin asked for these buckets: ${request}. Define each one the catalog below can fill (skip one only if an existing bucket is really the same thing, or the catalog has too little for it).`;
+  } else {
+    ask = `Define up to ${count} new buckets that would make these weeks fun: seasonal or event ideas especially (holidays, notable dates, "Shark Week" style themes), or fresh angles on the catalog nobody has used yet. Don't duplicate existing buckets, and only define ones the catalog below can fill.`;
+  }
   const fresh = await defineBuckets(client, `The channel's existing buckets (name | format | dayparts | season | about):
 ${existing.map(bucketLine).join("\n")}
 
 The next two weeks: ${upcomingDates(14).join(", ")}.
-${request ? `The admin asked for these buckets: ${request}. Define each one the catalog below can fill (skip one only if an existing bucket is really the same thing, or the catalog has too little for it).` : `Define up to ${count} new buckets that would make these weeks fun: seasonal or event ideas especially (holidays, notable dates, "Shark Week" style themes), or fresh angles on the catalog nobody has used yet. Don't duplicate existing buckets, and only define ones the catalog below can fill.`}
+${ask}
 
 CATALOG
 ${cat.text}`, listBuckets());

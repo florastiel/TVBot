@@ -73,6 +73,7 @@ Object.assign(commands, {
     if (args.includes("--build")) await b.buildBuckets();
     const request = args.filter((a) => !a.startsWith("--")).join(" ") || null;
     if (args.includes("--new")) await b.newBuckets({ request });
+    if (args.includes("--thin")) await b.newBuckets({ thin: args.includes("movies") ? "movie" : args.includes("shows") ? "show" : true, count: 10 });
     for (const x of b.listBuckets()) {
       const members = x.shows.length ? x.shows : x.items.map((id) => `#${id}`);
       console.log(`${x.name} [${x.format}; ${x.dayparts.join("/")}${x.active_from ? `; ${x.active_from}..${x.active_to}` : ""}] ${members.length}: ${members.slice(0, 8).join(", ")}${members.length > 8 ? ", ..." : ""}`);
@@ -173,7 +174,7 @@ if (!commands[cmd]) {
   playlist "<show>" [count]    set the test playlist to a few episodes of a show
   tag [--dry|--sample|--redo|--order|--episodes]  tag the catalog with Claude (only untagged items unless --redo; --order: serialized/episodic; --episodes: musical/beach episodes)
   schedule [days] [--replace|--replan]  fill the schedule from the week's grid (--replace: new picks, free; --replan: new grid from Claude)
-  buckets [--build|--new ["ideas"]]  list the buckets (--build: Claude sorts the catalog; --new: a few new ones, or the ones asked for)
+  buckets [--build|--new ["ideas"]]  list the buckets (--build: Claude sorts the catalog; --new: a few new ones, or the ones asked for; --thin: new homes for titles with only one bucket)
   plan [days]                  print the grid of bucket slots
   guide                        print what's on today
   playlist --clear             drop the test playlist; the TV follows the schedule
