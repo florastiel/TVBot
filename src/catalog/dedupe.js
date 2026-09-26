@@ -18,6 +18,16 @@ import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
 
 const norm = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+
+// shows.prefer_source in config.yaml: a show whose episodes should come from one source
+// only (plex | local | realdebrid): its other sources' copies are left out entirely,
+// even for episodes the preferred one lacks (e.g. Plex's copy is broken).
+const preferred = (show) => {
+  const m = config.shows?.prefer_source || {};
+  const key = Object.keys(m).find((k) => norm(k) === norm(show));
+  return key ? String(m[key]).toLowerCase() : null;
+};
+const wrongSource = (r) => r.kind === "episode" && r.show_title && (preferred(r.show_title) ?? r.source) !== r.source;
 const TAG = /\s*\((?:(?:19|20)\d{2}|US|UK|AU|NZ|CA)\)\s*$/i;
 const loose = (s) => norm(String(s ?? "").replace(TAG, ""));
 const ORDINAL = { second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6 };
@@ -101,6 +111,7 @@ function markDuplicates(db) {
     FROM items WHERE present = 1 AND match = 'full' AND kind IN ('episode', 'movie')`).all();
   const groups = new Map();
   for (const r of rows) {
+    if (wrongSource(r)) continue; // left out by step 4, and not a candidate to be the kept copy
     const key = r.kind === "episode"
       ? (r.show_title && r.season != null && r.episode != null ? `e|${norm(r.show_title)}|${r.season}|${r.episode}` : null)
       : (r.year ? `m|${norm(r.title)}|${r.year}` : null);
@@ -149,7 +160,7 @@ export function dedupeCatalog() {
     const renamed = lineUpShowNames(db);
     const r = markDuplicates(db);
     const odd = markOddballs(db);
-    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies/spots left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""}); ${odd} much-shorter-than-usual episodes left out`);
+    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies/spots left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""}); ${odd} episodes left out (much shorter than the rest of their show, or from a source turned off for that show)`);
     return { renamed, oddballs: odd, ...r };
   });
 }
@@ -159,14 +170,15 @@ export function dedupeCatalog() {
 // promos) would get a 5-minute block of its own, so it's marked `oddball` and left out.
 // Recomputed each time: a show whose episodes are mostly short is left alone (the median
 // is short too). Returns how many episodes are marked.
+// Also here: episodes from a source the show isn't preferred to use (shows.prefer_source).
 const ODD_MAX_MIN = 10;
 const ODD_RATIO = 0.4;
 function markOddballs(db) {
-  const rows = db.prepare(`SELECT id, show_title, duration_ms, oddball FROM items
-    WHERE kind = 'episode' AND present = 1 AND duplicate_of IS NULL AND duration_ms > 0 AND show_title IS NOT NULL`).all();
+  const rows = db.prepare(`SELECT id, source, kind, show_title, duration_ms, oddball FROM items
+    WHERE kind = 'episode' AND present = 1 AND duplicate_of IS NULL AND show_title IS NOT NULL`).all();
+  const want = new Set(rows.filter(wrongSource).map((r) => r.id));
   const byShow = new Map();
-  for (const r of rows) (byShow.get(r.show_title) || byShow.set(r.show_title, []).get(r.show_title)).push(r);
-  const want = new Set();
+  for (const r of rows) if (r.duration_ms > 0 && !want.has(r.id)) (byShow.get(r.show_title) || byShow.set(r.show_title, []).get(r.show_title)).push(r);
   for (const eps of byShow.values()) {
     if (eps.length < 5) continue;
     const median = eps.map((e) => e.duration_ms).sort((a, b) => a - b)[Math.floor(eps.length / 2)];

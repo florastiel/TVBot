@@ -188,7 +188,10 @@ itself is never merged). Then one copy of each episode (show + season + episode)
 movie (title + year) is kept: a playable one, Plex over local over Real-Debrid, 1080p or
 less. The rest are marked `duplicate_of` the kept one, never scheduled and never read
 over the network; if the kept Real-Debrid copy can't be read, the next copy is tried.
-`tv.cmd stats` counts them.
+`tv.cmd stats` counts them. For a show whose copy in one place is broken, `shows.prefer_source`
+(`Steins; Gate: realdebrid`) uses that source only: the show's episodes from the other
+sources are left out completely, even ones the chosen source lacks. Episodes far shorter
+than the rest of their show (clips or promos listed as episodes) are left out too.
 
 **Drop threads.** Anyone can post YouTube (etc.) links or video files in the TV
 channel's threads: Commercials, Clips, Eyecatchers (`discord.drop_thread_id`,

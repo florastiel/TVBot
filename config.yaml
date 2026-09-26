@@ -49,6 +49,11 @@ shows:
   random: []                   # always random episodes (overrides Claude's serialized/episodic call)
   in_order: ["How to Succeed in Business"]   # always in order (that one's a musical in 4 parts)
   never: []                    # these never get scheduled
+  # A show whose episodes should all come from one source (plex, local or realdebrid): its
+  # copies from the other sources are left out, even for episodes the chosen one lacks.
+  # For a show whose copy in one place is broken or mislabeled.
+  prefer_source:
+    Steins; Gate: realdebrid   # Plex's copy is broken (clips listed as episodes)
   # Show names from Real-Debrid / local folders that mean a Plex show (or each other).
   # Case, punctuation, a "(2019)"/"(US)" tag and "S2"/"2nd Season" are matched by
   # themselves; these are the ones that need telling (other language, other wording).
