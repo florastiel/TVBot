@@ -21,10 +21,14 @@ const pixFmt = () => (usingQsv() ? "nv12" : "yuv420p");
 function videoCodecArgs() {
   const { bitrate_kbps: b, max_bitrate_kbps: max } = config.encode;
   const rate = ["-b:v", `${b}k`, "-maxrate:v", `${max}k`, "-bufsize:v", `${Math.round(b / 2)}k`];
-  // Keyframe every second and no B-frames: what Discord's receiver expects.
-  const common = ["-bf", "0", "-force_key_frames", "expr:gte(t,n_forced*1)"];
+  // A real keyframe (IDR) every second and no B-frames: what Discord's receiver expects. A
+  // viewer who joins, or whose player lost a packet, can only pick the picture up at the next
+  // keyframe, so the interval is how long they see black / a buffering circle. -g sets it;
+  // -force_key_frames alone is ignored by Quick Sync (it was 8.5 s, measured 2026-09-26).
+  const common = ["-bf", "0", "-g", String(config.encode.frame_rate)];
   if (usingQsv()) return ["-c:v", "h264_qsv", "-preset", "veryfast", "-look_ahead", "0", ...rate, ...common];
-  return ["-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", ...rate, ...common];
+  // (x264: a fixed 1 s GOP, no extra scene-cut keyframes.)
+  return ["-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", ...rate, ...common, "-keyint_min", String(config.encode.frame_rate), "-sc_threshold", "0"];
 }
 
 // Paths inside an ffmpeg filter (always inside '...') need ':' and '\' escaped; a path
