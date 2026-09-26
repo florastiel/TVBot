@@ -131,10 +131,14 @@ const COMMANDS = [
 const label = (seg) => (seg ? `${seg.title}${seg.subtitle ? ` ${seg.subtitle}` : ""}` : "");
 
 export async function startBot() {
-  // Messages (and their text) only for the drop thread; without one, don't ask for them.
-  const dropId = String(config.discord.drop_thread_id || "").trim();
+  // Messages (and their text) only for the drop threads; without any, don't ask for them.
+  // Thread id -> what its links become.
+  const dropThreads = new Map([
+    [String(config.discord.drop_thread_id || "").trim(), "commercial"],
+    [String(config.discord.clip_thread_id || "").trim(), "clip"],
+  ].filter(([id]) => id));
   const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates];
-  if (dropId) intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
+  if (dropThreads.size) intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
   const client = new Client({ intents });
   let playerStatus = { state: "off" };
   let breakMsg = null;
@@ -294,14 +298,14 @@ export async function startBot() {
     return member?.voice?.channelId ?? null;
   };
 
-  // The drop thread: anyone posts YouTube (etc.) links; they're downloaded into rotation
-  // as commercials, or as clips if the message says "clip". ⏳ while working, then a
-  // reply saying what went in (and why anything was skipped).
+  // The drop threads: anyone posts YouTube (etc.) links; they're downloaded into rotation
+  // as commercials or clips, by thread. ⏳ while working, then a reply saying what went in
+  // (and why anything was skipped).
   client.on("messageCreate", async (m) => {
-    if (!dropId || m.channelId !== dropId || m.author.bot) return;
+    const kind = dropThreads.get(m.channelId);
+    if (!kind || m.author.bot) return;
     const urls = [...new Set(m.content.match(/https?:\/\/\S+/g) || [])].map((u) => u.replace(/[)>\]]+$/, ""));
     if (!urls.length) return;
-    const kind = /\bclips?\b/i.test(m.content) ? "clip" : "commercial";
     await m.react("⏳").catch(() => {});
     let text, ok;
     try {
