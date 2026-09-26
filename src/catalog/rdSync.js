@@ -157,7 +157,7 @@ async function probeNew(client, { tried, dead }) {
         continue;
       }
       try {
-        const p = await probe(await client.unrestrict(r.media_path));
+        const p = await probeWithRetry(client, r.media_path);
         const video = p.streams.find((s) => s.codec_type === "video" && !s.disposition?.attached_pic);
         const t = video ? chooseTracks(fromFfprobeStreams(p.streams), { showTitle: r.show_title }) : { playable: false, reason: "no video track" };
         const cues = (p.chapters || []).map((c) => Math.round(Number(c.start_time) * 1000)).filter((ms) => ms > 0);
@@ -165,9 +165,8 @@ async function probeNew(client, { tried, dead }) {
           t.audioLang ?? null, JSON.stringify(t.subs || { mode: "none" }), t.playable ? 1 : 0, t.reason || null, r.source_updated,
           cues.length ? JSON.stringify(cues) : null, r.id);
       } catch (e) {
-        // Error text can contain the unrestricted URL: keep only the first line, without it.
         // Not marked as checked: Real-Debrid hiccups are usually temporary, so the next sync tries again.
-        const why = e.message.split("\n")[0].replace(/https?:\/\/\S+/g, "<url>");
+        const why = errorText(e);
         if (why.includes("hoster_unavailable")) dead.add(torrent);
         save.run(null, null, null, null, null, 0, `couldn't read from Real-Debrid: ${why}`, null, null, r.id);
         log.warn(`realdebrid: couldn't read item ${r.id}: ${why}`);
@@ -178,4 +177,26 @@ async function probeNew(client, { tried, dead }) {
   await Promise.all(Array.from({ length: 3 }, worker));
   if (dead.size) log.warn(`realdebrid: ${dead.size} torrents have lost their files on Real-Debrid (hoster_unavailable); re-add them there to get them back`);
   return n;
+}
+
+// ffprobe's first stderr line (e.g. "Failed to read handshake response") rather than the
+// command line, without any URL (an unrestricted link works for anyone who has it).
+function errorText(e) {
+  const stderr = String(e.stderr || "").split(/\r?\n/).map((l) => l.trim()).find(Boolean);
+  const text = e.killed ? "ffprobe timed out" : stderr ? `ffprobe: ${stderr}` : e.message.split("\n")[0];
+  return text.replace(/https?:\/\/\S+/g, "<url>").replace(/\[\w+ @ [0-9a-fA-Fx]+\]\s*/g, "");
+}
+
+// Real-Debrid's download servers sometimes drop a connection mid-handshake (a second
+// later the same file reads fine), so try a couple more times with a fresh link.
+async function probeWithRetry(client, link) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await probe(await client.unrestrict(link));
+    } catch (e) {
+      const ffprobeFailed = e.stderr !== undefined || e.killed;
+      if (!ffprobeFailed || attempt >= 3) throw e;
+      await new Promise((r) => setTimeout(r, 2000 * attempt));
+    }
+  }
 }
