@@ -2,6 +2,7 @@
 // everyone sees their own time zone, under Discord's 2000-character limit.
 import { blocksBetween } from "./store.js";
 import { localDay } from "./time.js";
+import { slotsBetween } from "./weekplan.js";
 
 function titles(items) {
   // Consecutive episodes of one show collapse: "South Park (S1E1, S1E2)".
@@ -30,4 +31,30 @@ export function guideText(now = Date.now(), minBlocks = 6) {
   }
   if (!lines.length) return "Nothing is scheduled yet.";
   return `**TV Guide**\n${lines.join("\n")}`;
+}
+
+// The week, a day at a time: [{ title: "Saturday, Sep 26", lines: [...] }]. Blocks
+// already filled show their shows; after that, the grid's block kinds (shows get picked
+// about a day ahead). Discord timestamps, so everyone sees their own time zone.
+const clip = (t, n) => (t.length > n ? `…` : t);
+
+export function weekGrid(now = Date.now(), days = 7) {
+  const today = localDay(now);
+  const end = today.startMs + days * 86400000;
+  const blocks = blocksBetween(now, end);
+  const filledUntil = blocks.reduce((t, b) => (b.start_at <= t + 60000 ? Math.max(t, b.end_at) : t), now);
+  const rows = blocks.filter((b) => b.start_at < filledUntil)
+    .map((b) => ({ at: b.start_at, text: `**${b.label}**: ${clip(titles(b.items), 60)}` }));
+  const slots = slotsBetween(today.startMs, end);
+  const current = slots.filter((s) => s.at <= filledUntil).at(-1);
+  if (current && current.at < filledUntil && slots.some((s) => s.at > filledUntil)) rows.push({ at: filledUntil, text: current.name });
+  for (const s of slots) if (s.at >= filledUntil) rows.push({ at: s.at, text: s.name });
+  const out = [];
+  for (const r of rows) {
+    const day = localDay(r.at);
+    const title = new Date(r.at).toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long", month: "short", day: "numeric" });
+    if (out.at(-1)?.date !== day.date) out.push({ date: day.date, title, lines: [] });
+    out.at(-1).lines.push(`<t:${Math.floor(r.at / 1000)}:t>  ${r.text}`);
+  }
+  return out;
 }

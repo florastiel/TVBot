@@ -5,7 +5,7 @@
 // It shares its login with coupbot. Coup uses only "!coup" text commands, so there's no
 // clash, but to stay safe: commands are added one at a time (never a bulk overwrite
 // that would wipe someone else's), and interactions that aren't ours are ignored.
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, Client, GatewayIntentBits, MessageFlags, REST, Routes,
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, Client, EmbedBuilder, GatewayIntentBits, MessageFlags, REST, Routes,
   SlashCommandBuilder, PermissionFlagsBits } from "discord.js";
 import { config, secrets } from "../config.js";
 import { log } from "../log.js";
@@ -17,7 +17,7 @@ import { planSpecials } from "../schedule/specials.js";
 import { addFromUrls } from "../catalog/download.js";
 import { localDay, localTime } from "../schedule/time.js";
 import { scheduledUntil } from "../schedule/store.js";
-import { guideText } from "../schedule/guide.js";
+import { guideText, weekGrid } from "../schedule/guide.js";
 import { runTagging } from "../tagging/tagger.js";
 import { tagOrder } from "../tagging/order.js";
 import { tagEpisodeThemes } from "../tagging/episodes.js";
@@ -85,7 +85,8 @@ const COMMANDS = [
       .addStringOption((o) => o.setName("urls").setDescription("One or more links, separated by spaces").setRequired(true)))
     .addSubcommand((s) => s.setName("special").setDescription("Plan a marathon or themed special")
       .addStringOption((o) => o.setName("request").setDescription('e.g. "Scream marathon Saturday 8pm" or "Ghibli afternoon Sunday"').setRequired(true))),
-  new SlashCommandBuilder().setName("schedule").setDescription("What's on the TV today"),
+  new SlashCommandBuilder().setName("schedule").setDescription("What's on the TV today")
+    .addBooleanOption((o) => o.setName("week").setDescription("The whole week's lineup of block types instead")),
   new SlashCommandBuilder().setName("entrance").setDescription("Your sound when you join the TV's voice channel")
     .addSubcommand((s) => s.setName("set").setDescription(`Upload a sound (only the first ${config.entrance.max_seconds} seconds play)`)
       .addAttachmentOption((o) => o.setName("file").setDescription("mp3, wav, ogg, or a video clip").setRequired(true)))
@@ -294,6 +295,22 @@ export async function startBot() {
         }
       }
       if (i.isChatInputCommand() && i.commandName === "schedule") {
+        if (i.options.getBoolean("week")) {
+          // Only block kinds: the actual shows are picked about a day ahead.
+          const days = weekGrid().slice(0, 10);
+          if (!days.length) return i.reply({ content: "No week planned yet.", ...ephemeral });
+          // Discord allows 6000 characters over all embeds of a message: stop adding lines before that.
+          let room = 5800;
+          const embeds = [];
+          for (const d of days) {
+            const lines = [];
+            for (const l of d.lines) { if (room - l.length - d.title.length - 1 < 0) break; lines.push(l); room -= l.length + 1; }
+            if (!lines.length) break;
+            room -= d.title.length;
+            embeds.push(new EmbedBuilder().setTitle(d.title).setDescription(lines.join("\n")));
+          }
+          return i.reply({ content: "This week's lineup (shows are picked a day ahead; times shift a little as the day goes).", embeds, ...ephemeral });
+        }
         return i.reply({ content: guideText(), ...ephemeral, allowedMentions: { parse: [] } });
       }
       if (i.isButton() && i.customId.startsWith("tv:skip:")) {
