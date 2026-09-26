@@ -41,8 +41,32 @@ function splitSeason(title) {
   return { base: title.slice(0, m.index).trim(), season };
 }
 
+// shows.rename in config.yaml: a show whose files are really another show (Plex has the
+// Mr. Bean episodes filed as "Zero-one"). Unlike aliases this covers Plex too, and runs
+// after every sync, which brings Plex's wrong name back each time. The old show's row and
+// bucket memberships go; the new name is tagged and bucketed as a new show.
+// Returns how many names changed.
+function renameShows(db) {
+  let changed = 0;
+  for (const [from, to] of Object.entries(config.shows?.rename || {})) {
+    const names = db.prepare("SELECT DISTINCT show_title t FROM items WHERE kind = 'episode' AND show_title IS NOT NULL").all()
+      .map((r) => r.t).filter((t) => norm(t) === norm(from) && t !== to);
+    for (const t of names) {
+      const n = db.prepare("UPDATE items SET show_title = ? WHERE kind = 'episode' AND show_title = ?").run(String(to), t).changes;
+      db.prepare("DELETE FROM shows WHERE title = ?").run(t);
+      db.prepare("DELETE FROM bucket_members WHERE show_title = ?").run(t);
+      log.info(`dedupe: show "${t}" is really "${to}" (${n} episodes)`);
+      changed++;
+    }
+  }
+  if (changed) db.exec(`INSERT OR IGNORE INTO shows (title) SELECT DISTINCT show_title FROM items
+    WHERE kind = 'episode' AND show_title IS NOT NULL`);
+  return changed;
+}
+
 // Step 1. Returns how many show names changed.
 function lineUpShowNames(db) {
+  const renamed = renameShows(db);
   const aliases = new Map(Object.entries(config.shows?.aliases || {}).map(([k, v]) => [norm(k), String(v)]));
   const plex = db.prepare(`SELECT DISTINCT show_title t FROM items WHERE source = 'plex' AND kind = 'episode' AND show_title IS NOT NULL`).all().map((r) => r.t);
   const plexExact = new Map(plex.map((t) => [norm(t), t]));
@@ -87,7 +111,7 @@ function lineUpShowNames(db) {
   }
   if (changed) db.exec(`INSERT OR IGNORE INTO shows (title) SELECT DISTINCT show_title FROM items
     WHERE kind = 'episode' AND show_title IS NOT NULL`);
-  return changed;
+  return changed + renamed;
 }
 
 // Which copy to keep, best first: a manual veto wins (so it keeps covering the episode),

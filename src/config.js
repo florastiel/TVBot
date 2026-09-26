@@ -33,7 +33,7 @@ const DEFAULTS = {
     idle_leave_minutes: 5,
   },
   plex: { server_name: "", libraries: [], include_unmatched: false, include_show_only_matches: true },
-  shows: { random: [], in_order: [], never: [], aliases: {}, prefer_source: {} },
+  shows: { random: [], in_order: [], never: [], aliases: {}, rename: {}, prefer_source: {} },
   buckets: { shuffle: [], in_order: [] },
   language: { audio: "eng", subtitles: "eng", always_subtitles: true, hardsubbed_shows: [] },
   local: { shows: "", movies: "", clips: "", commercials: "", shorts: "", eyecatches: "", library: [] },
