@@ -18,7 +18,7 @@ broadcast:
   between_spots: 2             # videos in the break between shows (the first is sometimes a clip, see clip_chance)
   inside_spots: 1              # commercials in a break inside a show (at a fade to black): 1, or 2 = add a second when both are short
   short_spot_seconds: 35       # with inside_spots 2: "short" means this long or less
-  eyecatches: tv               # an eyecatch before and after a break inside a show: tv (anime + what Claude judged would air with TV breaks: sitcoms, cartoons, network dramas, rom-coms...), anime, all, or none
+  eyecatches: tv               # an eyecatch before and after a break inside a show: tv (what Claude judged would air with TV breaks: sitcoms, cartoons, network dramas, rom-coms...), all, or none. Never in anime (it has its own)
   # A folder of commercials counts as one brand (so 88 Pop-Tarts ads don't take over);
   # folders named here are packs of many different ads, and each file counts on its own.
   variety_folders: ["commercialpack1", "Collectionof90sCommercials"]
@@ -47,7 +47,7 @@ plex:
 shows:
   # Exact show titles as Plex shows them (tv.cmd stats / the TV guide).
   random: []                   # always random episodes (overrides Claude's serialized/episodic call)
-  in_order: []                 # always in order
+  in_order: ["How to Succeed in Business"]   # always in order (that one's a musical in 4 parts)
   never: []                    # these never get scheduled
   # Show names from Real-Debrid / local folders that mean a Plex show (or each other).
   # Case, punctuation, a "(2019)"/"(US)" tag and "S2"/"2nd Season" are matched by
@@ -93,6 +93,9 @@ local:
   commercials: D:\data\tv\commercials  # tag in commercials\tags.csv
   shorts: D:\data\tv\shorts        # <Series>\Series S01E02.mkv; short (2-15 min) shows that fill gaps after a skip
   eyecatches: D:\data\tv\eyecatches  # a minute or less each; eyecatches\<Show Name>\... are used only for that show
+  # Loose folders of shows and movies, any layout (the Seagate drive): each file is
+  # identified by its release name. Unplugged = off the schedule until it's back.
+  library: ['E:\TV Shows', 'E:\Anime', 'E:\Movies', 'E:\Musicals']
 
 realdebrid:
   # Every finished torrent on the Real-Debrid account (RD_TOKEN in .env) joins the

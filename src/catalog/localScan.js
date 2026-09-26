@@ -6,6 +6,7 @@ import { config } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
 import { chooseTracks, fromFfprobeStreams } from "./tracks.js";
+import { parseRelease, showName, tidy as tidyName } from "./release.js";
 
 const run = promisify(execFile);
 const VIDEO = new Set([".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts", ".webm", ".flv"]);
@@ -46,6 +47,29 @@ export function parsePath(kind, root, file) {
   return y && kind === "movie" ? { title: tidy(y[1]), year: Number(y[2]) } : { title: tidy(name) };
 }
 
+// Loose libraries (local.library: a plugged-in drive's "Movies", "TV Shows"...): there's no
+// folder layout to go by, so each file is identified from its release name like a
+// Real-Debrid file. Download-host and "Untitled" folder names are ignored. Numbered files
+// in a named folder ("Gurren Lagann\01. Title.mkv", "How to Succeed\H2$-3.mp4") are that
+// folder's show, in order. Anything else becomes a movie, with or without a year.
+const JUNK_DIR = /\.(com|net|org|fun|io|to)\b|^untitled\b|^new folder\b/i;
+export function parseLibraryFile(root, file) {
+  const rel = relative(root, file).split(sep);
+  const dirs = rel.slice(0, -1).filter((d) => !JUNK_DIR.test(d));
+  const p = parseRelease([...dirs, rel.at(-1)].join("/"));
+  if (!p) return null;
+  if (p.match === "full") return p;
+  const name = basename(file, extname(file));
+  const folder = dirs.length ? showName(dirs[0]) : null; // the top one: "How to Succeed\H2$\H2$-1.mp4"
+  if (folder) {
+    const lead = name.match(/^(\d{1,3})[ ._)-]+(.*)$/);
+    if (lead) return { kind: "episode", show_title: folder, season: 1, episode: Number(lead[1]), title: tidyName(lead[2]) || `Episode ${Number(lead[1])}`, match: "full" };
+    const part = name.match(/[ ._-](?:part[ ._-]?)?(\d{1,2})$/i);
+    if (part) return { kind: "episode", show_title: folder, season: 1, episode: Number(part[1]), title: `Part ${Number(part[1])}`, match: "full" };
+  }
+  return { ...p, kind: "movie", title: p.title || tidyName(name), match: "full" };
+}
+
 // file: a path, or a URL (Real-Debrid items).
 export async function probe(file) {
   const { stdout } = await run(process.env.FFPROBE_PATH || "ffprobe",
@@ -58,13 +82,35 @@ export async function scanLocal() {
   const db = getDb();
   const upsert = db.prepare(`
     INSERT INTO items (source, source_key, kind, library, show_title, season, episode, title, year, match, source_updated, present)
-    VALUES ('local', :source_key, :kind, :library, :show_title, :season, :episode, :title, :year, 'full', :source_updated, 1)
+    VALUES ('local', :source_key, :kind, :library, :show_title, :season, :episode, :title, :year, :match, :source_updated, 1)
     ON CONFLICT (source, source_key) DO UPDATE SET
       kind = excluded.kind, library = excluded.library, show_title = excluded.show_title, season = excluded.season,
-      episode = excluded.episode, title = excluded.title, year = excluded.year,
+      episode = excluded.episode, title = excluded.title, year = excluded.year, match = excluded.match,
       source_updated = excluded.source_updated, present = 1`);
+  const stamp = (f) => { const st = statSync(f); return Math.floor(st.mtimeMs / 1000) * 1000 + (st.size % 1000); };
 
   const seen = new Set();
+  // Loose libraries (see parseLibraryFile): shows and movies mixed, named by release name.
+  for (const root of [config.local.library || []].flat().filter(Boolean)) {
+    if (!existsSync(root)) {
+      log.info(`local: library ${root} isn't there (drive unplugged?); its items are off the schedule until it's back`);
+      continue;
+    }
+    const files = walk(root);
+    let n = 0;
+    tx(() => {
+      for (const f of files) {
+        const p = parseLibraryFile(root, f);
+        if (!p) continue;
+        upsert.run({ source_key: f, library: `local:library`, show_title: null, season: null, episode: null, year: null, ...p, source_updated: stamp(f) });
+        seen.add(f);
+        n++;
+      }
+    });
+    db.exec(`INSERT OR IGNORE INTO shows (title) SELECT DISTINCT show_title FROM items
+      WHERE source = 'local' AND kind = 'episode' AND show_title IS NOT NULL`);
+    log.info(`local: library ${root}: ${n} files`);
+  }
   for (const [key, kind] of Object.entries(FOLDERS)) {
     const root = config.local[key];
     if (!root) continue;
@@ -75,11 +121,10 @@ export async function scanLocal() {
     const files = walk(root);
     tx(() => {
       for (const f of files) {
-        const st = statSync(f);
         upsert.run({
-          source_key: f, kind, library: `local:${key}`, show_title: null, season: null, episode: null, year: null,
+          source_key: f, kind, library: `local:${key}`, show_title: null, season: null, episode: null, year: null, match: "full",
           ...parsePath(kind, root, f),
-          source_updated: Math.floor(st.mtimeMs / 1000) * 1000 + (st.size % 1000),
+          source_updated: stamp(f),
         });
         seen.add(f);
       }

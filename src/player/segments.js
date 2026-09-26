@@ -106,18 +106,19 @@ function remember(rows) {
 let breakCounter = 0;
 const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
 
-// Does a break inside this show/movie get eyecatches? broadcast.eyecatches: "all", "none",
-// "anime" (Claude's anime tag), or "tv" (anime, plus whatever Claude judged would have
-// aired with network-TV-style breaks: tagging/breaks.js). Per show for episodes, per item
-// for movies.
+// Does a break inside this show/movie get eyecatches? Never anime (Claude's anime tag):
+// anime has its own eyecatches built in, so ours would double up. Otherwise
+// broadcast.eyecatches: "tv" (whatever Claude judged would have aired with
+// network-TV-style breaks: tagging/breaks.js), "all", or "none". Per show for episodes,
+// per item for movies.
 function wantsEyecatches(row, mode) {
-  if (mode === "all") return true;
-  if (!row || (mode !== "anime" && mode !== "tv")) return false;
+  if (!row || (mode !== "tv" && mode !== "all")) return false;
   const db = getDb();
   const r = row.kind === "episode" && row.show_title
     ? db.prepare("SELECT anime, tv_breaks FROM shows WHERE title = ?").get(row.show_title)
     : db.prepare("SELECT t.anime, i.tv_breaks FROM items i LEFT JOIN tags t ON t.item_id = i.id WHERE i.id = ?").get(row.id);
-  return !!r?.anime || (mode === "tv" && !!r?.tv_breaks);
+  if (r?.anime) return false;
+  return mode === "all" || !!r?.tv_breaks;
 }
 
 const normTitle = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");

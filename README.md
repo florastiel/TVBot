@@ -187,11 +187,12 @@ channel's threads: Commercials, Clips, Eyecatchers (`discord.drop_thread_id`,
 and they air from the next break.
 
 **Eyecatches** (`D:\data\tv\eyecatches`): a break inside a show or movie gets one before
-and one after the commercial if it's anime or the kind of thing that aired with TV
-breaks: sitcoms, cartoons, network dramas, rom-coms, TV-friendly movies; not HBO-style
-prestige or arthouse. Claude makes that call once per show and movie (`tv.cmd tag
---breaks`, and with the weekly tagging for new titles; `shows.tv_breaks` /
-`items.tv_breaks` in the database). `broadcast.eyecatches`: tv, anime, all, or none. Files in
+and one after the commercial if it's the kind of thing that aired with TV breaks:
+sitcoms, cartoons, network dramas, rom-coms, TV-friendly movies; not HBO-style prestige
+or arthouse. Never anime: it has eyecatches of its own. Claude makes that call once per
+show and movie (`tv.cmd tag --breaks`, and with the weekly tagging for new titles;
+`shows.tv_breaks` / `items.tv_breaks` in the database). `broadcast.eyecatches`: tv, all,
+or none. Files in
 `eyecatches\<Show Name>\` belong to that show only, and a show with its own uses only
 those; loose files (and thread uploads) are for any show.
 
