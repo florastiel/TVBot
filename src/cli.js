@@ -74,9 +74,18 @@ Object.assign(commands, {
     const request = args.filter((a) => !a.startsWith("--")).join(" ") || null;
     if (args.includes("--new")) await b.newBuckets({ request });
     if (args.includes("--thin")) await b.newBuckets({ thin: args.includes("movies") ? "movie" : args.includes("shows") ? "show" : true, count: 10 });
+    // Movies and single episodes by name; --all lists every member instead of the first 8.
+    const { getDb } = await import("./db.js");
+    const item = getDb().prepare("SELECT kind, title, year, show_title, season, episode FROM items WHERE id = ?");
+    const name = (id) => {
+      const r = item.get(id);
+      if (!r) return `#${id}`;
+      return r.kind === "episode" ? `${r.show_title} S${r.season}E${r.episode}` : `${r.title}${r.year ? ` (${r.year})` : ""}`;
+    };
+    const max = args.includes("--all") ? Infinity : 8;
     for (const x of b.listBuckets()) {
-      const members = x.shows.length ? x.shows : x.items.map((id) => `#${id}`);
-      console.log(`${x.name} [${x.format}; ${x.dayparts.join("/")}${x.active_from ? `; ${x.active_from}..${x.active_to}` : ""}] ${members.length}: ${members.slice(0, 8).join(", ")}${members.length > 8 ? ", ..." : ""}`);
+      const members = [...x.shows, ...x.items.map(name)];
+      console.log(`${x.name} [${x.format}; ${x.dayparts.join("/")}${x.active_from ? `; ${x.active_from}..${x.active_to}` : ""}] ${members.length}: ${members.slice(0, max).join(", ")}${members.length > max ? ", ..." : ""}`);
     }
   },
 
@@ -174,7 +183,7 @@ if (!commands[cmd]) {
   playlist "<show>" [count]    set the test playlist to a few episodes of a show
   tag [--dry|--sample|--redo|--order|--episodes]  tag the catalog with Claude (only untagged items unless --redo; --order: serialized/episodic; --episodes: musical/beach episodes)
   schedule [days] [--replace|--replan]  fill the schedule from the week's grid (--replace: new picks, free; --replan: new grid from Claude)
-  buckets [--build|--new ["ideas"]]  list the buckets (--build: Claude sorts the catalog; --new: a few new ones, or the ones asked for; --thin: new homes for titles with only one bucket)
+  buckets [--all|--build|--new ["ideas"]|--thin]  list the buckets (--build: Claude sorts the catalog; --new: a few new ones, or the ones asked for; --thin: new homes for titles with only one bucket)
   plan [days]                  print the grid of bucket slots
   guide                        print what's on today
   playlist --clear             drop the test playlist; the TV follows the schedule
