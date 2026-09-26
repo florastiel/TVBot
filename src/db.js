@@ -129,6 +129,12 @@ const MIGRATIONS = [
   );
   ALTER TABLE blocks ADD COLUMN bucket_id INTEGER;
   `,
+  `
+  -- Original commercial-break points (black + silence), in ms (JSON array; [] = none
+  -- found, NULL = not checked yet), and which version of the file was checked.
+  ALTER TABLE items ADD COLUMN ad_cues TEXT;
+  ALTER TABLE items ADD COLUMN ad_cues_checked INTEGER;
+  `,
 ];
 
 let db;

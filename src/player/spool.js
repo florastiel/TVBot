@@ -1,14 +1,16 @@
-// Download-ahead for subtitles. Text subtitles stored inside a video file can only be
-// drawn onto the picture from a local copy (ffmpeg's subtitle renderer reads the whole
-// file first). So while one show plays, the next ones that need it are downloaded
-// here, then played from the local copy with subtitles burned in. Each file is still
-// read from the Plex server once, just earlier. Copies are deleted a while after use,
-// and the folder never grows past player.spool_max_gb.
+// Download-ahead. While one show plays, the next few hours' Plex shows and movies are
+// downloaded here and then played from the local copy: text subtitles stored inside a
+// file can only be drawn from a local copy, the original commercial-break points
+// (black + silence) are found in it, and playback no longer depends on the Plex server
+// holding a long connection. Each file is still read from the Plex server once, just
+// earlier. Local files are only checked for break points. Copies are deleted a while
+// after use, and the folder never grows past player.spool_max_gb.
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { join, extname } from "node:path";
 import { config, DATA_DIR } from "../config.js";
 import { log } from "../log.js";
+import { detectAndSave } from "../catalog/breakdetect.js";
 
 const DIR = join(DATA_DIR, "spool");
 const KEEP_MS = 12 * 3600000; // unused copies older than this are deleted
@@ -18,7 +20,9 @@ let busy = null;
 
 const gb = (n) => n * 1024 ** 3;
 const fileFor = (row) => join(DIR, `${row.id}${extname(row.media_path || "") || ".mkv"}`);
-const needsSpool = (row) => row?.source === "plex" && row.media_path && row.subs && JSON.parse(row.subs).mode === "embedded_text";
+const SHOWS = new Set(["episode", "movie", "short"]);
+const needsSpool = (row) => row?.source === "plex" && row.media_path && SHOWS.has(row.kind);
+const needsCheck = (row) => SHOWS.has(row?.kind) && !(row.ad_cues_checked != null && row.ad_cues_checked === row.source_updated);
 
 // Local copy of an item if it's fully downloaded, else null.
 export function spooledPath(row) {
@@ -30,10 +34,13 @@ export function spooledPath(row) {
   return f;
 }
 
-// Ask for these items to be downloaded (in order), if they need it.
+// Ask for these items to be downloaded and checked for break points (in order), if
+// they need it.
 export function wantSpool(rows, plex) {
   for (const row of rows) {
-    if (!needsSpool(row) || failed.has(row.id) || existsSync(fileFor(row))) continue;
+    if (!row || failed.has(row.id)) continue;
+    const download = needsSpool(row) && !existsSync(fileFor(row));
+    if (!download && !needsCheck(row)) continue;
     if (busy?.id === row.id || queue.some((q) => q.row.id === row.id)) continue;
     queue.push({ row, plex });
   }
@@ -45,7 +52,9 @@ async function work() {
     const { row, plex } = queue.shift();
     busy = row;
     try {
-      await download(row, plex);
+      if (needsSpool(row) && !existsSync(fileFor(row))) await download(row, plex);
+      const file = row.source === "plex" ? (existsSync(fileFor(row)) ? fileFor(row) : null) : row.source_key;
+      if (file && needsCheck(row)) await detectAndSave(row, file).catch((e) => log.warn(`breaks: ${row.show_title || row.title} (${row.id}): ${e.message}`));
     } catch (e) {
       failed.add(row.id);
       log.warn(`spool: ${row.show_title || row.title} (${row.id}) not downloaded: ${e.message}`);
@@ -67,7 +76,7 @@ async function download(row, plex) {
   const size = Number(head.headers.get("content-length")) || 0;
   if (!size) throw new Error("the server didn't say how big the file is");
   if (size > gb(config.player.spool_max_file_gb)) {
-    throw new Error(`${(size / gb(1)).toFixed(1)} GB is over spool_max_file_gb; it plays without subtitles`);
+    throw new Error(`${(size / gb(1)).toFixed(1)} GB is over spool_max_file_gb; it streams from Plex (no inside subtitles, no detected breaks)`);
   }
   prune(size);
   const f = fileFor(row);
@@ -102,7 +111,7 @@ async function download(row, plex) {
   renameSync(part, f);
   const secs = (Date.now() - t0) / 1000;
   log.info(`spool: downloaded ${row.show_title ? `${row.show_title} S${row.season}E${row.episode}` : row.title} ` +
-    `(${(size / gb(1)).toFixed(2)} GB in ${Math.round(secs)} s, ${((size * 8) / secs / 1e6).toFixed(0)} Mbps) for subtitles`);
+    `(${(size / gb(1)).toFixed(2)} GB in ${Math.round(secs)} s, ${((size * 8) / secs / 1e6).toFixed(0)} Mbps)`);
 }
 
 // Make room: drop copies not used for a while, then the least recently used ones until

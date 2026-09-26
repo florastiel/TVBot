@@ -63,7 +63,7 @@ function episodesOf(show, count, at, ctx) {
 const run = (rows) => rows.reduce((n, r) => n + r.duration_ms, 0);
 const maxShow = () => config.broadcast.max_show_block_minutes * 60000;
 const fits = (rows, room) => {
-  const l = blockLength(run(rows));
+  const l = blockLength(run(rows), rows.length);
   return l.lengthMs <= room ? l : null;
 };
 

@@ -14,8 +14,9 @@ const DEFAULTS = {
   broadcast: {
     timezone: "America/New_York",
     grid_minutes: 5,
-    spots_per_hour: [1, 4],
-    break_every_minutes: 15,
+    between_spots: 2,
+    short_spot_seconds: 35,
+    break_every_minutes: 8,
     max_spot_minutes: 3,
     max_show_block_minutes: 75,
     split_without_chapters: true,

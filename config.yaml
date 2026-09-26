@@ -10,8 +10,9 @@ discord:
 broadcast:
   timezone: America/New_York
   grid_minutes: 5              # planned block times round to this; while the TV is on, times follow what actually played
-  spots_per_hour: [1, 4]       # commercials/clips per hour of shows: at least / at most
-  break_every_minutes: 15      # a break comes after at least this much show (long shows/movies get breaks inside, ~every 30 min)
+  between_spots: 2             # videos in the break between shows (the first is sometimes a clip, see clip_chance)
+  short_spot_seconds: 35       # a break inside a show is one commercial, or two if both are this short
+  break_every_minutes: 8       # no break between shows after less than this much show (back-to-back shorts)
   max_spot_minutes: 3          # longest commercial/clip that plays in a break
   max_show_block_minutes: 75   # regular blocks of episodes are at most this long (movies and specials can run longer)
   split_without_chapters: true # if a file has no chapter markers, allow a break at its middle (may be mid-scene)

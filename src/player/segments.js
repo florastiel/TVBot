@@ -18,7 +18,8 @@ export function describe(row) {
 export function toSegment(row, plex, { seekMs = 0, breakId = null } = {}) {
   const subs = row.subs ? JSON.parse(row.subs) : { mode: "none" };
   let subsFile = null;
-  let input = row.source === "plex" ? plex.fileUrl(row.media_path) : row.source_key;
+  // A downloaded-ahead copy plays instead of the Plex stream whenever there is one.
+  let input = row.source === "plex" ? spooledPath(row) || plex.fileUrl(row.media_path) : row.source_key;
   if (subs.mode === "sidecar") {
     subsFile = [join(SUBS_DIR, `${row.id}.ass`), join(SUBS_DIR, `${row.id}.srt`)].find(existsSync) || null;
   } else if (subs.mode === "embedded_text") {
@@ -98,18 +99,27 @@ function remember(rows) {
 let breakCounter = 0;
 const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
 
-// A commercial break: `spots` commercials (the first one sometimes a clip), each at most
-// max_spot_minutes, from different groups.
-export function makeBreak(plex, { theme = null, spots = 1 } = {}) {
-  const maxMs = config.broadcast.max_spot_minutes * 60000;
+// A commercial break. Between shows (inside: false): between_spots videos, the first
+// sometimes a clip. Inside a show: one commercial, or two when both are short
+// (short_spot_seconds or less). Each at most max_spot_minutes, from different groups.
+export function makeBreak(plex, { theme = null, inside = false } = {}) {
+  const b = config.broadcast;
+  const maxMs = b.max_spot_minutes * 60000;
+  const shortMs = b.short_spot_seconds * 1000;
   const rows = [];
   const groups = new Set(); // spread a break over different groups
-  for (let k = 0; k < spots; k++) {
-    const kind = k === 0 && Math.random() < config.broadcast.clip_chance ? "clip" : "commercial";
+  const add = (kind, max) => {
     const other = kind === "clip" ? "commercial" : "clip";
     const avoid = rows.map((x) => x.id);
-    const r = pick(kind, theme, avoid, maxMs, groups) || pick(other, theme, avoid, maxMs, groups);
+    const r = pick(kind, theme, avoid, max, groups) || (inside ? null : pick(other, theme, avoid, max, groups));
     if (r) rows.push(r);
+    return r;
+  };
+  if (inside) {
+    const first = add("commercial", Math.min(maxMs, 60000)); // mid-show: a minute at most
+    if (first && first.duration_ms <= shortMs) add("commercial", shortMs);
+  } else {
+    for (let k = 0; k < b.between_spots; k++) add(k === 0 && Math.random() < b.clip_chance ? "clip" : "commercial", maxMs);
   }
   remember(rows);
   const breakId = newBreakId();

@@ -52,14 +52,29 @@ const MIN_LEFT = 20000; // don't join the last 20 seconds of a show; go to the n
 const EDGE = 5 * 60000;  // never break within 5 minutes of the start/end of a show
 const PIECE_MS = 30 * 60000; // long shows and movies get a break about this often
 
-// Cut long items into pieces of about PIECE_MS, at the chapter point nearest each cut
-// (within 10 minutes), or right at it if the file has no chapters and
-// split_without_chapters is on.
+// Cut items into pieces at their original commercial-break points (black + silence,
+// found in download-ahead). Items without any: long ones (40+ minutes) in pieces of about
+// PIECE_MS, at the chapter point nearest each cut (within 10 minutes), or right at it
+// if the file has no chapters and split_without_chapters is on.
 export function planPieces(items) {
   const out = [];
   for (const r of items) {
-    const n = Math.max(1, Math.round(r.duration_ms / PIECE_MS));
+    const found = (r.ad_cues ? JSON.parse(r.ad_cues) : []).filter((c) => c > 3 * 60000 && c < r.duration_ms - 3 * 60000);
+    if (found.length) {
+      let from = 0;
+      for (const c of found) if (c - from >= 3 * 60000) { out.push({ row: r, from, to: c }); from = c; }
+      out.push({ row: r, from, to: r.duration_ms });
+      continue;
+    }
     const cues = r.cues ? JSON.parse(r.cues) : [];
+    // A regular-length episode with a chapter mark near its middle (anime's Part A/B
+    // eyecatch, which doesn't fade to black): one break there.
+    if (r.duration_ms >= 18 * 60000 && r.duration_ms < 40 * 60000) {
+      const mid = cues.filter((c) => c > r.duration_ms * 0.35 && c < r.duration_ms * 0.65)
+        .sort((x, y) => Math.abs(x - r.duration_ms / 2) - Math.abs(y - r.duration_ms / 2))[0];
+      if (mid) { out.push({ row: r, from: 0, to: mid }, { row: r, from: mid, to: r.duration_ms }); continue; }
+    }
+    const n = r.duration_ms >= 40 * 60000 ? Math.max(1, Math.round(r.duration_ms / PIECE_MS)) : 1;
     let from = 0;
     for (let k = 1; k < n; k++) {
       const target = (r.duration_ms * k) / n;
@@ -192,8 +207,12 @@ export class ScheduleProgram {
       if (this.live) return null;
       sinceBreak += this.clock() - startedAt;
       const remaining = pieces.slice(i + 1).filter((q) => !this.skipped.has(q.row.id));
-      if (remaining.length && sinceBreak >= breakEvery) {
-        yield* before(this.spotBreak(block), remaining[0].row);
+      if (!remaining.length) break;
+      // Inside a show (at its break points): one or two short commercials. Between shows:
+      // between_spots videos, unless the shows are very short.
+      const inside = remaining[0].row.id === p.row.id;
+      if (inside || sinceBreak >= breakEvery) {
+        yield* before(makeBreak(this.plex, { theme: block.theme, inside }), remaining[0].row);
         sinceBreak = 0;
         if (this.live) return null;
       }
@@ -201,7 +220,7 @@ export class ScheduleProgram {
     this.blockRest = new Set();
     // The break between blocks.
     if (sinceBreak >= breakEvery) {
-      yield* before(this.spotBreak(block), nextBlock?.items[0]);
+      yield* before(makeBreak(this.plex, { theme: block.theme }), nextBlock?.items[0]);
       if (this.live) return null;
     }
 
@@ -218,17 +237,6 @@ export class ScheduleProgram {
       yield* before(fillBreak(this.plex, left, { theme: block.theme, upNextTitle: nextTitle }), nextBlock?.items[0]);
     }
     return this.clock() > block.end_at + 30000 && nextBlock?.start_at === block.end_at ? nextBlock : null;
-  }
-
-  // 1 commercial (sometimes 2), keeping to spots_per_hour over the last hour.
-  spotBreak(block) {
-    const now = this.clock();
-    this.spotTimes = (this.spotTimes || []).filter((t) => t > now - 3600000);
-    const room = config.broadcast.spots_per_hour[1] - this.spotTimes.length;
-    if (room <= 0) return [];
-    const spots = Math.min(room, Math.random() < 0.3 ? 2 : 1);
-    for (let k = 0; k < spots; k++) this.spotTimes.push(now);
-    return makeBreak(this.plex, { theme: block.theme, spots });
   }
 
   // Make the block end now and move the rest of the day with it. False if it can't.
@@ -259,7 +267,7 @@ export class ScheduleProgram {
       this.blockRest = new Set([row.id]);
       yield { ...toSegment(row, this.plex), blockId: block.id, upNext: null };
       if (this.live) return;
-      if (block.end_at - this.clock() - adsAtEnd > minute) yield* makeBreak(this.plex, { theme: block.theme, spots: 1 });
+      if (block.end_at - this.clock() - adsAtEnd > minute) yield* makeBreak(this.plex, { theme: block.theme });
       if (this.live) return;
     }
   }
