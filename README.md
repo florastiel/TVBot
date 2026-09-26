@@ -91,7 +91,9 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 
 The bot keeps one TV message in the posting channel: "Now playing / Up next" with a
 Pause button while a show is on; during a break it becomes "Commercial break / Up next /
-Back in 2 minutes" with Skip and Pause buttons. The streamer account's Discord status
+Back in 2 minutes" with Skip and Pause buttons. Just after midnight it also posts the
+whole day's programming (`discord.daily_guide`; `discord.guide_channel_id` for another
+channel). The streamer account's Discord status
 (rich presence) shows the same: the show with a time-left bar, or a countdown to the next
 show during ads.
 

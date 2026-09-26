@@ -17,11 +17,11 @@ import { planSpecials } from "../schedule/specials.js";
 import { addFromUrls } from "../catalog/download.js";
 import { localDay, localTime } from "../schedule/time.js";
 import { scheduledUntil } from "../schedule/store.js";
-import { guideText, weekGrid } from "../schedule/guide.js";
+import { guideText, weekGrid, dayGuide } from "../schedule/guide.js";
 import { runTagging } from "../tagging/tagger.js";
 import { tagOrder } from "../tagging/order.js";
 import { tagEpisodeThemes } from "../tagging/episodes.js";
-import { getMeta, getDb } from "../db.js";
+import { getMeta, setMeta, getDb } from "../db.js";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "../config.js";
@@ -65,6 +65,35 @@ async function upkeep() {
 
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
 const ephemeral = { flags: MessageFlags.Ephemeral };
+
+// Days of guide lines ([{title, lines}]) as embeds, packed into as few messages as fit.
+// Discord: 4096 characters per embed; 6000 and 10 embeds per message. A day too long
+// for one embed carries on in the next.
+export function guideMessages(days) {
+  const embeds = [];
+  for (const d of days) {
+    let text = "";
+    let part = 0;
+    const flush = () => {
+      embeds.push(new EmbedBuilder().setTitle(part++ ? `${d.title} (continued)` : d.title).setDescription(text));
+      text = "";
+    };
+    for (const l of d.lines) {
+      if (text && text.length + l.length + 1 > 4000) flush();
+      text += `${text ? "\n" : ""}${l.slice(0, 4000)}`;
+    }
+    if (text) flush();
+  }
+  const messages = [[]];
+  let used = 0;
+  for (const e of embeds) {
+    const size = e.data.title.length + e.data.description.length;
+    if ((used + size > 5800 || messages.at(-1).length === 10) && messages.at(-1).length) { messages.push([]); used = 0; }
+    messages.at(-1).push(e);
+    used += size;
+  }
+  return messages;
+}
 
 const COMMANDS = [
   new SlashCommandBuilder().setName("tv").setDescription("Turn on the TV in the voice channel you're in"),
@@ -185,6 +214,34 @@ export async function startBot() {
   }
 
   // Follow the player's event stream; reconnect whenever it restarts.
+  // The whole day's programming, posted just after midnight. Upkeep only keeps about
+  // 12 hours filled, so the rest of the day is programmed first. If the bot was down
+  // at midnight it still posts in the first few hours; later than that it waits for
+  // tomorrow rather than post a guide for a half-gone day.
+  async function dailyGuide() {
+    const channelId = config.discord.guide_channel_id || config.discord.now_playing_channel_id;
+    if (!config.discord.daily_guide || !channelId) return;
+    const day = localDay(Date.now());
+    if (getMeta("daily_guide_posted") === day.date || Date.now() - day.startMs > 6 * 3600000) return;
+    // Filling can fail (Claude down while planning the grid): then post what there is
+    // rather than retry every minute.
+    await maintenance.run(async () => {
+      const until = scheduledUntil();
+      if (until < day.endMs) await generateSchedule({ fromMs: until, days: (day.endMs - until) / 86400000 });
+    }).catch((e) => log.warn(`bot: couldn't program the rest of today for the guide: ${e.message}`));
+    const guide = dayGuide();
+    if (!guide.lines.length) {
+      setMeta("daily_guide_posted", day.date);
+      return log.warn("bot: nothing scheduled today; no daily guide post");
+    }
+    const [first, ...rest] = guideMessages([guide]);
+    const sent = await post(channelId, "Today on TV (times shift a little as the day goes; /schedule for what's on now)", { embeds: first });
+    if (!sent) return; // tried again next minute
+    setMeta("daily_guide_posted", day.date);
+    for (const embeds of rest) await post(channelId, "", { embeds });
+    log.info(`bot: posted the guide for ${day.date}`);
+  }
+
   async function followPlayer() {
     for (;;) {
       try {
@@ -299,18 +356,7 @@ export async function startBot() {
           // Only block kinds: the actual shows are picked about a day ahead.
           const days = weekGrid().slice(0, 10);
           if (!days.length) return i.reply({ content: "No week planned yet.", ...ephemeral });
-          // One embed per day, packed into as few messages as fit (Discord: 6000 characters
-          // over a message's embeds, 4096 per embed).
-          const messages = [[]];
-          let used = 0;
-          for (const d of days) {
-            let text = "";
-            for (const l of d.lines) if (text.length + l.length + 1 <= 4000) text += `${text ? "\n" : ""}${l}`;
-            const size = d.title.length + text.length;
-            if (used + size > 5800 && messages.at(-1).length) { messages.push([]); used = 0; }
-            messages.at(-1).push(new EmbedBuilder().setTitle(d.title).setDescription(text));
-            used += size;
-          }
+          const messages = guideMessages(days);
           await i.reply({ content: "This week's lineup (shows are picked a day ahead; times shift a little as the day goes).", embeds: messages[0], ...ephemeral });
           for (const embeds of messages.slice(1)) await i.followUp({ embeds, ...ephemeral });
           return;
@@ -351,6 +397,15 @@ export async function startBot() {
     const tick = () => maintenance.run(upkeep).catch((e) => log.error("bot: upkeep failed:", e.message));
     tick();
     setInterval(tick, 3600000).unref();
+    let guideBusy = false; // programming the day can take longer than the minute between checks
+    const guideTick = async () => {
+      if (guideBusy) return;
+      guideBusy = true;
+      await dailyGuide().catch((e) => log.warn(`bot: daily guide failed: ${e.message}`));
+      guideBusy = false;
+    };
+    guideTick();
+    setInterval(guideTick, 60000).unref();
     // Watchdog: if the player stops answering for 2 minutes (frozen, not just
     // restarting), kill it; the service manager starts a fresh one.
     let playerPid = null, misses = 0;
