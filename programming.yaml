@@ -12,26 +12,26 @@
 
 pools:
   LATE_A: [Adult Swim, Weird Cartoon Late Show, Anime Gross-Out Gags, Grappler Gauntlet, Cringe Comedy Hour, Grown-Up Cartoons]
-  LATE_MOVIE: [Cult Weird Cinema, The Late Late Show, So Bad Its Good, Big Screen Laughs, Carry On Laughing, Found Footage Oddities,
+  LATE_MOVIE: [Midnight Fright Night, Camp Horror Night, Cult Weird Cinema, The Late Late Show, So Bad Its Good, Big Screen Laughs, Carry On Laughing, Found Footage Oddities,
     David Lynch Nightmare, Fright Feature Vault, Halloween Horror Features, Slasher Night, Spooktober Anime]
-  LATE_B: [Twilight Mystery Zone, Detective Noir, Dark Anime Thrillers, When They Cry Marathon, Anime Tearjerkers, Spooky Season Anime]
+  LATE_B: [Dark Serial Night, Twilight Mystery Zone, Detective Noir, Dark Anime Thrillers, When They Cry Marathon, Anime Tearjerkers, Spooky Season Anime]
   MORN_TOON: [Retro Toon Vault, Cartoon Network, Goofy Kids Comedy, Disney Channel, Marvel Animated Universe]
   MORN_TOKU: [Sentai Squad, Tokusatsu Theater, Digimon Digital World, Dragon Ball Marathon, Weekly Shonen Giants, Shonen Sunday]
-  MORN_COZY: [Anime Slice of Life, Cozy Camp Anime, Pixar Picture Show, Family Movie Night, Studio Ghibli Matinee]
-  AFT_MOVIE: [Classic Hollywood, Family Movie Night, Studio Ghibli Matinee, Pixar Picture Show, Cozy Anime Autumn, Studio Ghibli Melancholy]
-  AFT_TV: [Anime Comedy Club, Rom-Com Anime Hearts, Isekai Escapes, Mecha and Monsters, X-Men Legacy, Detective Conan Case Files,
+  MORN_COZY: [Peanuts Specials, Muppet Marathon, Cozy Halloween Cartoons, Anime Slice of Life, Cozy Camp Anime, Pixar Picture Show, Family Movie Night, Studio Ghibli Matinee]
+  AFT_MOVIE: [Campy Halloween Classics, Cozy Halloween Cartoons, Classic Hollywood, Family Movie Night, Studio Ghibli Matinee, Pixar Picture Show, Cozy Anime Autumn, Studio Ghibli Melancholy]
+  AFT_TV: [Courage Hour, Anime Comedy Club, Rom-Com Anime Hearts, Isekai Escapes, Mecha and Monsters, X-Men Legacy, Detective Conan Case Files,
     Sitcom Rerun Central, Reality Check, Shonen Sunday, Halloween Episodes, Thanksgiving Episodes, Christmas Episodes]
-  AFT_SERIES: [Pink Panther Marathon, Toy Story Saga, Dragon Ball Movie Vault, Detective Conan Movie Vault, Mission Impossible Marathon]
-  EVE_TV: [Prime Time Procedurals, Sitcoms, Nick at Nite, Whodunit Theater, Reality Check, British Comedy Classics, Superhero Prime Time,
+  AFT_SERIES: [Muppet Marathon, Peanuts Specials, Halloweentown Saga, Pink Panther Marathon, Toy Story Saga, Dragon Ball Movie Vault, Detective Conan Movie Vault, Mission Impossible Marathon]
+  EVE_TV: [Courage Hour, Dark Serial Night, Prime Time Procedurals, Sitcoms, Nick at Nite, Whodunit Theater, Reality Check, British Comedy Classics, Superhero Prime Time,
     Sci-Fi Signal, Sitcom Rerun Central, Halloween Episodes, Spooky Season Anime, Thanksgiving Episodes, Christmas Episodes]
   MON_MOVIE: [Heist Night, Spy Games]
   TUE_MOVIE: [Sci-Fi Feature Presentation, Nolan Night]
   WED_MOVIE: [Knives Out Nights, Whodunit Feature Films, Classic Hollywood, Date Night]
   THU_MOVIE: [Awards Season Cinema, Prestige Biopic Cinema, Broadway Musicals]
-  FRI_MOVIE: [Action Blockbuster Night, Superheroes, Anime Action Movies, Big Screen Laughs, Halloween Horror Features, Christmas Movies]
-  SAT_EVE: [Mission Impossible Marathon, John Wick Saga, Twilight Saga, Evangelion Rebuild, Naruto Movie Night, Broadway Musicals]
-  SAT_LATE: [Scream Marathon, Jason Voorhees Marathon, Slasher Night, Cult Weird Cinema, The Late Late Show, So Bad Its Good]
-  SUN_EVE: [Date Night, Broadway Musicals, Classic Hollywood, Awards Season Cinema, Studio Ghibli Melancholy, Christmas Movies]
+  FRI_MOVIE: [Camp Horror Night, Campy Halloween Classics, Action Blockbuster Night, Superheroes, Anime Action Movies, Big Screen Laughs, Halloween Horror Features, Christmas Movies]
+  SAT_EVE: [Campy Halloween Classics, Camp Horror Night, Mission Impossible Marathon, John Wick Saga, Twilight Saga, Evangelion Rebuild, Naruto Movie Night, Broadway Musicals]
+  SAT_LATE: [Midnight Fright Night, Camp Horror Night, Scream Marathon, Jason Voorhees Marathon, Slasher Night, Cult Weird Cinema, The Late Late Show, So Bad Its Good]
+  SUN_EVE: [Halloweentown Saga, Campy Halloween Classics, Date Night, Broadway Musicals, Classic Hollywood, Awards Season Cinema, Studio Ghibli Melancholy, Christmas Movies]
   LATE_PRESTIGE: [Prestige Prime Time, Prestige Crime Drama, Tragedy, Mob and Mafia, Grown-Up Cartoons, Anime Tearjerkers, Twilight Mystery Zone]
 
 days:

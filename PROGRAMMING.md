@@ -33,7 +33,7 @@ scripts/program/tv.mjs ...` from the project folder (that's the only command all
 
 ## Rules
 
-- Bucket formats: `one_show` (1–3 episodes of one show per block; 3+ shows), `variety`
+- Bucket formats: `one_show` (1–3 episodes of one show per block; a single well-known show is fine, but nothing so niche the name would puzzle viewers), `variety`
   (single episodes of different shows; 4+ shows), `movie` (one movie per block; 3+
   movies), `movie_series` (one franchise in order; 2+ movies, listed in play order).
   Shows only in one_show/variety, movies only in movie/movie_series.

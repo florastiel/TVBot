@@ -18,7 +18,7 @@ const OUT = join(DATA_DIR, "program");
 mkdirSync(OUT, { recursive: true });
 const db = getDb();
 const S = schedulableSql("i");
-const MIN = { one_show: 3, variety: 4, movie: 3, movie_series: 2 };
+const MIN = { one_show: 1, variety: 4, movie: 3, movie_series: 2 };
 const vibes = (j) => { try { return JSON.parse(j || "[]").join("/"); } catch { return ""; } };
 const [cmd, ...args] = process.argv.slice(2);
 
