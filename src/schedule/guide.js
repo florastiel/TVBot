@@ -4,8 +4,9 @@ import { blocksBetween } from "./store.js";
 import { localDay } from "./time.js";
 import { slotsBetween } from "./weekplan.js";
 
-function titles(items) {
-  // Consecutive episodes of one show collapse: "South Park (S1E1, S1E2)".
+// Consecutive episodes of one show collapse: "South Park (S1E1, S1E2)". With maxLen,
+// only whole entries that fit, then "+2 more".
+function titles(items, maxLen = Infinity) {
   const out = [];
   for (const r of items) {
     const last = out.at(-1);
@@ -14,7 +15,11 @@ function titles(items) {
     else if (last?.show === r.show_title) last.eps.push(`S${r.season}E${r.episode}`);
     else out.push({ show: r.show_title, eps: [`S${r.season}E${r.episode}`] });
   }
-  return out.map((t) => t.text ?? `${t.show} (${t.eps.join(", ")})`).join(", ");
+  const parts = out.map((t) => t.text ?? `${t.show} (${t.eps.join(", ")})`);
+  let text = parts[0] ?? "";
+  let k = 1;
+  for (; k < parts.length && text.length + 2 + parts[k].length <= maxLen; k++) text += `, ${parts[k]}`;
+  return k < parts.length ? `${text} +${parts.length - k} more` : text;
 }
 
 export function guideText(now = Date.now(), minBlocks = 6) {
@@ -36,15 +41,13 @@ export function guideText(now = Date.now(), minBlocks = 6) {
 // The week, a day at a time: [{ title: "Saturday, Sep 26", lines: [...] }]. Blocks
 // already filled show their shows; after that, the grid's block kinds (shows get picked
 // about a day ahead). Discord timestamps, so everyone sees their own time zone.
-const clip = (t, n) => (t.length > n ? `…` : t);
-
 export function weekGrid(now = Date.now(), days = 7) {
   const today = localDay(now);
   const end = today.startMs + days * 86400000;
   const blocks = blocksBetween(now, end);
   const filledUntil = blocks.reduce((t, b) => (b.start_at <= t + 60000 ? Math.max(t, b.end_at) : t), now);
   const rows = blocks.filter((b) => b.start_at < filledUntil)
-    .map((b) => ({ at: b.start_at, text: `**${b.label}**: ${clip(titles(b.items), 60)}` }));
+    .map((b) => ({ at: b.start_at, text: `**${b.label}**: ${titles(b.items, 60)}` }));
   const slots = slotsBetween(today.startMs, end);
   const current = slots.filter((s) => s.at <= filledUntil).at(-1);
   if (current && current.at < filledUntil && slots.some((s) => s.at > filledUntil)) rows.push({ at: filledUntil, text: current.name });
