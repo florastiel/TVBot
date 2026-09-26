@@ -148,7 +148,31 @@ export function dedupeCatalog() {
   return tx(() => {
     const renamed = lineUpShowNames(db);
     const r = markDuplicates(db);
-    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies/spots left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""})`);
-    return { renamed, ...r };
+    const odd = markOddballs(db);
+    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies/spots left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""}); ${odd} much-shorter-than-usual episodes left out`);
+    return { renamed, oddballs: odd, ...r };
   });
+}
+
+// Step 4: an episode under ODD_MAX_MIN minutes and under ODD_RATIO of its show's usual
+// length (Steins;Gate's 4-minute clips listed as S1E1-E4 of 24-minute episodes, recaps,
+// promos) would get a 5-minute block of its own, so it's marked `oddball` and left out.
+// Recomputed each time: a show whose episodes are mostly short is left alone (the median
+// is short too). Returns how many episodes are marked.
+const ODD_MAX_MIN = 10;
+const ODD_RATIO = 0.4;
+function markOddballs(db) {
+  const rows = db.prepare(`SELECT id, show_title, duration_ms, oddball FROM items
+    WHERE kind = 'episode' AND present = 1 AND duplicate_of IS NULL AND duration_ms > 0 AND show_title IS NOT NULL`).all();
+  const byShow = new Map();
+  for (const r of rows) (byShow.get(r.show_title) || byShow.set(r.show_title, []).get(r.show_title)).push(r);
+  const want = new Set();
+  for (const eps of byShow.values()) {
+    if (eps.length < 5) continue;
+    const median = eps.map((e) => e.duration_ms).sort((a, b) => a - b)[Math.floor(eps.length / 2)];
+    for (const e of eps) if (e.duration_ms < ODD_MAX_MIN * 60000 && e.duration_ms < ODD_RATIO * median) want.add(e.id);
+  }
+  const set = db.prepare("UPDATE items SET oddball = ? WHERE id = ?");
+  for (const r of rows) if ((want.has(r.id) ? 1 : 0) !== r.oddball) set.run(want.has(r.id) ? 1 : 0, r.id);
+  return want.size;
 }

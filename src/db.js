@@ -167,6 +167,11 @@ const MIGRATIONS = [
   ALTER TABLE shows ADD COLUMN tv_breaks INTEGER;
   ALTER TABLE items ADD COLUMN tv_breaks INTEGER;
   `,
+  `
+  -- An episode far shorter than the rest of its show (a clip or promo listed as an episode),
+  -- left out of the schedule; recomputed at every sync (catalog/dedupe.js).
+  ALTER TABLE items ADD COLUMN oddball INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 let db;
