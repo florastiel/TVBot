@@ -75,7 +75,7 @@ function groupOf(row, kind) {
   const dir = relative(root || "", row.source_key).split(sep).slice(0, -1).join("/");
   const variety = (config.broadcast.variety_folders || []).map((f) => String(f).toLowerCase());
   if (dir && variety.includes(dir.split("/").at(-1).toLowerCase())) return row.source_key;
-  return !dir || dir.toLowerCase() === "youtube" ? row.source_key : dir;
+  return !dir || ["youtube", "uploads"].includes(dir.toLowerCase()) ? row.source_key : dir;
 }
 
 // noRepeat: return nothing rather than a second pick from a group already used.

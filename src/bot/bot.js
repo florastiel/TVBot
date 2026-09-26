@@ -14,7 +14,7 @@ import { runSync } from "../catalog/index.js";
 import { setEntrance, clearEntrance } from "./entrance.js";
 import { generateSchedule } from "../schedule/generate.js";
 import { planSpecials } from "../schedule/specials.js";
-import { addFromUrls } from "../catalog/download.js";
+import { addFromUrls, addFromFiles } from "../catalog/download.js";
 import { localDay, localTime } from "../schedule/time.js";
 import { scheduledUntil } from "../schedule/store.js";
 import { guideText, weekGrid, dayGuide } from "../schedule/guide.js";
@@ -298,18 +298,24 @@ export async function startBot() {
     return member?.voice?.channelId ?? null;
   };
 
-  // The drop threads: anyone posts YouTube (etc.) links; they're downloaded into rotation
-  // as commercials or clips, by thread. ⏳ while working, then a reply saying what went in
-  // (and why anything was skipped).
+  // The drop threads: anyone posts YouTube (etc.) links or video files; they're added to
+  // rotation as commercials or clips, by thread. ⏳ while working, then a reply saying what
+  // went in (and why anything was skipped).
+  const VIDEO_FILE = /\.(mp4|m4v|mov|webm|mkv|avi|wmv|mpe?g|flv|ts)$/i;
   client.on("messageCreate", async (m) => {
     const kind = dropThreads.get(m.channelId);
     if (!kind || m.author.bot) return;
     const urls = [...new Set(m.content.match(/https?:\/\/\S+/g) || [])].map((u) => u.replace(/[)>\]]+$/, ""));
-    if (!urls.length) return;
+    const files = [...m.attachments.values()].filter((a) => a.contentType?.startsWith("video/") || VIDEO_FILE.test(a.name || ""))
+      .map((a) => ({ id: a.id, name: a.name || `${a.id}.mp4`, url: a.url }));
+    if (!urls.length && !files.length) return;
     await m.react("⏳").catch(() => {});
     let text, ok;
     try {
-      const done = await maintenance.run(() => addFromUrls(kind, urls));
+      const done = await maintenance.run(async () => [
+        ...(files.length ? await addFromFiles(kind, files) : []),
+        ...(urls.length ? await addFromUrls(kind, urls) : []),
+      ]);
       const added = done.filter((a) => !a.skipped);
       ok = added.length > 0;
       text = done.map((a) => (a.skipped ? `Skipped "${a.title}": ${a.skipped}` : `Added ${kind}: "${a.title}"`)).join("\n") || "No videos found at those links.";

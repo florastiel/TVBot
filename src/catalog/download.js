@@ -3,13 +3,14 @@
 // Playlists are expanded into their videos.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { join } from "node:path";
 import { config, ROOT } from "../config.js";
 import { log } from "../log.js";
 import { syncLocal } from "./index.js";
+import { probe } from "./localScan.js";
 
 const run = promisify(execFile);
 const MAX_MINUTES = 10; // anything longer is probably a compilation, not one ad
@@ -72,6 +73,40 @@ export async function addFromUrls(kind, urls) {
     // Only the local folders: a full sync (Plex, Real-Debrid) takes minutes, longer than
     // Discord waits for the /tvadmin add reply.
     await syncLocal(); // adds blank rows to tags.csv for the new files
+    if (prefillTags(folder)) await syncLocal();
+  }
+  return added;
+}
+
+// Video files posted in a drop thread: [{ id, name, url }] (Discord attachments). Saved in
+// <folder>\uploads (each file counts on its own when breaks are filled), after checking
+// they're a playable video of at most MAX_MINUTES.
+export async function addFromFiles(kind, files) {
+  const folder = kind === "clip" ? config.local.clips : config.local.commercials;
+  if (!folder) throw new Error(`no ${kind}s folder set in config.yaml`);
+  const dest = join(folder, "uploads");
+  mkdirSync(dest, { recursive: true });
+  const added = [];
+  for (const f of files) {
+    const title = f.name.replace(/\.[^.]+$/, "");
+    const path = join(dest, `${title.replace(/[<>:"/\\|?*]+/g, "_").trim().slice(0, 80)} [${f.id}]${f.name.match(/\.[^.]+$/)?.[0] || ".mp4"}`);
+    try {
+      const res = await fetch(f.url);
+      if (!res.ok) throw new Error(`download failed (HTTP ${res.status})`);
+      writeFileSync(path, Buffer.from(await res.arrayBuffer()));
+      const p = await probe(path).catch(() => null);
+      const secs = Number(p?.format?.duration);
+      if (!p?.streams?.some((s) => s.codec_type === "video") || !(secs > 0)) throw new Error("not a playable video");
+      if (secs > MAX_MINUTES * 60) throw new Error(`${Math.round(secs / 60)} minutes long; looks like a compilation, not a single ${kind}`);
+      log.info(`add: saved uploaded ${kind} "${f.name}"`);
+      added.push({ title, seconds: Math.round(secs) });
+    } catch (e) {
+      rmSync(path, { force: true });
+      added.push({ title: f.name, skipped: e.message });
+    }
+  }
+  if (added.some((a) => !a.skipped)) {
+    await syncLocal();
     if (prefillTags(folder)) await syncLocal();
   }
   return added;
