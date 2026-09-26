@@ -393,6 +393,7 @@ ${cat.text}`, listBuckets());
   const saved = saveAssigned(fresh, placed, cat);
   const leftover = catchAll(cat);
   setMeta("buckets_updated", new Date().toISOString());
+  await import("./bucketpage.js").then((m) => m.writeBucketPage()).catch(() => {}); // buckets.html
   log.info(`buckets: built ${saved} buckets${leftover ? `; ${leftover} titles went to catch-all buckets` : ""}`);
 }
 
@@ -440,6 +441,7 @@ ${cat.text}`, listBuckets());
   const saved = saveAssigned(fresh, placed, cat);
   catchAll(cat);
   setMeta("buckets_updated", new Date().toISOString());
+  await import("./bucketpage.js").then((m) => m.writeBucketPage()).catch(() => {}); // buckets.html
   log.info(`buckets: ${saved} new (${fresh.map((b) => b.name).join(", ") || "none"}); ${unplaced.length} unsorted titles placed`);
 }
 

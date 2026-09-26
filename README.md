@@ -176,7 +176,8 @@ Three layers; Claude never picks individual episodes or movies.
    Thanksgiving and Christmas buckets are made automatically from the holiday tags.
    Once a week Claude adds a handful of new buckets for the coming two weeks (seasonal
    and event ideas especially) and sorts in titles new to the catalog.
-   `tv.cmd buckets` lists them; `--build` redoes the first pass, `--new` the weekly one
+   `tv.cmd buckets --html` writes `buckets.html`, a searchable page of them all (search
+   a title to see every bucket it's in; bucket passes refresh it). `tv.cmd buckets` lists them; `--build` redoes the first pass, `--new` the weekly one
    (`--new "ideas"` for specific requests), `--thin [shows|movies]` makes new buckets for
    titles that only have one (often a loose fit).
 2. **The grid.** Claude lays out the days as bucket slots, a week at a time, staying
