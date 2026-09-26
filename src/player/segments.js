@@ -51,7 +51,8 @@ export function getItem(id) {
   return getDb().prepare("SELECT * FROM items WHERE id = ?").get(id);
 }
 
-const recent = []; // item ids of the last commercials/clips played, oldest first
+const RECENT_MAX = 100;
+const recent = []; // item ids of the last commercials/clips/eyecatches played, oldest first
 
 // Everything of this kind that fits in maxMs and isn't already in this break, preferring
 // the block's holiday theme (and non-holiday ones otherwise, so no Christmas ads in July).
@@ -60,9 +61,19 @@ function candidates(kind, theme, exclude, maxMs) {
   const cap = Number.isFinite(maxMs) ? maxMs : 1e12;
   const rows = getDb().prepare(`SELECT i.*, COALESCE(t.holiday, 'none') holiday FROM items i LEFT JOIN tags t ON t.item_id = i.id
     WHERE i.kind = ? AND i.present = 1 AND i.playable = 1 AND NOT i.excluded AND i.duplicate_of IS NULL AND i.duration_ms <= ? ${notIn}`).all(kind, cap, ...exclude);
-  const themed = theme && theme !== "none" ? rows.filter((r) => r.holiday === theme) : [];
+  let themed = theme && theme !== "none" ? rows.filter((r) => r.holiday === theme) : [];
   const plain = rows.filter((r) => r.holiday === "none");
+  // A handful of themed ads mustn't be the only thing on air for the whole season: the
+  // fewer there are, the more rarely they're chosen (about one piece in 20 per themed file, up to half).
+  if (themed.length && Math.random() >= Math.min(0.5, themed.length / 20) && plain.length) themed = [];
   return themed.length ? themed : plain.length ? plain : rows;
+}
+
+// Prefer files not played in the last RECENT_MAX pieces, whatever group they're in (a
+// one-file group would otherwise come up as often as a 100-file folder).
+function notRecent(rows) {
+  const fresh = rows.filter((r) => !recent.includes(r.id));
+  return fresh.length ? fresh : rows;
 }
 
 // A big batch (a playlist of 88 Pop-Tarts ads) shouldn't take over every break. Files
@@ -82,8 +93,12 @@ function groupOf(row, kind) {
 }
 
 // noRepeat: return nothing rather than a second pick from a group already used.
-function pick(kind, theme, exclude, maxMs = Infinity, usedGroups = null, noRepeat = false) {
-  const rows = candidates(kind, theme, exclude, maxMs);
+// minPool: return nothing when fewer files than that fit (a break's last seconds: only
+// the same few short bumpers fit, over and over).
+function pick(kind, theme, exclude, maxMs = Infinity, usedGroups = null, noRepeat = false, minPool = 1) {
+  const all = candidates(kind, theme, exclude, maxMs);
+  if (all.length < minPool) return null;
+  const rows = notRecent(all);
   if (!rows.length) return null;
   let groups = [...Map.groupBy(rows, (r) => groupOf(r, kind))];
   const unused = usedGroups ? groups.filter(([k]) => !usedGroups.has(k)) : groups;
@@ -102,7 +117,7 @@ function pick(kind, theme, exclude, maxMs = Infinity, usedGroups = null, noRepea
 function remember(rows) {
   for (const r of rows) {
     recent.push(r.id);
-    if (recent.length > 60) recent.shift();
+    if (recent.length > RECENT_MAX) recent.shift();
   }
 }
 
@@ -144,7 +159,7 @@ function pickEyecatch(show, avoid) {
   const all = candidates("eyecatch", null, [], 60000).filter((r) => !isOwn(r));
   if (!all.length) return null;
   const notHere = all.filter((r) => !avoid.includes(r.id));
-  const pool = notHere.length ? notHere : all;
+  const pool = notRecent(notHere.length ? notHere : all);
   const sources = [...Map.groupBy(pool, (r) => (SHARED_DIRS.has(dirOf(r).toLowerCase()) ? r.source_key : dirOf(r)))];
   const weight = ([, g]) => Math.min(g.length, GROUP_WEIGHT_CAP);
   let n = Math.random() * sources.reduce((t, s) => t + weight(s), 0);
@@ -200,6 +215,7 @@ function timed(segs) {
 
 // Fill the rest of a block exactly: commercials and clips while they fit, then a plain
 // "Up next" card for the last few seconds. Counts as a (skippable) break.
+const FILL_MIN_POOL = 4; // fewer fitting files than this: leave the rest to the "Up next" card
 export function fillBreak(plex, ms, { theme = null, upNextTitle = null } = {}) {
   const rows = [];
   const groups = new Set();
@@ -207,7 +223,7 @@ export function fillBreak(plex, ms, { theme = null, upNextTitle = null } = {}) {
   for (;;) {
     const kind = rows.length % 4 === 3 ? "clip" : "commercial";
     const avoid = rows.slice(-2).map((x) => x.id); // small libraries may repeat, never back-to-back
-    const r = pick(kind, theme, avoid, left, groups) || pick(kind === "clip" ? "commercial" : "clip", theme, avoid, left, groups);
+    const r = pick(kind, theme, avoid, left, groups, false, FILL_MIN_POOL) || pick(kind === "clip" ? "commercial" : "clip", theme, avoid, left, groups, false, FILL_MIN_POOL);
     if (!r) break;
     rows.push(r);
     left -= r.duration_ms;
