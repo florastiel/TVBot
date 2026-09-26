@@ -126,25 +126,32 @@ function wantsEyecatches(row, mode) {
 
 const normTitle = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
-// An eyecatch for a break inside `show`. Files in eyecatches\<Show Name>\ belong to that
-// show only (and it uses only those, if it has any); loose files and the thread folders
-// (uploads, youtube) are for any show. Prefers one not in `avoid` (the other end of this
-// break), but a show with a single eyecatch of its own uses it both ways.
+// An eyecatch for a break inside `show`: any file in eyecatches\ except ones from the
+// show's own folder. A folder named after a show (eyecatches\Fullmetal Alchemist
+// Brotherhood\) holds that show's own eyecatches, saved for other shows to use; on the
+// show itself they'd double up. Like commercials, a folder counts as one source so a
+// folder of 128 doesn't take over: a source is picked first (bigger ones a bit more
+// often, capped), then a file in it not played recently; loose files and the thread
+// folders (uploads, youtube) are each their own source. Prefers not to repeat one in
+// `avoid` (the other end of this break).
 const SHARED_DIRS = new Set(["", "uploads", "youtube"]);
 function pickEyecatch(show, avoid) {
-  const all = candidates("eyecatch", null, [], 60000);
-  if (!all.length) return null;
   const root = config.local.eyecatches || "";
   const dirOf = (r) => { const parts = relative(root, r.source_key).split(sep); return parts.length > 1 ? parts[0] : ""; };
-  const name = normTitle(show?.show_title || show?.title);
-  const own = name ? all.filter((r) => normTitle(dirOf(r)) === name) : [];
-  const pool = own.length ? own : all.filter((r) => SHARED_DIRS.has(dirOf(r).toLowerCase()));
-  if (!pool.length) return null;
-  const notHere = pool.filter((r) => !avoid.includes(r.id));
-  const choices = notHere.length ? notHere : pool;
+  const name = normTitle(String(show?.show_title || show?.title || "").replace(/\s*\((?:(?:19|20)\d{2}|US|UK)\)\s*$/i, ""));
+  // "Tengen Toppa Gurren Lagann" is the folder of the show catalogued as "Gurren Lagann".
+  const isOwn = (r) => { const f = normTitle(dirOf(r)); return f && name.length >= 5 && (f === name || f.includes(name) || (f.length >= 5 && name.includes(f))); };
+  const all = candidates("eyecatch", null, [], 60000).filter((r) => !isOwn(r));
+  if (!all.length) return null;
+  const notHere = all.filter((r) => !avoid.includes(r.id));
+  const pool = notHere.length ? notHere : all;
+  const sources = [...Map.groupBy(pool, (r) => (SHARED_DIRS.has(dirOf(r).toLowerCase()) ? r.source_key : dirOf(r)))];
+  const weight = ([, g]) => Math.min(g.length, GROUP_WEIGHT_CAP);
+  let n = Math.random() * sources.reduce((t, s) => t + weight(s), 0);
+  const [, group] = sources.find((s) => (n -= weight(s)) < 0) || sources.at(-1);
   const age = (r) => recent.lastIndexOf(r.id);
-  const fresh = choices.filter((r) => age(r) === -1);
-  return fresh.length ? fresh[Math.floor(Math.random() * fresh.length)] : choices.reduce((a, b) => (age(a) <= age(b) ? a : b));
+  const fresh = group.filter((r) => age(r) === -1);
+  return fresh.length ? fresh[Math.floor(Math.random() * fresh.length)] : group.reduce((a, b) => (age(a) <= age(b) ? a : b));
 }
 
 // A commercial break. Between shows (inside: false): between_spots videos, the first

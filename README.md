@@ -219,9 +219,12 @@ sitcoms, cartoons, network dramas, rom-coms, TV-friendly movies; not HBO-style p
 or arthouse. Never anime: it has eyecatches of its own. Claude makes that call once per
 show and movie (`tv.cmd tag --breaks`, and with the weekly tagging for new titles;
 `shows.tv_breaks` / `items.tv_breaks` in the database). `broadcast.eyecatches`: tv, all,
-or none. Files in
-`eyecatches\<Show Name>\` belong to that show only, and a show with its own uses only
-those; loose files (and thread uploads) are for any show.
+or none. Every file in `eyecatches\` is for any eligible show, except that a folder named
+after a show (`eyecatches\Fullmetal Alchemist Brotherhood\`) holds *that show's own*
+eyecatches, saved for other shows, and isn't used on the show itself (it'd double up). A
+folder counts as one source, like commercials, so a folder of 128 doesn't dominate: a
+source is picked first, then a file in it. Loose files and the thread folders are each
+their own source.
 
 **Tagging commercials and clips** is by hand: each of those folders gets a
 `tags.csv`. Sync adds a blank row for new files; fill in `decade` (90s, 1990s, 1994

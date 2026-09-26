@@ -97,7 +97,7 @@ local:
   clips: D:\data\tv\clips            # tag in clips\tags.csv
   commercials: D:\data\tv\commercials  # tag in commercials\tags.csv
   shorts: D:\data\tv\shorts        # <Series>\Series S01E02.mkv; short (2-15 min) shows that fill gaps after a skip
-  eyecatches: D:\data\tv\eyecatches  # a minute or less each; eyecatches\<Show Name>\... are used only for that show
+  eyecatches: D:\data\tv\eyecatches  # a minute or less each; used by any eligible show, except a folder named after a show isn't used on that show
   # Loose folders of shows and movies, any layout (the Seagate drive): each file is
   # identified by its release name. Unplugged = off the schedule until it's back.
   library: ['E:\TV Shows', 'E:\Anime', 'E:\Movies', 'E:\Musicals']
