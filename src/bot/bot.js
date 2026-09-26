@@ -95,6 +95,8 @@ export function guideMessages(days) {
   return messages;
 }
 
+const ANYONE_ADMIN = String(config.discord.admin_user_id).trim() === "*";
+
 const COMMANDS = [
   new SlashCommandBuilder().setName("tv").setDescription("Turn on the TV in the voice channel you're in"),
   new SlashCommandBuilder().setName("tvoff").setDescription("Turn off the TV"),
@@ -102,7 +104,8 @@ const COMMANDS = [
   new SlashCommandBuilder().setName("tvresume").setDescription("Pick up where it was paused"),
   new SlashCommandBuilder().setName("tvlive").setDescription("Jump back to what the schedule says is on right now"),
   new SlashCommandBuilder().setName("tvadmin").setDescription("TV admin controls")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    // admin_user_id "*": anyone may use it, so don't hide it from people without Manage Server.
+    .setDefaultMemberPermissions(ANYONE_ADMIN ? null : PermissionFlagsBits.ManageGuild)
     .addSubcommand((s) => s.setName("skip").setDescription("Skip this episode or movie (the block goes on with its next one)"))
     .addSubcommand((s) => s.setName("skipblock").setDescription("Skip the rest of this block (the next block starts at the next quarter hour)"))
     .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex, local and Real-Debrid catalog now"))
@@ -271,7 +274,7 @@ export async function startBot() {
     const vc = await voiceOf(i);
     return vc && vc === playerStatus.channelId;
   };
-  const isAdmin = (userId) => config.discord.admin_user_id && userId === String(config.discord.admin_user_id);
+  const isAdmin = (userId) => ANYONE_ADMIN || (config.discord.admin_user_id && userId === String(config.discord.admin_user_id));
   const voiceOf = async (interaction) => {
     const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
     return member?.voice?.channelId ?? null;
@@ -389,6 +392,7 @@ export async function startBot() {
     log.info(`bot: logged in as ${client.user.tag}`);
     if (!config.discord.now_playing_channel_id) log.warn("bot: discord.now_playing_channel_id not set; no now-playing posts");
     if (!config.discord.admin_user_id) log.warn("bot: discord.admin_user_id not set; /tvadmin is locked");
+    if (ANYONE_ADMIN) log.warn("bot: discord.admin_user_id is \"*\"; anyone can use /tvadmin");
     await registerCommands().catch((e) => log.error("bot: couldn't register commands:", e.message));
     try { writeFileSync(join(DATA_DIR, "app-id.txt"), client.application.id); } catch { /* presence just shows less */ }
     await cleanUpOldPosts().catch((e) => log.warn(`bot: cleanup failed: ${e.message}`));

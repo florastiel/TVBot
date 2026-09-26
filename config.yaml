@@ -5,7 +5,7 @@
 discord:
   guild_id: ""   # your server (right-click server > Copy ID)
   now_playing_channel_id: ""   # channel for "now playing" posts
-  admin_user_id: ""   # you; can skip shows, force sync, regenerate schedule
+  admin_user_id: "*"           # who can use /tvadmin (skip, sync, regen...): a user ID, or "*" for anyone. Yours: ""
   daily_guide: true            # post the whole day's programming just after midnight
   guide_channel_id: ""         # where that goes (blank = the now-playing channel)
 
