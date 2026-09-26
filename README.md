@@ -2,11 +2,12 @@
 
 A fake cable TV channel for the Discord server. A throwaway Discord account
 ("the streamer account") Go Live streams a schedule of shows, movies and commercials into a voice
-channel, on the wall clock like real TV; a normal bot (coupbot) is the remote control.
-Claude tags the catalog once and programs the schedule each week.
+channel, on the wall clock like real TV; a normal bot (TVbot, coupbot's old token) is
+the remote control. Claude sorts the catalog into kinds of blocks and lays out a weekly
+grid of them; code fills the grid with random picks.
 
-**Status: steps 1–5 built.** Step 6 (run as an auto-starting Windows service with log
-files) is next. Until then the two parts are started by hand (see *Running it*).
+**Status: running.** Both parts are Windows services on glados that start with the
+machine and restart if they crash (see *Running it*).
 
 ## How it fits together
 
@@ -56,16 +57,15 @@ then close the window *without* logging out.
 
 ## Running it
 
-Two terminals (until step 6 makes them a service):
-
-```
-tv.cmd player
-tv.cmd bot
-```
+Two NSSM services, `tvchannel-player` and `tvchannel-bot` (run as LocalSystem, start
+with Windows, restart on a crash; `scripts\install-services.ps1` sets them up). Logs:
+`logs\player-YYYY-MM-DD.log` and `logs\bot-YYYY-MM-DD.log`. For a test by hand, stop
+the services and run `tv.cmd player` / `tv.cmd bot` in two terminals.
 
 To load new code or settings: `tv.cmd restart`. The bot restarts right away; the
 player restarts at the next commercial break (in place of the ads) and comes back to
-the same channel by itself after about 20 seconds; viewers click Watch again. If the player ever freezes,
+the same channel by itself after about 20 seconds; viewers click Watch again (with the
+TV off it restarts at once). If the player ever freezes,
 the bot notices after 2 minutes and kills it, and the service starts a fresh one.
 
 ## Discord commands
@@ -82,7 +82,7 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 | `/entrance clear` | anyone (admin: anyone's) | remove a join sound |
 | Skip commercials button (on the break message in the posting channel) | people in the TV's voice channel | ends the current break |
 | `/tvadmin skip` | admin | skip this episode or movie (also off the schedule); the block goes on with its next one, and the day moves up (see *Skipping*) |
-| `/tvadmin skipblock` | admin | skip the rest of this block; the next block starts at the next quarter hour |
+| `/tvadmin skipblock` | admin | skip the rest of this block; the next block starts right away |
 | `/tvadmin sync` | admin | re-read the catalog now |
 | `/tvadmin regen` | admin | throw away the upcoming schedule and program a new week (specials stay) |
 | `/tvadmin add` + kind + links | admin | download commercials/clips from YouTube (etc.) straight into rotation |
@@ -112,10 +112,11 @@ tv.cmd playlist --clear              back to the schedule
 ## Settings
 
 Everything you'd want to change is in **`config.yaml`** (comments explain each line):
-the block grid (15 min), min/max ad minutes per hour, clip chance, no-repeat window,
-idle timeout, encode size/bitrate, Plex server + libraries, local folders, jingle and
-volume, encoder (qsv = Intel Quick Sync, falls back to CPU by itself), Claude model.
-After changing settings: `tv.cmd restart` (the player waits until the TV is off).
+planned-time rounding (5 min), commercials per break, clip chance, longest commercial,
+no-repeat window, idle timeout, which shows always/never play in order, encode
+size/bitrate, Plex server + libraries, local folders, entrance sound length and volume,
+encoder (qsv = Intel Quick Sync, falls back to CPU by itself), Claude model.
+After changing settings: `tv.cmd restart`.
 
 ## The catalog
 
@@ -186,9 +187,9 @@ Three layers; Claude never picks individual episodes or movies.
    the next slot. Picks favor what hasn't aired in the longest time (never-aired first),
    so the whole catalog gets turns. Rules: nothing repeats within `no_repeat_days`, a
    show at most once a day, episode blocks at most `max_show_block_minutes`, a movie
-   gets its own block, holiday episodes/movies only in their season. A block's length is
-   its shows plus at least `min_ad_minutes_per_hour` of ads, rounded up to the quarter
-   hour, and never more than `max_ad_minutes_per_hour`. When a bucket runs out of things
+   gets its own block, holiday episodes/movies only in their season. A block is planned
+   as its shows plus the commercials expected with them, rounded to 5 minutes (while the
+   TV is on, times then follow what actually played). When a bucket runs out of things
    that fit, another bucket for that time of day covers the rest of the slot.
 
 Cost: the first bucket pass is about $1; after that roughly $0.20 a week (new buckets
@@ -240,13 +241,13 @@ videos (the first is a clip `clip_chance` of the time). Nothing longer than
 with its length.
 
 **Skipping**: `/tvadmin skip` drops the rest of the show or movie and takes it off the
-schedule; `/tvadmin skipblock` does that for everything left in the block. The rest of the day then moves up by whole quarter hours, so the next block
-starts as soon as possible (the guide times change with it; the bot plans the next day
-correspondingly sooner). Specials keep their announced time: the move stops there. The
-odd minutes that can't move get, in order: an episode of a show with nothing scheduled
-later if one fits (in-order shows continue where they left off), then shorts from the
-shorts folder (each series in order, no repeats within 2 days), then a couple of
-minutes of ads. Whatever fills in is saved into the schedule, so it counts as aired.
+schedule; `/tvadmin skipblock` does that for everything left in the block. The next
+block starts right away and the rest of the day moves up with it (the guide times
+change too). Specials keep their announced time: the move stops there, and the time
+before one gets, in order: an episode of a show with nothing scheduled later if one
+fits (in-order shows continue where they left off), then shorts from the shorts folder
+(each series in order, no repeats within 2 days), then commercials. Whatever fills in
+is saved into the schedule, so it counts as aired.
 
 ## Optional: turning on Quick Sync
 
@@ -267,9 +268,9 @@ Adapter" with an error). To enable it:
 
 ## Not built yet
 
-- Subtitles that are a text track inside the video file (see *Language*).
-- Mid-show commercial breaks at the original ad-break points (blackdetect /
-  silencedetect could find them ahead of time).
+- Jellyfin as a second source (waiting on the server's address and a login).
+- Several voice channels at once (one Discord account can only be in one call; it would
+  take a second throwaway account and player).
 
 ## Heads up
 
