@@ -30,10 +30,16 @@ export function parsePath(kind, root, file) {
   if (kind === "episode" || kind === "short") {
     const show = rel.split(sep).length > 1 ? rel.split(sep)[0] : null;
     const m = name.match(/[Ss](\d{1,2})[ ._-]*[Ee](\d{1,3})|(\d{1,2})x(\d{2,3})/);
+    // Anime: "[Group] Show Name - 05v2 [ABCD1234]"
+    const a = !m && name.match(/^(?:\[[^\]]*\][ _]*)?(.+?)[ _]+-[ _]+(\d{1,4})(?:v\d)?(?:[ _]|$)/);
+    if (a) {
+      const episode = Number(a[2]);
+      return { show_title: show ? tidy(show) : tidy(a[1]), season: 1, episode, title: `Episode ${episode}` };
+    }
     const season = m ? Number(m[1] ?? m[3]) : null;
     const episode = m ? Number(m[2] ?? m[4]) : null;
     let title = m ? name.slice(m.index + m[0].length) : name;
-    title = tidy(title.replace(/^[\s._-]+/, "")) || (m ? `Episode ${episode}` : tidy(name));
+    title = tidy(title.replace(/\[[^\]]*\]/g, "").replace(/^[\s._-]+/, "")) || (m ? `Episode ${episode}` : tidy(name));
     return { show_title: show ? tidy(show) : tidy(name.slice(0, m?.index ?? name.length)) || null, season, episode, title };
   }
   const y = name.match(/^(.*?)[ ._(\[]+((?:19|20)\d{2})[)\]]?/);
