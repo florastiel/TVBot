@@ -1,5 +1,6 @@
 // TV Guide text for /schedule: fixed template + real titles, Discord timestamps so
 // everyone sees their own time zone, under Discord's 2000-character limit.
+import { config } from "../config.js";
 import { blocksBetween } from "./store.js";
 import { localDay } from "./time.js";
 import { slotsBetween } from "./weekplan.js";
@@ -38,6 +39,17 @@ export function guideText(now = Date.now(), minBlocks = 6) {
   return `**TV Guide**\n${lines.join("\n")}`;
 }
 
+const dayTitle = (ms) => new Date(ms).toLocaleDateString("en-US", { timeZone: config.broadcast.timezone, weekday: "long", month: "short", day: "numeric" });
+
+// One whole day's programming (every block on air that day, including one still
+// running from last night), with its shows, for the post at midnight:
+// { title: "Saturday, Sep 26", lines: [...] }.
+export function dayGuide(now = Date.now()) {
+  const day = localDay(now);
+  const lines = blocksBetween(day.startMs, day.endMs).map((b) => `<t:${Math.floor(b.start_at / 1000)}:t>  **${b.label}**: ${titles(b.items, 400)}`);
+  return { title: dayTitle(day.startMs), lines };
+}
+
 // The week, a day at a time: [{ title: "Saturday, Sep 26", lines: [...] }]. Blocks
 // already filled show their shows; after that, the grid's block kinds (shows get picked
 // about a day ahead). Discord timestamps, so everyone sees their own time zone.
@@ -55,8 +67,7 @@ export function weekGrid(now = Date.now(), days = 7) {
   const out = [];
   for (const r of rows) {
     const day = localDay(r.at);
-    const title = new Date(r.at).toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long", month: "short", day: "numeric" });
-    if (out.at(-1)?.date !== day.date) out.push({ date: day.date, title, lines: [] });
+    if (out.at(-1)?.date !== day.date) out.push({ date: day.date, title: dayTitle(r.at), lines: [] });
     out.at(-1).lines.push(`<t:${Math.floor(r.at / 1000)}:t>  ${r.text}`);
   }
   return out;
