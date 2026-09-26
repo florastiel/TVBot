@@ -215,6 +215,14 @@ export async function startBot() {
     } else if (e.type === "restarting") {
       await clearBreakMsg();
       removeLater(await post(config.discord.now_playing_channel_id, "TV restarting, back in about 20 seconds (click Watch again when it's back)"), 90000);
+    } else if (e.type === "hello") {
+      // Just (re)connected, and startup cleaned up the old post: say what's on now rather
+      // than leave the channel blank until the next show starts. (In a break, the break
+      // message comes with the next event.)
+      const now = e.status?.now;
+      if (e.status?.state === "on" && ["episode", "movie", "short"].includes(now?.kind) && !nowPlayingMsg) {
+        nowPlayingMsg = await post(config.discord.now_playing_channel_id, `Now playing: ${label(now)}`, { components: [button("tv:pause", "Pause")] });
+      }
     }
   }
 
