@@ -41,6 +41,55 @@ function why(e) {
   return line.replace(/^ERROR:\s*(\[[^\]]*\]\s*)?([\w-]+:\s*)?/, "");
 }
 
+// ---------- timestamps: pieces of a video ----------
+// "0:05", "1:02:03", "75s", "12.5s" -> seconds.
+function seconds(t) {
+  if (/s$/i.test(t)) return Number(t.slice(0, -1));
+  return t.split(":").reduce((n, x) => n * 60 + Number(x), 0);
+}
+const TIME = String.raw`\d{1,2}(?::\d{2}){1,2}(?:\.\d+)?|\d+(?:\.\d+)?s`;
+// The timestamps written with a link or file: ranges ("1:20-1:35") keep those parts; lone
+// times are cut points ("0:05" -> 0:00-0:05 and 0:05-end). [] = the whole video.
+export function parseCuts(text) {
+  const ranges = [...text.matchAll(new RegExp(`(${TIME})\\s*[-–]\\s*(${TIME})`, "gi"))];
+  if (ranges.length) return ranges.map((m) => ({ from: seconds(m[1]), to: seconds(m[2]) })).filter((c) => c.to > c.from);
+  const points = [...new Set([...text.matchAll(new RegExp(`(?<![\\w:.])(${TIME})(?![\\w:])`, "gi"))].map((m) => seconds(m[1])))].filter((s) => s > 0).sort((a, b) => a - b);
+  if (!points.length) return [];
+  return [0, ...points].map((from, k, all) => ({ from, to: all[k + 1] ?? null }));
+}
+const CUT_LONGEST = 60 * 60; // a video to cut pieces from can be up to an hour
+const TMP = join(DATA_DIR, "tmp-downloads"); // outside the scanned folders
+const ffmpeg = () => process.env.FFMPEG_PATH || join(ROOT, "tools", "ffmpeg", "bin", "ffmpeg.exe");
+const clock = (s) => { const m = Math.floor(s / 60), r = Math.round((s % 60) * 10) / 10; return `${m}:${String(r).padStart(r < 10 ? 2 : 0, "0")}`; };
+const fileClock = (s) => clock(s).replace(":", "m").replace(/$/, "s");
+
+// Cut `cuts` out of the video file `src` (duration `total` seconds) into `destDir`, each
+// re-encoded so it starts exactly on its timestamp. Returns added/skipped entries.
+async function cutPieces(src, total, cuts, destDir, stem, title, kind) {
+  mkdirSync(destDir, { recursive: true });
+  const out = [];
+  for (const c of cuts) {
+    const to = Math.min(c.to ?? total, total);
+    const label = `${title} (${clock(c.from)}-${clock(to)})`;
+    if (c.from >= total) { out.push({ title: label, skipped: `starts after the end (the video is ${clock(total)} long)` }); continue; }
+    const dur = to - c.from;
+    if (dur < 0.5) { out.push({ title: label, skipped: "too short (under half a second)" }); continue; }
+    if (dur > maxSeconds(kind)) { out.push({ title: label, skipped: tooLong(kind, dur) }); continue; }
+    const file = join(destDir, `${stem.slice(0, 70)} (${fileClock(c.from)}-${fileClock(to)}).mp4`);
+    try {
+      await run(ffmpeg(), ["-v", "error", "-y", "-ss", String(c.from), "-i", src, "-t", String(dur), "-map", "0:v:0", "-map", "0:a:0?",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", file],
+        { maxBuffer: 16 << 20, timeout: 10 * 60000 });
+      log.info(`add: cut ${kind} "${label}"`);
+      out.push({ title: label, seconds: Math.round(dur) });
+    } catch (e) {
+      rmSync(file, { force: true });
+      out.push({ title: label, skipped: `couldn't cut it (${e.message.split("\n").find((l) => l.trim() && !l.startsWith("Command failed")) || "ffmpeg failed"})` });
+    }
+  }
+  return out;
+}
+
 // Every video behind a link: one for a video link, all of them for a playlist.
 // A "watch?v=" link means that one video, even if it came from a playlist; a
 // "playlist?list=" link means the whole playlist, which goes in its own subfolder (so
@@ -57,19 +106,42 @@ async function expand(url) {
   });
 }
 
-export async function addFromUrls(kind, urls) {
+// links: URLs, or { url, cuts } with cuts from parseCuts (pieces of a single video).
+export async function addFromUrls(kind, links) {
   const folder = folderFor(kind);
   if (!folder) throw new Error(`no ${kind}s folder set in config.yaml`);
   const dest = join(folder, "youtube");
   mkdirSync(dest, { recursive: true });
   const added = [];
-  for (const link of urls) {
+  for (const l of links) {
+    const link = typeof l === "string" ? l : l.url;
+    const cuts = (typeof l === "string" ? null : l.cuts) || [];
     let videos;
     try {
       videos = await expand(link);
     } catch (e) {
       // A bad link (removed, private, region-blocked) shouldn't sink the others: say why.
       added.push({ title: link, skipped: why(e) });
+      continue;
+    }
+    if (cuts.length) {
+      // Pieces: download the whole video somewhere unscanned, cut, throw the whole away.
+      const v = videos[0];
+      if (videos.length !== 1) { added.push({ title: link, skipped: "timestamps work on a single video, not a playlist" }); continue; }
+      if (!(v.seconds > 0)) { added.push({ ...v, skipped: "unavailable (private, deleted or no length)" }); continue; }
+      if (v.seconds > CUT_LONGEST) { added.push({ ...v, skipped: `${Math.round(v.seconds / 60)} minutes long; pieces can be cut from videos up to an hour` }); continue; }
+      mkdirSync(TMP, { recursive: true });
+      const whole = join(TMP, `${v.id}.mp4`);
+      try {
+        await run(ytdlp(), ["--no-warnings", ...JS, ...auth(), "--force-overwrites", "--ffmpeg-location", join(ROOT, "tools", "ffmpeg", "bin"),
+          "-f", "bv*[height<=1080]+ba/b[height<=1080]/b", "--merge-output-format", "mp4", "-o", whole, v.url], { maxBuffer: 16 << 20 });
+        const stem = `${v.title.replace(/[<>:"/\\|?*]+/g, "_").trim()} [${v.id}]`;
+        added.push(...await cutPieces(whole, v.seconds, cuts, v.folder ? join(dest, v.folder) : dest, stem, v.title, kind));
+      } catch (e) {
+        added.push({ ...v, skipped: `download failed: ${why(e)}` });
+      } finally {
+        rmSync(whole, { force: true });
+      }
       continue;
     }
     for (const v of videos) {
@@ -100,8 +172,8 @@ export async function addFromUrls(kind, urls) {
 
 // Video files posted in a drop thread: [{ id, name, url }] (Discord attachments). Saved in
 // <folder>\uploads (each file counts on its own when breaks are filled), after checking
-// they're a playable video of at most MAX_MINUTES.
-export async function addFromFiles(kind, files) {
+// they're a playable video of at most MAX_MINUTES. With cuts (one file), pieces of it.
+export async function addFromFiles(kind, files, cuts = []) {
   const folder = folderFor(kind);
   if (!folder) throw new Error(`no ${kind}s folder set in config.yaml`);
   const dest = join(folder, "uploads");
@@ -109,7 +181,26 @@ export async function addFromFiles(kind, files) {
   const added = [];
   for (const f of files) {
     const title = f.name.replace(/\.[^.]+$/, "");
-    const path = join(dest, `${title.replace(/[<>:"/\\|?*]+/g, "_").trim().slice(0, 80)} [${f.id}]${f.name.match(/\.[^.]+$/)?.[0] || ".mp4"}`);
+    const stem = `${title.replace(/[<>:"/\\|?*]+/g, "_").trim().slice(0, 80)} [${f.id}]`;
+    if (cuts.length) {
+      mkdirSync(TMP, { recursive: true });
+      const whole = join(TMP, `${f.id}${f.name.match(/\.[^.]+$/)?.[0] || ".mp4"}`);
+      try {
+        const res = await fetch(f.url);
+        if (!res.ok) throw new Error(`download failed (HTTP ${res.status})`);
+        writeFileSync(whole, Buffer.from(await res.arrayBuffer()));
+        const p = await probe(whole).catch(() => null);
+        const secs = Number(p?.format?.duration);
+        if (!p?.streams?.some((s) => s.codec_type === "video") || !(secs > 0)) throw new Error("not a playable video");
+        added.push(...await cutPieces(whole, secs, cuts, dest, stem, title, kind));
+      } catch (e) {
+        added.push({ title: f.name, skipped: e.message });
+      } finally {
+        rmSync(whole, { force: true });
+      }
+      continue;
+    }
+    const path = join(dest, `${stem}${f.name.match(/\.[^.]+$/)?.[0] || ".mp4"}`);
     try {
       const res = await fetch(f.url);
       if (!res.ok) throw new Error(`download failed (HTTP ${res.status})`);

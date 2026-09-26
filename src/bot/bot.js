@@ -14,7 +14,7 @@ import { runSync } from "../catalog/index.js";
 import { setEntrance, clearEntrance } from "./entrance.js";
 import { generateSchedule } from "../schedule/generate.js";
 import { planSpecials } from "../schedule/specials.js";
-import { addFromUrls, addFromFiles } from "../catalog/download.js";
+import { addFromUrls, addFromFiles, parseCuts } from "../catalog/download.js";
 import { localDay, localTime } from "../schedule/time.js";
 import { scheduledUntil } from "../schedule/store.js";
 import { weekGrid, dayGuide } from "../schedule/guide.js";
@@ -107,7 +107,7 @@ export function helpEmbeds() {
   const thread = (id, name) => (id ? `<#${id}>` : `the ${name} thread`);
   const d = config.discord;
   return [
-    new EmbedBuilder().setTitle("📺 How to use the TV").setDescription([
+    new EmbedBuilder().setTitle("📺 TV Guide").setDescription([
       "**Watch**",
       "• Join a voice channel and type `/tv`. The TV joins and starts whatever the schedule says is on right now, like real TV.",
       "• Click **Watch** on the stream in the voice channel to see it (after the TV restarts, click it again).",
@@ -128,6 +128,11 @@ export function helpEmbeds() {
       `• ${thread(d.clip_thread_id, "Clips")}: same, as **clips** (short bits between shows).`,
       `• ${thread(d.eyecatch_thread_id, "Eyecatchers")}: same, as **eyecatches** (the little bumpers around a mid-show break; a minute at most).`,
       "The bot reacts ⏳, then ✅ or ⚠️ with a reply saying what went in or why not (too long, unavailable...). Commercials and clips can be up to 10 minutes. New ones can air at the next break.",
+      "",
+      "**Only part of a video?** Put timestamps after the link (or in the message with one uploaded file):",
+      "• Cut points split it: `https://youtu.be/… 0:05` → two pieces, 0:00–0:05 and 0:05 to the end. `0:05 0:10` → three.",
+      "• Ranges keep just those parts, each as its own item: `https://youtu.be/… 1:20-1:35 4:02-4:30`.",
+      "• Times like `0:05`, `1:02:03` or `75s`. Handy for a video with several ads or eyecatches back to back; the whole video can be up to an hour, each piece within the usual limit.",
       "",
       "**Your entrance sound**",
       `• \`/entrance set\` with a sound or video file: it plays when you join the TV's voice channel (first ${config.entrance.max_seconds} seconds). \`/entrance clear\` removes it.`,
@@ -399,16 +404,23 @@ export async function startBot() {
   client.on("messageCreate", async (m) => {
     const kind = dropThreads.get(m.channelId);
     if (!kind || m.author.bot) return;
-    const urls = [...new Set(m.content.match(/https?:\/\/\S+/g) || [])].map((u) => u.replace(/[)>\]]+$/, ""));
+    // Each link with the timestamps written after it (up to the next link): pieces to cut.
+    const found = [...m.content.matchAll(/https?:\/\/\S+/g)];
+    const links = found.map((u, k) => ({
+      url: u[0].replace(/[)>\]]+$/, ""),
+      cuts: parseCuts(m.content.slice(u.index + u[0].length, found[k + 1]?.index ?? m.content.length)),
+    })).filter((l, k, all) => all.findIndex((x) => x.url === l.url) === k);
     const files = [...m.attachments.values()].filter((a) => a.contentType?.startsWith("video/") || VIDEO_FILE.test(a.name || ""))
       .map((a) => ({ id: a.id, name: a.name || `${a.id}.mp4`, url: a.url }));
-    if (!urls.length && !files.length) return;
+    if (!links.length && !files.length) return;
+    // One uploaded file (and no links): timestamps in the message cut it.
+    const fileCuts = !links.length && files.length === 1 ? parseCuts(m.content) : [];
     await m.react("⏳").catch(() => {});
     let text, ok;
     try {
       const done = await maintenance.run(async () => [
-        ...(files.length ? await addFromFiles(kind, files) : []),
-        ...(urls.length ? await addFromUrls(kind, urls) : []),
+        ...(files.length ? await addFromFiles(kind, files, fileCuts) : []),
+        ...(links.length ? await addFromUrls(kind, links) : []),
       ]);
       const added = done.filter((a) => !a.skipped);
       ok = added.length > 0;
