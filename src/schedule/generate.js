@@ -83,9 +83,15 @@ async function generateUnlocked({ fromMs = Date.now(), days = config.broadcast.p
   const toMs = fromMs + days * DAY;
   if (replan) await planWeek({ fromMs, count: Math.max(7, Math.ceil(days) + 1) });
   for (let round = 0; round < 4; round++) {
-    // The grid has to reach past toMs (a slot ends where the next one starts).
-    const last = lastPlannedSlot();
-    if (!last || last <= toMs) await planWeek({ fromMs: last && last > fromMs ? localDay(last).endMs : fromMs, count: 7 });
+    // Keep the grid grid_weeks_ahead weeks out (a buffer: if a planning call fails, the
+    // days keep filling from the grid already there); a week is added whenever less than
+    // grid_weeks_ahead - 1 weeks are left past toMs.
+    const buffer = Math.max(0, (config.broadcast.grid_weeks_ahead ?? 2) - 1) * 7 * DAY;
+    for (let k = 0; k < 4; k++) {
+      const last = lastPlannedSlot();
+      if (last && last > toMs + buffer) break;
+      await planWeek({ fromMs: last && last > fromMs ? localDay(last).endMs : fromMs, count: 7 });
+    }
     const r = fillSchedule(fromMs, toMs);
     log.info(`schedule: filled ${r.blocks} blocks up to ${new Date(r.until).toISOString()}`);
     if (!r.needPlan) return;

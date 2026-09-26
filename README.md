@@ -177,8 +177,9 @@ Three layers; Claude never picks individual episodes or movies.
    Once a week Claude adds a handful of new buckets for the coming two weeks (seasonal
    and event ideas especially) and sorts in titles new to the catalog.
    `tv.cmd buckets` lists them; `--build` redoes the first pass, `--new` the weekly one.
-2. **The grid.** Once a week Claude lays out the next 7 days as bucket slots ("Sat 06:00
-   Saturday Morning Cartoons, 10:00 Shonen Slop, ..."), from the bucket list alone. Code
+2. **The grid.** Claude lays out the days as bucket slots, a week at a time, staying
+   `grid_weeks_ahead` (2) weeks ahead so there's always a buffer ("Sat 06:00 Saturday Morning
+   Cartoons, 10:00 Shonen Slop, ..."), from the bucket list alone. Code
    checks it (times of day, seasons, every day covered from 00:00, slots at least an
    hour, a bucket at most twice a day) and sends problems back (3 tries), then falls back
    to a simple code-made grid. `tv.cmd plan` prints it.

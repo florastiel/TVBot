@@ -19,6 +19,7 @@ broadcast:
   clip_chance: 0.3             # chance a break includes one of the clips (0 to 1)
   no_repeat_days: 14           # don't reuse an episode/movie within this many days
   plan_days: 1                 # how far ahead blocks are filled from the week's grid (upkeep tops it up)
+  grid_weeks_ahead: 2          # how far ahead Claude lays out the grid of block kinds (a week at a time)
   specials_per_week: 0         # extra Claude-picked specials each week (0 = only on request; the weekly grid has marathons already)
   idle_leave_minutes: 5        # leave voice after this long with nobody watching
 
