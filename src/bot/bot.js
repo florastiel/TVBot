@@ -47,7 +47,8 @@ async function upkeep() {
   const lastSync = Date.parse(getMeta("last_sync") || 0) || 0;
   if (Date.now() - lastSync > week) {
     log.info("bot: weekly catalog sync");
-    await runSync();
+    // A failed sync (a drive dropping out mid-scan) mustn't stop the schedule top-up below.
+    await runSync().catch((e) => log.error("bot: catalog sync failed:", e.message));
     await runTagging().catch((e) => log.warn(`bot: tagging failed: ${e.message}`));
     await tagOrder().catch((e) => log.warn(`bot: order tagging failed: ${e.message}`));
     await tagEpisodeThemes().catch((e) => log.warn(`bot: episode theme tagging failed: ${e.message}`));
@@ -273,8 +274,9 @@ export async function startBot() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         log.info("bot: connected to player");
         let buf = "";
+        const utf8 = new TextDecoder(); // streaming: a character split across chunks stays whole
         for await (const chunk of res.body) {
-          buf += Buffer.from(chunk).toString();
+          buf += utf8.decode(chunk, { stream: true });
           let i;
           while ((i = buf.indexOf("\n\n")) >= 0) {
             const block = buf.slice(0, i);
@@ -385,7 +387,7 @@ export async function startBot() {
         }
         if (sub === "sync") {
           await i.deferReply(ephemeral);
-          await runSync();
+          await maintenance.run(() => runSync()); // not alongside upkeep, a drop-thread add, ...
           return i.editReply("Catalog sync finished.");
         }
         if (sub === "add") {

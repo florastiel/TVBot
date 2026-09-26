@@ -51,11 +51,19 @@ export function nextInOrder(title, count, used, beforeMs) {
   const eps = db.prepare(`SELECT i.* FROM items i LEFT JOIN tags t ON t.item_id = i.id
     WHERE i.kind = 'episode' AND i.show_title = ? AND ${schedulableSql("i")} AND COALESCE(t.holiday, 'none') = 'none'
     ORDER BY i.season IS NULL OR i.season = 0, i.season, i.episode IS NULL, i.episode, i.id`).all(title);
-  const last = db.prepare(`SELECT i.id, b.start_at FROM block_items bi JOIN blocks b ON b.id = bi.block_id JOIN items i ON i.id = bi.item_id
+  const last = db.prepare(`SELECT i.id, i.season, i.episode, b.start_at FROM block_items bi JOIN blocks b ON b.id = bi.block_id JOIN items i ON i.id = bi.item_id
     LEFT JOIN tags t ON t.item_id = i.id
     WHERE i.show_title = ? AND b.start_at < ? AND COALESCE(t.holiday, 'none') = 'none'
     ORDER BY b.start_at DESC, bi.position DESC LIMIT 1`).get(title, beforeMs);
-  const start = last && beforeMs - last.start_at < RESTART_MS ? eps.findIndex((e) => e.id === last.id) + 1 : 0;
+  let start = 0;
+  if (last && beforeMs - last.start_at < RESTART_MS) {
+    const at = eps.findIndex((e) => e.id === last.id);
+    // The copy that aired may not be schedulable any more (dedupe now keeps another copy,
+    // its drive is unplugged): carry on after the same season/episode, not from the top.
+    const key = (e) => [e.season == null || e.season === 0 ? 1 : 0, e.season ?? 0, e.episode == null ? 1 : 0, e.episode ?? 0];
+    const later = (e) => { const a = key(e), b = key(last); const i = a.findIndex((x, k) => x !== b[k]); return i >= 0 && a[i] > b[i]; };
+    start = at >= 0 ? at + 1 : Math.max(0, eps.findIndex(later));
+  }
   const out = [];
   for (let k = 0; k < eps.length && out.length < count; k++) {
     const e = eps[(start + k) % eps.length];

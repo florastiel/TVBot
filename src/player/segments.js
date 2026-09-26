@@ -24,7 +24,10 @@ export function toSegment(row, plex, { seekMs = 0, breakId = null } = {}) {
   const local = row.source === "local" ? row.source_key : spooledPath(row);
   let input = local || (row.source === "plex" ? plex.fileUrl(row.media_path) : null);
   if (subs.mode === "sidecar") {
-    subsFile = [join(SUBS_DIR, `${row.id}.ass`), join(SUBS_DIR, `${row.id}.srt`)].find(existsSync) || null;
+    // The copy matching the chosen track's format (a stale one in the other format may
+    // still be there from an earlier pick).
+    const f = join(SUBS_DIR, `${row.id}.${subs.codec === "ass" || subs.codec === "ssa" ? "ass" : "srt"}`);
+    subsFile = existsSync(f) ? f : null;
   } else if (subs.mode === "embedded_text" && local) {
     // Subtitles inside the file: only from a local copy (a local file, or downloaded ahead).
     subsFile = local;

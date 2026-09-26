@@ -112,7 +112,7 @@ function pickBlock(bucket, at, room, ctx) {
       const rows = [];
       for (const e of shuffle([...pool])) {
         if (rows.some((r) => r.show_title && r.show_title === e.show_title)) continue;
-        if (blockLength(run([...rows, e])).lengthMs <= Math.min(room, maxShow())) rows.push(e);
+        if (fits([...rows, e], Math.min(room, maxShow()))) rows.push(e);
       }
       const l = rows.length && fits(rows, Math.min(room, maxShow()));
       if (l && (!best || run(rows) > run(best.rows))) best = { rows, l };

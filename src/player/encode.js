@@ -27,9 +27,10 @@ function videoCodecArgs() {
   return ["-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", ...rate, ...common];
 }
 
-// Paths inside an ffmpeg filter need ':' and '\' escaped; a path relative to the
-// project avoids the drive letter entirely.
-const filterPath = (p) => relative(ROOT, p).replaceAll("\\", "/").replace(/([:'\[\],;])/g, "\\$1");
+// Paths inside an ffmpeg filter (always inside '...') need ':' and '\' escaped; a path
+// relative to the project avoids the drive letter entirely. An apostrophe ("Bob's
+// Burgers") can't be escaped inside quotes: end the quote, add an escaped one, reopen.
+const filterPath = (p) => relative(ROOT, p).replaceAll("\\", "/").replace(/([:\[\],;])/g, "\\$1").replaceAll("'", "\\'\\''");
 
 /**
  * seg: { input, seekMs, durationMs, audioStream, subs, subsFile }

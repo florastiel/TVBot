@@ -2,7 +2,8 @@ import { readdirSync, statSync, existsSync, mkdirSync, copyFileSync } from "node
 import { join, relative, sep, extname, basename, dirname } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { config, DATA_DIR } from "../config.js";
+import { config } from "../config.js";
+import { SUBS_DIR } from "./plexSync.js"; // where the player looks for sidecar subtitles
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
 import { chooseTracks, fromFfprobeStreams } from "./tracks.js";
@@ -62,6 +63,9 @@ export function parseLibraryFile(root, file) {
   const name = basename(file, extname(file));
   const folder = dirs.length ? showName(dirs[0]) : null; // the top one: "How to Succeed\H2$\H2$-1.mp4"
   if (folder) {
+    // "Frasier\Season 1\S01E05 - Title.mkv": the episode is known, only the show name
+    // wasn't in the file name.
+    if (p.kind === "episode" && p.season != null && p.episode != null) return { ...p, show_title: folder, match: "full" };
     const lead = name.match(/^(\d{1,3})[ ._)-]+(.*)$/);
     if (lead) return { kind: "episode", show_title: folder, season: 1, episode: Number(lead[1]), title: tidyName(lead[2]) || `Episode ${Number(lead[1])}`, match: "full" };
     const part = name.match(/[ ._-](?:part[ ._-]?)?(\d{1,2})$/i);
@@ -73,7 +77,6 @@ export function parseLibraryFile(root, file) {
 // Subtitle files next to a local video ("Show S01E01.srt", "Show S01E01.en.ass"), as
 // streams for chooseTracks: "en"/"eng"/"english" after the name means English, nothing
 // means unlabeled (used as a last resort). id is the file's path.
-const SUBS_DIR = join(DATA_DIR, "subs"); // where the player looks (same as Plex's sidecars)
 const SUB_EXT = { ".srt": "subrip", ".ass": "ass", ".ssa": "ass" };
 function sidecarStreams(file) {
   const base = basename(file, extname(file)).toLowerCase();
@@ -159,11 +162,13 @@ export async function scanLocal() {
     }
   });
 
-  // ffprobe only new/changed files, and ones missing subtitles (a subtitle file may have
-  // been put next to them since).
-  const todo = db.prepare(`SELECT id, source_key, show_title, source_updated FROM items
+  // ffprobe only new/changed files, and ones missing subtitles that now have a usable
+  // subtitle file next to them (English or unlabeled).
+  const usableSidecar = (f) => sidecarStreams(f).some((s) => s.lang == null || s.lang === config.language.subtitles);
+  const todo = db.prepare(`SELECT id, source_key, show_title, source_updated, streams_checked FROM items
     WHERE source = 'local' AND present = 1 AND (streams_checked IS NULL OR streams_checked != source_updated
-      OR unplayable_reason LIKE '%subtitles%')`).all();
+      OR unplayable_reason LIKE '%subtitles%')`).all()
+    .filter((r) => r.streams_checked == null || r.streams_checked !== r.source_updated || usableSidecar(r.source_key));
   const save = db.prepare(`UPDATE items SET duration_ms = ?, video_height = ?, audio_stream = ?, audio_lang = ?, subs = ?,
     playable = ?, unplayable_reason = ?, streams_checked = ?, cues = ? WHERE id = ?`);
   const worker = async () => {

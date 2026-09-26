@@ -34,7 +34,8 @@ function data() {
 export function bucketPage({ full = false } = {}) {
   const json = JSON.stringify(data()).replaceAll("</", "<\\/");
   const stamp = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
-  const body = PAGE.replace("__DATA__", json).replace("__STAMP__", stamp);
+  // Function replacers: a "$&" or "$'" in a title must not be read as a replacement pattern.
+  const body = PAGE.replace("__DATA__", () => json).replace("__STAMP__", () => stamp);
   return full ? `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${body}</body></html>\n` : body;
 }
 
