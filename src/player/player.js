@@ -307,7 +307,10 @@ export class Player extends EventEmitter {
       this.emitEvent("restarting");
     }
     log.info("player: restarting to load new code/settings");
-    setTimeout(() => process.exit(0), 500);
+    // Ended outright: process.exit() once hung for 2 minutes (native video-library
+    // teardown) and the channel sat dead until the bot's watchdog killed the process.
+    // The resume file is already written; the service manager restarts on any exit.
+    setTimeout(() => { try { process.kill(process.pid, "SIGKILL"); } catch { /* fall through */ } process.exit(0); }, 500);
   }
 
   async resumeAfterRestart() {
