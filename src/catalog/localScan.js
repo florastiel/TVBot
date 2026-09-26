@@ -1,8 +1,8 @@
-import { readdirSync, statSync, existsSync } from "node:fs";
-import { join, relative, sep, extname, basename } from "node:path";
+import { readdirSync, statSync, existsSync, mkdirSync, copyFileSync } from "node:fs";
+import { join, relative, sep, extname, basename, dirname } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { config } from "../config.js";
+import { config, DATA_DIR } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
 import { chooseTracks, fromFfprobeStreams } from "./tracks.js";
@@ -68,6 +68,22 @@ export function parseLibraryFile(root, file) {
     if (part) return { kind: "episode", show_title: folder, season: 1, episode: Number(part[1]), title: `Part ${Number(part[1])}`, match: "full" };
   }
   return { ...p, kind: "movie", title: p.title || tidyName(name), match: "full" };
+}
+
+// Subtitle files next to a local video ("Show S01E01.srt", "Show S01E01.en.ass"), as
+// streams for chooseTracks: "en"/"eng"/"english" after the name means English, nothing
+// means unlabeled (used as a last resort). id is the file's path.
+const SUBS_DIR = join(DATA_DIR, "subs"); // where the player looks (same as Plex's sidecars)
+const SUB_EXT = { ".srt": "subrip", ".ass": "ass", ".ssa": "ass" };
+function sidecarStreams(file) {
+  const base = basename(file, extname(file)).toLowerCase();
+  let names;
+  try { names = readdirSync(dirname(file)); } catch { return []; }
+  return names.filter((n) => SUB_EXT[extname(n).toLowerCase()] && n.toLowerCase().startsWith(base)).map((n) => {
+    const tag = n.slice(base.length, n.length - extname(n).length).replace(/^[\s._-]+/, "").toLowerCase();
+    const lang = !tag ? null : /^(en|eng|english)\b/.test(tag) ? "eng" : tag.slice(0, 3);
+    return { type: "subtitle", lang, codec: SUB_EXT[extname(n).toLowerCase()], title: n, forced: /forced/.test(tag), external: true, id: join(dirname(file), n) };
+  });
 }
 
 // file: a path, or a URL (Real-Debrid items).
@@ -143,9 +159,11 @@ export async function scanLocal() {
     }
   });
 
-  // ffprobe only new/changed files.
+  // ffprobe only new/changed files, and ones missing subtitles (a subtitle file may have
+  // been put next to them since).
   const todo = db.prepare(`SELECT id, source_key, show_title, source_updated FROM items
-    WHERE source = 'local' AND present = 1 AND (streams_checked IS NULL OR streams_checked != source_updated)`).all();
+    WHERE source = 'local' AND present = 1 AND (streams_checked IS NULL OR streams_checked != source_updated
+      OR unplayable_reason LIKE '%subtitles%')`).all();
   const save = db.prepare(`UPDATE items SET duration_ms = ?, video_height = ?, audio_stream = ?, audio_lang = ?, subs = ?,
     playable = ?, unplayable_reason = ?, streams_checked = ?, cues = ? WHERE id = ?`);
   const worker = async () => {
@@ -153,7 +171,12 @@ export async function scanLocal() {
       try {
         const p = await probe(r.source_key);
         const video = p.streams.find((s) => s.codec_type === "video" && !s.disposition?.attached_pic);
-        const t = video ? chooseTracks(fromFfprobeStreams(p.streams), { showTitle: r.show_title }) : { playable: false, reason: "no video track" };
+        const t = video ? chooseTracks([...fromFfprobeStreams(p.streams), ...sidecarStreams(r.source_key)], { showTitle: r.show_title }) : { playable: false, reason: "no video track" };
+        if (t.subs?.mode === "sidecar") {
+          // Copy it where the player looks: data\subs\<id>.ass or .srt.
+          mkdirSync(SUBS_DIR, { recursive: true });
+          copyFileSync(t.subs.id, join(SUBS_DIR, `${r.id}${t.subs.codec === "ass" ? ".ass" : ".srt"}`));
+        }
         const cues = (p.chapters || []).map((c) => Math.round(Number(c.start_time) * 1000)).filter((ms) => ms > 0);
         save.run(Math.round(Number(p.format.duration) * 1000) || null, video?.height ?? null, t.audioStream ?? null,
           t.audioLang ?? null, JSON.stringify(t.subs || { mode: "none" }), t.playable ? 1 : 0, t.reason || null, r.source_updated,
