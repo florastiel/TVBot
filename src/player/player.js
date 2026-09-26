@@ -400,6 +400,12 @@ export class Player extends EventEmitter {
 
     const routes = {
       "GET /status": () => this.status(),
+      // /badbot: a marker line in this log, so the moment can be found again.
+      "POST /badbot": (b) => {
+        const n = this.now;
+        log.warn(`BADBOT ${String(b.by ?? "?")}: "${String(b.text ?? "").slice(0, 300)}" | on air: ${n ? `${n.title} ${n.subtitle || ""}`.trim() + (n.breakId ? " (break)" : "") : "nothing"} | state ${this.state}, ${this.viewers ?? "?"} watching`);
+        return { ok: true };
+      },
       "POST /join": (b) => this.join(String(b.channelId)),
       "POST /leave": () => this.leave("turned off"),
       "POST /pause": () => this.pause(),

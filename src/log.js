@@ -1,7 +1,7 @@
 // Timestamped logger. The long-running parts (player, bot) also write a daily file:
 // logs\player-2026-09-25.log, logs\bot-2026-09-25.log; files older than 14 days are
 // deleted. Tokens must never reach it; redact() is a backstop.
-import { appendFileSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,6 +34,23 @@ const out = (level, args) => {
   (level === "ERROR" || level === "WARN " ? console.error : console.log)(line);
   toFile(line);
 };
+// /badbot: the last `lines` lines of today's player or bot log.
+export function tailLog(which, lines) {
+  try {
+    const f = join(LOG_DIR, `${which}-${stamp().slice(0, 10)}.log`);
+    return readFileSync(f, "utf8").split(/\r?\n/).filter(Boolean).slice(-lines);
+  } catch { return []; }
+}
+
+// /badbot: one entry (a header, then the recent log lines) in logs\badbot.log.
+export function flagBadBot(header, sections) {
+  const body = sections.map(([title, ls]) => `  --- ${title} ---\n${ls.map((l) => `  ${l}`).join("\n")}`).join("\n");
+  try {
+    mkdirSync(LOG_DIR, { recursive: true });
+    appendFileSync(join(LOG_DIR, "badbot.log"), `${"=".repeat(78)}\n${redact(header)}\n${redact(body)}\n\n`);
+  } catch { /* logging must never crash the TV */ }
+}
+
 export const log = {
   info: (...a) => out("INFO ", a),
   warn: (...a) => out("WARN ", a),
