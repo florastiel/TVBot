@@ -468,28 +468,13 @@ export async function startBot() {
           for (const embeds of messages.slice(1)) await i.followUp({ embeds, ...ephemeral });
           return;
         }
-        // Refresh the guide post in the TV channel (no new copy of the schedule), then say so
-        // there with a link; the previous "updated" note is removed so they don't pile up.
-        const inTvChannel = i.channelId === guideChannel();
-        await i.deferReply(inTvChannel ? {} : ephemeral);
+        // Refresh the guide post in the TV channel (edited, no new copy), and tell only the
+        // person who asked, with a link (a private reply they can dismiss).
+        await i.deferReply(ephemeral);
         await fillToday();
         const guide = await publishGuide();
         if (!guide) return i.editReply("Couldn't update the TV guide post right now. Try again in a minute.");
-        const note = `Schedule updated (asked by <@${i.user.id}>): ${linkTo(guide)}`;
-        const prev = getMeta("guide_note");
-        let noteMsg;
-        if (inTvChannel) {
-          noteMsg = await i.editReply({ content: note, allowedMentions: { parse: [] } });
-        } else {
-          noteMsg = await post(guideChannel(), note);
-          await i.editReply(`Updated the TV guide: ${linkTo(guide)}`);
-        }
-        if (prev && prev !== noteMsg?.id) {
-          const ch = await client.channels.fetch(guideChannel()).catch(() => null);
-          await remove(await ch?.messages.fetch(prev).catch(() => null));
-        }
-        if (noteMsg) setMeta("guide_note", noteMsg.id);
-        return;
+        return i.editReply(`Schedule updated: ${linkTo(guide)}`);
       }
       if (i.isButton() && i.customId.startsWith("tv:skip:")) {
         const breakId = i.customId.slice("tv:skip:".length);
