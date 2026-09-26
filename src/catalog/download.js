@@ -38,7 +38,16 @@ export async function addFromUrls(kind, urls) {
   mkdirSync(dest, { recursive: true });
   const added = [];
   for (const link of urls) {
-    for (const v of await expand(link)) {
+    let videos;
+    try {
+      videos = await expand(link);
+    } catch (e) {
+      // A bad link (removed, private, region-blocked) shouldn't sink the others: say why.
+      const why = e.message.split("\n").find((l) => l.startsWith("ERROR")) || "yt-dlp couldn't read it";
+      added.push({ title: link, skipped: why.replace(/^ERROR:\s*(\[[^\]]*\]\s*)?([\w-]+:\s*)?/, "") });
+      continue;
+    }
+    for (const v of videos) {
       if (!(v.seconds > 0)) { added.push({ ...v, skipped: "unavailable (private, deleted or no length)" }); continue; }
       if (v.seconds > MAX_MINUTES * 60) {
         added.push({ ...v, skipped: `${Math.round(v.seconds / 60)} minutes long; looks like a compilation, not a single ${kind}` });
