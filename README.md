@@ -194,7 +194,21 @@ over the network; if the kept Real-Debrid copy can't be read, the next copy is t
 channel's threads: Commercials, Clips, Eyecatchers (`discord.drop_thread_id`,
 `clip_thread_id`, `eyecatch_thread_id`). The bot reacts ⏳, downloads, checks each
 (a playable video; 10 minutes at most, eyecatches 1 minute), replies with what went in,
-and they air from the next break.
+and they air from the next break (no sync needed: each post is downloaded and scanned
+into the local folders within seconds). Spots play in any language; the "foreign audio
+needs English subtitles" rule is only for shows and movies.
+
+**Timestamps** cut a video into pieces. After a link (or in the message with one
+uploaded file): cut points split it (`https://youtu.be/... 0:05` -> 0:00-0:05 and 0:05 to
+the end), ranges keep just those parts (`... 1:20-1:35 4:02-4:30`, each its own item).
+Times are `0:05`, `1:02:03` or `75s`. The whole video is downloaded to
+`data\tmp-downloads` (deleted after), each piece re-encoded to start exactly on its
+timestamp and checked against the usual length limit; a video to cut from can be up to
+an hour.
+
+**YouTube sign-in**: see the setup section (browser cookies in
+`data\youtube-cookies.txt`, not OAuth). **`/tvhelp`** posts (and edits) the help post in
+the TV channel; its text is `helpEmbeds()` in `src/bot/bot.js`.
 
 **Eyecatches** (`D:\data\tv\eyecatches`): a break inside a show or movie gets one before
 and one after the commercial if it's the kind of thing that aired with TV breaks:
