@@ -180,6 +180,17 @@ less. The rest are marked `duplicate_of` the kept one, never scheduled and never
 over the network; if the kept Real-Debrid copy can't be read, the next copy is tried.
 `tv.cmd stats` counts them.
 
+**Drop threads.** Anyone can post YouTube (etc.) links or video files in the TV
+channel's threads: Commercials, Clips, Eyecatchers (`discord.drop_thread_id`,
+`clip_thread_id`, `eyecatch_thread_id`). The bot reacts ⏳, downloads, checks each
+(a playable video; 10 minutes at most, eyecatches 1 minute), replies with what went in,
+and they air from the next break.
+
+**Eyecatches** (`D:\data\tv\eyecatches`): a break inside an anime episode gets one before
+and one after the commercial (`broadcast.eyecatches`: anime, all, or none). Files in
+`eyecatches\<Show Name>\` belong to that show only, and a show with its own uses only
+those; loose files (and thread uploads) are for any show.
+
 **Tagging commercials and clips** is by hand: each of those folders gets a
 `tags.csv`. Sync adds a blank row for new files; fill in `decade` (90s, 1990s, 1994
 all work), `holiday` (halloween / thanksgiving / christmas / none) and `notes` in

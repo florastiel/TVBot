@@ -119,7 +119,7 @@ function markDuplicates(db) {
 
   // Step 3: one local file in several formats (same folder, same name).
   const files = db.prepare(`SELECT id, source_key, playable, excluded FROM items
-    WHERE source = 'local' AND present = 1 AND kind IN ('commercial', 'clip', 'short')`).all();
+    WHERE source = 'local' AND present = 1 AND kind IN ('commercial', 'clip', 'short', 'eyecatch')`).all();
   const same = new Map();
   for (const r of files) {
     const key = `${dirname(r.source_key).toLowerCase()}|${basename(r.source_key, extname(r.source_key)).toLowerCase()}`;

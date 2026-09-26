@@ -14,6 +14,13 @@ import { probe } from "./localScan.js";
 
 const run = promisify(execFile);
 const MAX_MINUTES = 10; // anything longer is probably a compilation, not one ad
+// Where each kind goes, and its longest single video (seconds).
+const FOLDER_OF = { commercial: "commercials", clip: "clips", eyecatch: "eyecatches" };
+const folderFor = (kind) => config.local[FOLDER_OF[kind] || "commercials"];
+const maxSeconds = (kind) => (kind === "eyecatch" ? 60 : MAX_MINUTES * 60);
+const tooLong = (kind, secs) => (kind === "eyecatch"
+  ? `${Math.round(secs)} seconds long; an eyecatch is a few seconds (a minute at most)`
+  : `${Math.round(secs / 60)} minutes long; looks like a compilation, not a single ${kind}`);
 const ytdlp = () => join(ROOT, "tools", "yt-dlp.exe");
 // yt-dlp needs a JavaScript runtime for YouTube's player challenge; without one it falls
 // back to clients that can't play some videos ("made for kids" ones say "not available").
@@ -37,7 +44,7 @@ async function expand(url) {
 }
 
 export async function addFromUrls(kind, urls) {
-  const folder = kind === "clip" ? config.local.clips : config.local.commercials;
+  const folder = folderFor(kind);
   if (!folder) throw new Error(`no ${kind}s folder set in config.yaml`);
   const dest = join(folder, "youtube");
   mkdirSync(dest, { recursive: true });
@@ -54,8 +61,8 @@ export async function addFromUrls(kind, urls) {
     }
     for (const v of videos) {
       if (!(v.seconds > 0)) { added.push({ ...v, skipped: "unavailable (private, deleted or no length)" }); continue; }
-      if (v.seconds > MAX_MINUTES * 60) {
-        added.push({ ...v, skipped: `${Math.round(v.seconds / 60)} minutes long; looks like a compilation, not a single ${kind}` });
+      if (v.seconds > maxSeconds(kind)) {
+        added.push({ ...v, skipped: tooLong(kind, v.seconds) });
         continue;
       }
       try {
@@ -82,7 +89,7 @@ export async function addFromUrls(kind, urls) {
 // <folder>\uploads (each file counts on its own when breaks are filled), after checking
 // they're a playable video of at most MAX_MINUTES.
 export async function addFromFiles(kind, files) {
-  const folder = kind === "clip" ? config.local.clips : config.local.commercials;
+  const folder = folderFor(kind);
   if (!folder) throw new Error(`no ${kind}s folder set in config.yaml`);
   const dest = join(folder, "uploads");
   mkdirSync(dest, { recursive: true });
@@ -97,7 +104,7 @@ export async function addFromFiles(kind, files) {
       const p = await probe(path).catch(() => null);
       const secs = Number(p?.format?.duration);
       if (!p?.streams?.some((s) => s.codec_type === "video") || !(secs > 0)) throw new Error("not a playable video");
-      if (secs > MAX_MINUTES * 60) throw new Error(`${Math.round(secs / 60)} minutes long; looks like a compilation, not a single ${kind}`);
+      if (secs > maxSeconds(kind)) throw new Error(tooLong(kind, secs));
       log.info(`add: saved uploaded ${kind} "${f.name}"`);
       added.push({ title, seconds: Math.round(secs) });
     } catch (e) {

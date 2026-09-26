@@ -228,7 +228,7 @@ export class ScheduleProgram {
       // between_spots videos, unless the shows are very short.
       const inside = remaining[0].row.id === p.row.id;
       if (inside || sinceBreak >= breakEvery) {
-        yield* before(makeBreak(this.plex, { theme: block.theme, inside }), remaining[0].row);
+        yield* before(makeBreak(this.plex, { theme: block.theme, inside, show: p.row }), remaining[0].row);
         sinceBreak = 0;
         if (this.live) return null;
       }

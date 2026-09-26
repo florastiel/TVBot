@@ -9,7 +9,7 @@ import { chooseTracks, fromFfprobeStreams } from "./tracks.js";
 
 const run = promisify(execFile);
 const VIDEO = new Set([".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts", ".webm", ".flv"]);
-const FOLDERS = { shows: "episode", movies: "movie", clips: "clip", commercials: "commercial", shorts: "short" };
+const FOLDERS = { shows: "episode", movies: "movie", clips: "clip", commercials: "commercial", shorts: "short", eyecatches: "eyecatch" };
 
 function walk(dir) {
   const out = [];

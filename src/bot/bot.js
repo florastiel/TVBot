@@ -136,6 +136,7 @@ export async function startBot() {
   const dropThreads = new Map([
     [String(config.discord.drop_thread_id || "").trim(), "commercial"],
     [String(config.discord.clip_thread_id || "").trim(), "clip"],
+    [String(config.discord.eyecatch_thread_id || "").trim(), "eyecatch"],
   ].filter(([id]) => id));
   const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates];
   if (dropThreads.size) intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);

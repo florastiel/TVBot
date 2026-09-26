@@ -106,10 +106,45 @@ function remember(rows) {
 let breakCounter = 0;
 const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
 
+// Is this show/movie anime (Claude's tag: per show for episodes, per item for movies)?
+function isAnime(row) {
+  if (!row) return false;
+  const db = getDb();
+  const r = row.kind === "episode" && row.show_title
+    ? db.prepare("SELECT anime FROM shows WHERE title = ?").get(row.show_title)
+    : db.prepare("SELECT anime FROM tags WHERE item_id = ?").get(row.id);
+  return !!r?.anime;
+}
+
+const normTitle = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+
+// An eyecatch for a break inside `show`. Files in eyecatches\<Show Name>\ belong to that
+// show only (and it uses only those, if it has any); loose files and the thread folders
+// (uploads, youtube) are for any show. Prefers one not in `avoid` (the other end of this
+// break), but a show with a single eyecatch of its own uses it both ways.
+const SHARED_DIRS = new Set(["", "uploads", "youtube"]);
+function pickEyecatch(show, avoid) {
+  const all = candidates("eyecatch", null, [], 60000);
+  if (!all.length) return null;
+  const root = config.local.eyecatches || "";
+  const dirOf = (r) => { const parts = relative(root, r.source_key).split(sep); return parts.length > 1 ? parts[0] : ""; };
+  const name = normTitle(show?.show_title || show?.title);
+  const own = name ? all.filter((r) => normTitle(dirOf(r)) === name) : [];
+  const pool = own.length ? own : all.filter((r) => SHARED_DIRS.has(dirOf(r).toLowerCase()));
+  if (!pool.length) return null;
+  const notHere = pool.filter((r) => !avoid.includes(r.id));
+  const choices = notHere.length ? notHere : pool;
+  const age = (r) => recent.lastIndexOf(r.id);
+  const fresh = choices.filter((r) => age(r) === -1);
+  return fresh.length ? fresh[Math.floor(Math.random() * fresh.length)] : choices.reduce((a, b) => (age(a) <= age(b) ? a : b));
+}
+
 // A commercial break. Between shows (inside: false): between_spots videos, the first
 // sometimes a clip. Inside a show: one commercial (with inside_spots 2, a second one when
-// both are short_spot_seconds or less). Each at most max_spot_minutes, from different groups.
-export function makeBreak(plex, { theme = null, inside = false } = {}) {
+// both are short_spot_seconds or less), bookended by eyecatches (broadcast.eyecatches:
+// "anime" = only in anime, "all", or "none"). Each at most max_spot_minutes, from
+// different groups. show: the row of the show the break is inside.
+export function makeBreak(plex, { theme = null, inside = false, show = null } = {}) {
   const b = config.broadcast;
   const maxMs = b.max_spot_minutes * 60000;
   const shortMs = b.short_spot_seconds * 1000;
@@ -125,6 +160,13 @@ export function makeBreak(plex, { theme = null, inside = false } = {}) {
   if (inside) {
     const first = add("commercial", Math.min(maxMs, 60000)); // mid-show: a minute at most
     if (b.inside_spots > 1 && first && first.duration_ms <= shortMs) add("commercial", shortMs);
+    const mode = String(b.eyecatches || "none").toLowerCase();
+    if (rows.length && (mode === "all" || (mode === "anime" && isAnime(show)))) {
+      const into = pickEyecatch(show, rows.map((x) => x.id));
+      const outOf = pickEyecatch(show, [...rows, into].filter(Boolean).map((x) => x.id)) || into;
+      if (into) rows.unshift(into);
+      if (outOf) rows.push(outOf);
+    }
   } else {
     for (let k = 0; k < b.between_spots; k++) add(k === 0 && Math.random() < b.clip_chance ? "clip" : "commercial", maxMs);
   }

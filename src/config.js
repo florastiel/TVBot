@@ -10,7 +10,7 @@ export const DATA_DIR = process.env.TV_DATA || join(ROOT, "data");
 export const ENTRANCE_DIR = join(DATA_DIR, "entrances");
 
 const DEFAULTS = {
-  discord: { guild_id: "", now_playing_channel_id: "", admin_user_id: "", daily_guide: true, guide_channel_id: "", drop_thread_id: "", clip_thread_id: "" },
+  discord: { guild_id: "", now_playing_channel_id: "", admin_user_id: "", daily_guide: true, guide_channel_id: "", drop_thread_id: "", clip_thread_id: "", eyecatch_thread_id: "" },
   broadcast: {
     timezone: "America/New_York",
     grid_minutes: 5,
@@ -18,6 +18,7 @@ const DEFAULTS = {
     short_spot_seconds: 35,
     inside_spots: 1,
     episode_breaks: 1,
+    eyecatches: "anime",
     variety_folders: [],
     standing_slots: [],
     break_every_minutes: 8,
@@ -35,7 +36,7 @@ const DEFAULTS = {
   shows: { random: [], in_order: [], never: [], aliases: {} },
   buckets: { shuffle: [], in_order: [] },
   language: { audio: "eng", subtitles: "eng", always_subtitles: true, hardsubbed_shows: [] },
-  local: { shows: "", movies: "", clips: "", commercials: "", shorts: "" },
+  local: { shows: "", movies: "", clips: "", commercials: "", shorts: "", eyecatches: "" },
   realdebrid: { enabled: true, min_file_mb: 50, skip_torrents: [] },
   encode: { height: 720, frame_rate: 30, bitrate_kbps: 2500, max_bitrate_kbps: 4000, encoder: "software", hw_decode: false },
   entrance: { max_seconds: 8, loudness_lufs: -32 },
