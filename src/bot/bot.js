@@ -31,8 +31,10 @@ export const RESTART_FLAG = join(DATA_DIR, "restart-bot");
 // One background job at a time (sync, tagging, scheduling all write the catalog).
 const maintenance = {
   busy: Promise.resolve(),
+  pending: 0, // jobs running or waiting
   run(fn) {
-    const job = this.busy.then(fn);
+    this.pending++;
+    const job = this.busy.then(fn).finally(() => this.pending--);
     this.busy = job.catch(() => {});
     return job;
   },
@@ -338,6 +340,8 @@ export async function startBot() {
         if (sub === "add") {
           await i.deferReply(ephemeral);
           const urls = i.options.getString("urls").split(/\s+/).filter((u) => /^https?:\/\//.test(u));
+          if (maintenance.pending) await i.editReply("Waiting for another TV job (a catalog sync or schedule update) to finish first; this message updates when your links are in.").catch(() => {});
+          else await i.editReply(`Downloading ${urls.length} link${urls.length === 1 ? "" : "s"}...`).catch(() => {});
           const done = await maintenance.run(() => addFromUrls(i.options.getString("kind"), urls));
           return i.editReply(done.map((a) => (a.skipped ? `Skipped "${a.title}": ${a.skipped}` : `Added "${a.title}"`)).join("\n") || "No links found.");
         }

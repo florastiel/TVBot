@@ -9,7 +9,7 @@ import { stringify } from "csv-stringify/sync";
 import { join } from "node:path";
 import { config, ROOT } from "../config.js";
 import { log } from "../log.js";
-import { runSync } from "./index.js";
+import { syncLocal } from "./index.js";
 
 const run = promisify(execFile);
 const MAX_MINUTES = 10; // anything longer is probably a compilation, not one ad
@@ -69,8 +69,10 @@ export async function addFromUrls(kind, urls) {
     }
   }
   if (added.some((a) => !a.skipped)) {
-    await runSync(); // adds blank rows to tags.csv for the new files
-    if (prefillTags(folder)) await runSync();
+    // Only the local folders: a full sync (Plex, Real-Debrid) takes minutes, longer than
+    // Discord waits for the /tvadmin add reply.
+    await syncLocal(); // adds blank rows to tags.csv for the new files
+    if (prefillTags(folder)) await syncLocal();
   }
   return added;
 }

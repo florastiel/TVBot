@@ -31,3 +31,12 @@ export async function runSync({ plex = new Plex() } = {}) {
   setMeta("last_sync", new Date().toISOString());
   log.info(`sync: done in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
 }
+
+// Just the local folders (seconds, not minutes): after adding files there.
+export async function syncLocal() {
+  const t0 = Date.now();
+  await scanLocal();
+  dedupeCatalog();
+  importCsvTags();
+  log.info(`sync (local folders): done in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+}
