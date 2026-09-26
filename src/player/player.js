@@ -44,6 +44,15 @@ export class Player extends EventEmitter {
     this.plex = new Plex();
     await this.plex.connect().catch((e) => log.warn(`player: Plex not reachable yet (${e.message}); will retry when needed`));
     this.streamer = new Streamer(new Client());
+    // The Go Live thumbnail. The library offers a new one at every keyframe (every few
+    // seconds); the Discord app itself sends one every few minutes, so only pass those on.
+    const setPreview = this.streamer.setStreamPreview.bind(this.streamer);
+    this.lastPreview = 0;
+    this.streamer.setStreamPreview = async (image) => {
+      if (Date.now() - this.lastPreview < config.player.stream_preview_minutes * 60000) return;
+      this.lastPreview = Date.now();
+      await setPreview(image).catch((e) => log.warn(`player: couldn't update the stream preview: ${e.message}`));
+    };
     await this.streamer.client.login(secrets.streamerToken);
     log.info(`player: logged in as ${this.streamer.client.user.tag}`);
     this.streamer.client.on("voiceStateUpdate", (before, after) => this.onVoiceState(before, after));
@@ -118,7 +127,9 @@ export class Player extends EventEmitter {
       if (session === this.session) this.leave("error");
     });
     session.t0 = Date.now() + 1000;
-    playStream(feed.output, this.streamer, { type: "go-live" }, abort.signal)
+    this.lastPreview = 0; // a fresh Go Live gets its thumbnail right away
+    const streamPreview = config.player.stream_preview_minutes > 0;
+    playStream(feed.output, this.streamer, { type: "go-live", streamPreview }, abort.signal)
       .catch((e) => !abort.signal.aborted && log.warn(`player: stream ended: ${e.message}`))
       .finally(() => session === this.session && this.leave("stream stopped"));
   }
