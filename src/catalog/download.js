@@ -7,7 +7,7 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from "node
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { join } from "node:path";
-import { config, ROOT } from "../config.js";
+import { config, ROOT, DATA_DIR } from "../config.js";
 import { log } from "../log.js";
 import { syncLocal } from "./index.js";
 import { probe } from "./localScan.js";
@@ -26,6 +26,20 @@ const ytdlp = () => join(ROOT, "tools", "yt-dlp.exe");
 // back to clients that can't play some videos ("made for kids" ones say "not available").
 // It only looks for Deno by itself, so point it at the Node running us (tools\node).
 const JS = ["--js-runtimes", `node:${process.execPath}`];
+// Age-restricted videos need a signed-in YouTube account: cookies exported from a browser
+// logged in to one (ideally a throwaway), saved as data\youtube-cookies.txt. Used when there.
+const COOKIES = join(DATA_DIR, "youtube-cookies.txt");
+const auth = () => (existsSync(COOKIES) ? ["--cookies", COOKIES] : []);
+// yt-dlp's error, as a reason a person can act on.
+function why(e) {
+  const line = e.message.split("\n").find((l) => l.startsWith("ERROR")) || "yt-dlp couldn't read it";
+  if (/sign in|confirm you.re not a bot|age[- ]restrict|inappropriate for some users/i.test(line)) {
+    return existsSync(COOKIES)
+      ? "YouTube wants a signed-in account for this one and the saved sign-in didn't work (it may have expired)"
+      : "YouTube only shows this one to signed-in accounts (probably age-restricted); the TV isn't signed in to YouTube yet";
+  }
+  return line.replace(/^ERROR:\s*(\[[^\]]*\]\s*)?([\w-]+:\s*)?/, "");
+}
 
 // Every video behind a link: one for a video link, all of them for a playlist.
 // A "watch?v=" link means that one video, even if it came from a playlist; a
@@ -33,7 +47,7 @@ const JS = ["--js-runtimes", `node:${process.execPath}`];
 // it counts as one group when breaks are filled).
 async function expand(url) {
   const single = /[?&]v=/.test(url) && !/\/playlist\?/.test(url);
-  const { stdout } = await run(ytdlp(), ["--no-warnings", ...JS, "--flat-playlist", ...(single ? ["--no-playlist"] : []),
+  const { stdout } = await run(ytdlp(), ["--no-warnings", ...JS, ...auth(), "--flat-playlist", ...(single ? ["--no-playlist"] : []),
     "--print", "%(id)s\t%(duration)s\t%(playlist_title)s\t%(title)s", url], { maxBuffer: 16 << 20 });
   return stdout.trim().split("\n").filter(Boolean).map((line) => {
     const [id, secs, playlist, ...title] = line.split("\t");
@@ -55,8 +69,7 @@ export async function addFromUrls(kind, urls) {
       videos = await expand(link);
     } catch (e) {
       // A bad link (removed, private, region-blocked) shouldn't sink the others: say why.
-      const why = e.message.split("\n").find((l) => l.startsWith("ERROR")) || "yt-dlp couldn't read it";
-      added.push({ title: link, skipped: why.replace(/^ERROR:\s*(\[[^\]]*\]\s*)?([\w-]+:\s*)?/, "") });
+      added.push({ title: link, skipped: why(e) });
       continue;
     }
     for (const v of videos) {
@@ -66,13 +79,13 @@ export async function addFromUrls(kind, urls) {
         continue;
       }
       try {
-        await run(ytdlp(), ["--no-warnings", ...JS, "--no-overwrites", "--ffmpeg-location", join(ROOT, "tools", "ffmpeg", "bin"),
+        await run(ytdlp(), ["--no-warnings", ...JS, ...auth(), "--no-overwrites", "--ffmpeg-location", join(ROOT, "tools", "ffmpeg", "bin"),
           "-f", "bv*[height<=1080]+ba/b[height<=1080]/b", "--merge-output-format", "mp4", "--restrict-filenames",
           "-o", join(v.folder ? join(dest, v.folder) : dest, "%(title).80s [%(id)s].%(ext)s"), v.url], { maxBuffer: 16 << 20 });
         log.info(`add: downloaded ${kind} "${v.title}"`);
         added.push(v);
       } catch (e) {
-        added.push({ ...v, skipped: `download failed (${e.message.split("\n").find((l) => l.includes("ERROR")) || "unknown error"})` });
+        added.push({ ...v, skipped: `download failed: ${why(e)}` });
       }
     }
   }
