@@ -35,6 +35,13 @@ shows:
   in_order: []                 # always in order
   never: []                    # these never get scheduled
 
+buckets:
+  # Exact bucket names (tv.cmd buckets). Shows in these kinds of blocks always play
+  # random episodes / always in order; a show's own setting above still wins. Buckets
+  # not listed follow each show (Claude's serialized/episodic call).
+  shuffle: []                  # e.g. ["Nick at Nite", "Sitcoms"]
+  in_order: []
+
 language:
   audio: eng                   # preferred audio language
   subtitles: eng               # subtitle language

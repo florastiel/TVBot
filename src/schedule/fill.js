@@ -55,8 +55,20 @@ function stalest(list, lastOf) {
   return shuffle(sorted.slice(0, Math.max(3, Math.ceil(sorted.length / 3))));
 }
 
-function episodesOf(show, count, at, ctx) {
-  const eps = inOrder(show) ? nextInOrder(show, count, ctx.used, at) : ctx.randomEps.all(show).filter((e) => !ctx.used.has(e.id)).slice(0, count);
+// In order or shuffled: a show's own setting in config.yaml (shows.random / in_order)
+// comes first, then the bucket's (buckets.shuffle / in_order), then whether Claude
+// called the show serialized.
+function orderedIn(show, bucket) {
+  const has = (list, x) => (list || []).includes(x);
+  if (has(config.shows?.random, show)) return false;
+  if (has(config.shows?.in_order, show)) return true;
+  if (bucket && has(config.buckets?.shuffle, bucket.name)) return false;
+  if (bucket && has(config.buckets?.in_order, bucket.name)) return true;
+  return inOrder(show);
+}
+
+function episodesOf(show, count, at, ctx, bucket) {
+  const eps = orderedIn(show, bucket) ? nextInOrder(show, count, ctx.used, at) : ctx.randomEps.all(show).filter((e) => !ctx.used.has(e.id)).slice(0, count);
   return eps.filter((e) => e.duration_ms);
 }
 
@@ -75,7 +87,7 @@ function pickBlock(bucket, at, room, ctx) {
     // The premiere bucket: only serialized shows that would start from episode one.
     if (bucket.premiere) shows = shows.filter((s) => inOrder(s) && !(ctx.showLast.get(s) > at - 30 * DAY));
     for (const show of shows.slice(0, TRIES)) {
-      const eps = episodesOf(show, 6, at, ctx);
+      const eps = episodesOf(show, 6, at, ctx, bucket);
       for (let k = eps.length; k >= 1; k--) {
         const l = fits(eps.slice(0, k), Math.min(room, maxShow()));
         if (l) return { rows: eps.slice(0, k), lengthMs: l.lengthMs };
@@ -88,7 +100,7 @@ function pickBlock(bucket, at, room, ctx) {
     // few random combinations (the one that fills the block best).
     const pool = [];
     for (const show of stalest(bucket.shows.filter((s) => !today.has(s)), (s) => ctx.showLast.get(s)).slice(0, 16)) {
-      const e = episodesOf(show, 1, at, ctx)[0];
+      const e = episodesOf(show, 1, at, ctx, bucket)[0];
       if (e) pool.push(e);
     }
     for (const id of shuffle([...bucket.items]).slice(0, 40)) {

@@ -299,17 +299,21 @@ export async function startBot() {
           // Only block kinds: the actual shows are picked about a day ahead.
           const days = weekGrid().slice(0, 10);
           if (!days.length) return i.reply({ content: "No week planned yet.", ...ephemeral });
-          // Discord allows 6000 characters over all embeds of a message: stop adding lines before that.
-          let room = 5800;
-          const embeds = [];
+          // One embed per day, packed into as few messages as fit (Discord: 6000 characters
+          // over a message's embeds, 4096 per embed).
+          const messages = [[]];
+          let used = 0;
           for (const d of days) {
-            const lines = [];
-            for (const l of d.lines) { if (room - l.length - d.title.length - 1 < 0) break; lines.push(l); room -= l.length + 1; }
-            if (!lines.length) break;
-            room -= d.title.length;
-            embeds.push(new EmbedBuilder().setTitle(d.title).setDescription(lines.join("\n")));
+            let text = "";
+            for (const l of d.lines) if (text.length + l.length + 1 <= 4000) text += `${text ? "\n" : ""}${l}`;
+            const size = d.title.length + text.length;
+            if (used + size > 5800 && messages.at(-1).length) { messages.push([]); used = 0; }
+            messages.at(-1).push(new EmbedBuilder().setTitle(d.title).setDescription(text));
+            used += size;
           }
-          return i.reply({ content: "This week's lineup (shows are picked a day ahead; times shift a little as the day goes).", embeds, ...ephemeral });
+          await i.reply({ content: "This week's lineup (shows are picked a day ahead; times shift a little as the day goes).", embeds: messages[0], ...ephemeral });
+          for (const embeds of messages.slice(1)) await i.followUp({ embeds, ...ephemeral });
+          return;
         }
         return i.reply({ content: guideText(), ...ephemeral, allowedMentions: { parse: [] } });
       }

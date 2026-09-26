@@ -77,7 +77,7 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 | `/tvpause`, Pause button | people in the TV's voice channel | emergency pause: the show cuts to a silent "Paused" card at once |
 | `/tvresume`, Resume button | people in the TV's voice channel | picks up at the second it was paused; the channel then catches up by cutting ads |
 | `/tvlive` | people in the TV's voice channel | forget the delay, jump to what the schedule says is on now |
-| `/schedule` | anyone | today's TV guide (only you see it); `week: True` shows the week's lineup of block types |
+| `/schedule` | anyone | today's TV guide (only you see it); `week: True` shows the week (real shows where picked, block types after), a card per day |
 | `/entrance set` + file | anyone | your join sound (first 8 s, volume evened out) |
 | `/entrance clear` | anyone (admin: anyone's) | remove a join sound |
 | Skip commercials button (on the break message in the posting channel) | people in the TV's voice channel | ends the current break |
@@ -204,7 +204,8 @@ Black Mirror). Episodic shows play random episodes, like reruns. Serialized ones
 order, picking up where they left off; one that hasn't aired in 30 days (or ever) starts
 over from its first episode, and that block is billed "Series Premiere" (there's also an
 automatic Series Premiere bucket of serialized shows). Override per show in config.yaml:
-`shows.random` (always random), `shows.in_order` (always in order). Shows under
+`shows.random` (always random), `shows.in_order` (always in order); or per kind of block:
+`buckets.shuffle` / `buckets.in_order` (a show's own setting wins). Shows under
 `shows.never` are never scheduled. `tv.cmd tag --order` redoes the serialized/episodic
 call for new shows (the weekly upkeep does it too).
 

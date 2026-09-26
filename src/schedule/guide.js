@@ -47,7 +47,7 @@ export function weekGrid(now = Date.now(), days = 7) {
   const blocks = blocksBetween(now, end);
   const filledUntil = blocks.reduce((t, b) => (b.start_at <= t + 60000 ? Math.max(t, b.end_at) : t), now);
   const rows = blocks.filter((b) => b.start_at < filledUntil)
-    .map((b) => ({ at: b.start_at, text: `**${b.label}**: ${titles(b.items, 60)}` }));
+    .map((b) => ({ at: b.start_at, text: `**${b.label}**: ${titles(b.items, 150)}` }));
   const slots = slotsBetween(today.startMs, end);
   const current = slots.filter((s) => s.at <= filledUntil).at(-1);
   if (current && current.at < filledUntil && slots.some((s) => s.at > filledUntil)) rows.push({ at: filledUntil, text: current.name });
