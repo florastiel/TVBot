@@ -41,6 +41,8 @@ export class Player extends EventEmitter {
   }
 
   async start() {
+    // The bot's watchdog reads this to end a frozen player it never got a status from.
+    writeFileSync(join(DATA_DIR, "player.pid"), String(process.pid));
     this.plex = new Plex();
     await this.plex.connect().catch((e) => log.warn(`player: Plex not reachable yet (${e.message}); will retry when needed`));
     this.streamer = new Streamer(new Client());

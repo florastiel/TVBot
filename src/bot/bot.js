@@ -23,7 +23,8 @@ import { tagOrder } from "../tagging/order.js";
 import { tagEpisodeThemes } from "../tagging/episodes.js";
 import { tagBreaks } from "../tagging/breaks.js";
 import { getMeta, setMeta, getDb } from "../db.js";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { DATA_DIR } from "../config.js";
 
@@ -587,15 +588,26 @@ export async function startBot() {
     guideTick();
     setInterval(guideTick, 60000).unref();
     // Watchdog: if the player stops answering for 2 minutes (frozen, not just
-    // restarting), kill it; the service manager starts a fresh one.
+    // restarting), kill it; the service manager starts a fresh one. The player's pid comes
+    // from its status, or (this bot started after the player froze, so it never got one)
+    // from data\player.pid, if that pid is still a node process.
     let playerPid = null, misses = 0;
+    const pidFromFile = () => {
+      try {
+        const pid = Number(readFileSync(join(DATA_DIR, "player.pid"), "utf8").trim());
+        const out = pid > 0 ? execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], { encoding: "utf8", timeout: 10000 }) : "";
+        return /"node\.exe"/i.test(out) ? pid : null;
+      } catch { return null; }
+    };
     setInterval(async () => {
       try {
         const st = await callPlayer("/status", undefined, 5000);
         playerPid = st.pid ?? playerPid;
         misses = 0;
       } catch {
-        if (++misses < 4 || !playerPid) return;
+        if (++misses < 4) return;
+        playerPid ??= pidFromFile();
+        if (!playerPid) return;
         log.warn(`bot: player (pid ${playerPid}) hasn't answered for 2 minutes; killing it so it restarts`);
         try { process.kill(playerPid); } catch (e) { log.warn(`bot: couldn't kill the player: ${e.message}`); }
         playerPid = null;
