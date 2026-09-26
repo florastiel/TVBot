@@ -14,6 +14,10 @@ import { runSync } from "./index.js";
 const run = promisify(execFile);
 const MAX_MINUTES = 10; // anything longer is probably a compilation, not one ad
 const ytdlp = () => join(ROOT, "tools", "yt-dlp.exe");
+// yt-dlp needs a JavaScript runtime for YouTube's player challenge; without one it falls
+// back to clients that can't play some videos ("made for kids" ones say "not available").
+// It only looks for Deno by itself, so point it at the Node running us (tools\node).
+const JS = ["--js-runtimes", `node:${process.execPath}`];
 
 // Every video behind a link: one for a video link, all of them for a playlist.
 // A "watch?v=" link means that one video, even if it came from a playlist; a
@@ -21,7 +25,7 @@ const ytdlp = () => join(ROOT, "tools", "yt-dlp.exe");
 // it counts as one group when breaks are filled).
 async function expand(url) {
   const single = /[?&]v=/.test(url) && !/\/playlist\?/.test(url);
-  const { stdout } = await run(ytdlp(), ["--no-warnings", "--flat-playlist", ...(single ? ["--no-playlist"] : []),
+  const { stdout } = await run(ytdlp(), ["--no-warnings", ...JS, "--flat-playlist", ...(single ? ["--no-playlist"] : []),
     "--print", "%(id)s\t%(duration)s\t%(playlist_title)s\t%(title)s", url], { maxBuffer: 16 << 20 });
   return stdout.trim().split("\n").filter(Boolean).map((line) => {
     const [id, secs, playlist, ...title] = line.split("\t");
@@ -54,7 +58,7 @@ export async function addFromUrls(kind, urls) {
         continue;
       }
       try {
-        await run(ytdlp(), ["--no-warnings", "--no-overwrites", "--ffmpeg-location", join(ROOT, "tools", "ffmpeg", "bin"),
+        await run(ytdlp(), ["--no-warnings", ...JS, "--no-overwrites", "--ffmpeg-location", join(ROOT, "tools", "ffmpeg", "bin"),
           "-f", "bv*[height<=1080]+ba/b[height<=1080]/b", "--merge-output-format", "mp4", "--restrict-filenames",
           "-o", join(v.folder ? join(dest, v.folder) : dest, "%(title).80s [%(id)s].%(ext)s"), v.url], { maxBuffer: 16 << 20 });
         log.info(`add: downloaded ${kind} "${v.title}"`);
