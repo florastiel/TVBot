@@ -103,7 +103,7 @@ export function guideMessages(days) {
 const ANYONE_ADMIN = String(config.discord.admin_user_id).trim() === "*";
 
 // /tvhelp: how to use the TV, for everyone (posted in the channel, not private).
-function helpEmbeds() {
+export function helpEmbeds() {
   const thread = (id, name) => (id ? `<#${id}>` : `the ${name} thread`);
   const d = config.discord;
   return [
