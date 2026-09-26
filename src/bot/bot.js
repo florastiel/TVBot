@@ -131,7 +131,11 @@ const COMMANDS = [
 const label = (seg) => (seg ? `${seg.title}${seg.subtitle ? ` ${seg.subtitle}` : ""}` : "");
 
 export async function startBot() {
-  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
+  // Messages (and their text) only for the drop thread; without one, don't ask for them.
+  const dropId = String(config.discord.drop_thread_id || "").trim();
+  const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates];
+  if (dropId) intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
+  const client = new Client({ intents });
   let playerStatus = { state: "off" };
   let breakMsg = null;
   let nowPlayingMsg = null; // only the latest one stays up
@@ -289,6 +293,32 @@ export async function startBot() {
     const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
     return member?.voice?.channelId ?? null;
   };
+
+  // The drop thread: anyone posts YouTube (etc.) links; they're downloaded into rotation
+  // as commercials, or as clips if the message says "clip". ⏳ while working, then a
+  // reply saying what went in (and why anything was skipped).
+  client.on("messageCreate", async (m) => {
+    if (!dropId || m.channelId !== dropId || m.author.bot) return;
+    const urls = [...new Set(m.content.match(/https?:\/\/\S+/g) || [])].map((u) => u.replace(/[)>\]]+$/, ""));
+    if (!urls.length) return;
+    const kind = /\bclips?\b/i.test(m.content) ? "clip" : "commercial";
+    await m.react("⏳").catch(() => {});
+    let text, ok;
+    try {
+      const done = await maintenance.run(() => addFromUrls(kind, urls));
+      const added = done.filter((a) => !a.skipped);
+      ok = added.length > 0;
+      text = done.map((a) => (a.skipped ? `Skipped "${a.title}": ${a.skipped}` : `Added ${kind}: "${a.title}"`)).join("\n") || "No videos found at those links.";
+      log.info(`bot: drop thread: ${m.author.username} added ${added.length} of ${done.length} (${kind})`);
+    } catch (e) {
+      ok = false;
+      text = `Couldn't add that: ${e.message.split("\n")[0]}`;
+      log.warn(`bot: drop thread failed: ${e.message}`);
+    }
+    await m.reactions.cache.get("⏳")?.users.remove(client.user.id).catch(() => {});
+    await m.react(ok ? "✅" : "⚠️").catch(() => {});
+    await m.reply({ content: text.slice(0, 1900), allowedMentions: { parse: [], repliedUser: false } }).catch((e) => log.warn(`bot: drop thread reply failed: ${e.message}`));
+  });
 
   client.on("interactionCreate", async (i) => {
     try {
