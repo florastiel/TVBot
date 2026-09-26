@@ -216,7 +216,7 @@ the TV channel; its text is `helpEmbeds()` in `src/bot/bot.js`.
 **Eyecatches** (`D:\data\tv\eyecatches`): a break inside a show or movie gets one before
 and one after the commercial if it's the kind of thing that aired with TV breaks:
 sitcoms, cartoons, network dramas, rom-coms, TV-friendly movies; not HBO-style prestige
-or arthouse. Never anime: it has eyecatches of its own. Claude makes that call once per
+or arthouse. Anime counts too, but a show never gets its own eyecatches (a folder or file named after it). Claude makes that call once per
 show and movie (`tv.cmd tag --breaks`, and with the weekly tagging for new titles;
 `shows.tv_breaks` / `items.tv_breaks` in the database). `broadcast.eyecatches`: tv, all,
 or none. Every file in `eyecatches\` is for any eligible show, except that a folder named
