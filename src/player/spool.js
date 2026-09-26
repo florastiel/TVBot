@@ -1,5 +1,5 @@
-// Download-ahead. While one show plays, the next few hours' Plex shows and movies are
-// downloaded here and then played from the local copy: text subtitles stored inside a
+// Download-ahead. While one show plays, the next few hours' Plex and Real-Debrid shows
+// and movies are downloaded here and then played from the local copy: text subtitles stored inside a
 // file can only be drawn from a local copy, the original commercial-break points
 // (black + silence) are found in it, and playback no longer depends on the Plex server
 // holding a long connection. Each file is still read from the Plex server once, just
@@ -11,6 +11,7 @@ import { join, extname } from "node:path";
 import { config, DATA_DIR } from "../config.js";
 import { log } from "../log.js";
 import { detectAndSave } from "../catalog/breakdetect.js";
+import { rd } from "../realdebrid.js";
 
 const DIR = join(DATA_DIR, "spool");
 const KEEP_MS = 12 * 3600000; // unused copies older than this are deleted
@@ -21,7 +22,7 @@ let busy = null;
 const gb = (n) => n * 1024 ** 3;
 const fileFor = (row) => join(DIR, `${row.id}${extname(row.media_path || "") || ".mkv"}`);
 const SHOWS = new Set(["episode", "movie", "short"]);
-const needsSpool = (row) => row?.source === "plex" && row.media_path && SHOWS.has(row.kind);
+const needsSpool = (row) => (row?.source === "plex" || row?.source === "realdebrid") && row.media_path && SHOWS.has(row.kind);
 const needsCheck = (row) => SHOWS.has(row?.kind) && !(row.ad_cues_checked != null && row.ad_cues_checked === row.source_updated);
 
 // Local copy of an item if it's fully downloaded, else null.
@@ -53,7 +54,7 @@ async function work() {
     busy = row;
     try {
       if (needsSpool(row) && !existsSync(fileFor(row))) await download(row, plex);
-      const file = row.source === "plex" ? (existsSync(fileFor(row)) ? fileFor(row) : null) : row.source_key;
+      const file = row.source === "local" ? row.source_key : existsSync(fileFor(row)) ? fileFor(row) : null;
       if (file && needsCheck(row)) await detectAndSave(row, file).catch((e) => log.warn(`breaks: ${row.show_title || row.title} (${row.id}): ${e.message}`));
     } catch (e) {
       failed.add(row.id);
@@ -69,14 +70,19 @@ const CHUNK = 32 * 1024 * 1024;
 
 async function download(row, plex) {
   mkdirSync(DIR, { recursive: true });
-  if (!plex.base) await plex.connect();
-  const url = plex.fileUrl(row.media_path);
+  let url;
+  if (row.source === "realdebrid") {
+    url = await rd().unrestrict(row.media_path);
+  } else {
+    if (!plex.base) await plex.connect();
+    url = plex.fileUrl(row.media_path);
+  }
   const head = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(30000) });
   if (!head.ok) throw new Error(`HTTP ${head.status}`);
   const size = Number(head.headers.get("content-length")) || 0;
   if (!size) throw new Error("the server didn't say how big the file is");
   if (size > gb(config.player.spool_max_file_gb)) {
-    throw new Error(`${(size / gb(1)).toFixed(1)} GB is over spool_max_file_gb; it streams from Plex (no inside subtitles, no detected breaks)`);
+    throw new Error(`${(size / gb(1)).toFixed(1)} GB is over spool_max_file_gb; it streams instead (no inside subtitles, no detected breaks)`);
   }
   prune(size);
   const f = fileFor(row);
@@ -89,7 +95,8 @@ async function download(row, plex) {
       for (let attempt = 1; ; attempt++) {
         try {
           const r = await fetch(url, { headers: { Range: `bytes=${pos}-${end}` }, signal: AbortSignal.timeout(120000) });
-          if (r.status !== 206) throw new Error(`HTTP ${r.status}`);
+          // 200 is fine too when the "range" is the whole file (some servers answer that way).
+          if (r.status !== 206 && !(r.status === 200 && pos === 0 && end === size - 1)) throw new Error(`HTTP ${r.status}`);
           const buf = Buffer.from(await r.arrayBuffer());
           if (buf.length !== end - pos + 1) throw new Error(`short read (${buf.length} bytes)`);
           writeSync(out, buf, 0, buf.length, pos);

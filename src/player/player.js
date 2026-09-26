@@ -11,6 +11,7 @@ import { Streamer, playStream } from "@dank074/discord-video-stream";
 import { config, secrets, ENTRANCE_DIR, DATA_DIR } from "../config.js";
 import { log } from "../log.js";
 import { Plex } from "../plex.js";
+import { rd } from "../realdebrid.js";
 import { PLAYER_PORT, localSecret } from "../local.js";
 import { Feed } from "./feed.js";
 import { playMic } from "./mic.js";
@@ -193,6 +194,17 @@ export class Player extends EventEmitter {
         seg = next.value;
       }
       if (seg.breakId && session.skippedBreaks.has(seg.breakId)) continue;
+      if (!seg.input && seg.rdLink) {
+        // Real-Debrid item that wasn't downloaded ahead: get a direct URL now.
+        try {
+          seg = { ...seg, input: await rd().unrestrict(seg.rdLink) };
+        } catch (e) {
+          log.warn(`player: ${seg.title} ${seg.subtitle || ""}: Real-Debrid link failed (${e.message}); skipping it`);
+          failures++;
+          await sleep(Math.min(30000, 1000 * failures));
+          continue;
+        }
+      }
       if (inBreak && seg.breakId !== inBreak) {
         this.emitEvent("break-end", { breakId: inBreak });
         inBreak = null;

@@ -19,15 +19,18 @@ export function toSegment(row, plex, { seekMs = 0, breakId = null } = {}) {
   const subs = row.subs ? JSON.parse(row.subs) : { mode: "none" };
   let subsFile = null;
   // A downloaded-ahead copy plays instead of the Plex stream whenever there is one.
-  let input = row.source === "plex" ? spooledPath(row) || plex.fileUrl(row.media_path) : row.source_key;
+  // Real-Debrid: without a copy, input stays null and the player unrestricts rdLink
+  // right before playing (that takes an API call, and the URL shouldn't sit around).
+  const local = row.source === "local" ? row.source_key : spooledPath(row);
+  let input = local || (row.source === "plex" ? plex.fileUrl(row.media_path) : null);
   if (subs.mode === "sidecar") {
     subsFile = [join(SUBS_DIR, `${row.id}.ass`), join(SUBS_DIR, `${row.id}.srt`)].find(existsSync) || null;
-  } else if (subs.mode === "embedded_text") {
+  } else if (subs.mode === "embedded_text" && local) {
     // Subtitles inside the file: only from a local copy (a local file, or downloaded ahead).
-    const local = row.source === "plex" ? spooledPath(row) : row.source_key;
-    if (local) { input = local; subsFile = local; }
+    subsFile = local;
   }
   return {
+    rdLink: row.source === "realdebrid" && !local ? row.media_path : null,
     itemId: row.id,
     kind: row.kind,
     ...describe(row),

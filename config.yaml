@@ -57,6 +57,13 @@ local:
   commercials: D:\data\tv\commercials  # tag in commercials\tags.csv
   shorts: D:\data\tv\shorts        # <Series>\Series S01E02.mkv; short (2-15 min) shows that fill gaps after a skip
 
+realdebrid:
+  # Every finished torrent on the Real-Debrid account (RD_TOKEN in .env) joins the
+  # catalog: shows and movies, named from the release names. No token = skipped.
+  enabled: true
+  min_file_mb: 50              # smaller video files are skipped (samples, extras)
+  skip_torrents: []            # torrents whose name contains any of these stay out, e.g. ["Sample", "Trailer"]
+
 encode:
   height: 720
   frame_rate: 30

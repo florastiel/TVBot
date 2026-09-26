@@ -180,7 +180,7 @@ if (cmd === "player" || cmd === "bot") {
 }
 if (!commands[cmd]) {
   console.log(`commands:
-  sync                         pull the catalog from Plex + local folders, import tags.csv files
+  sync                         pull the catalog from Plex + local folders + Real-Debrid, import tags.csv files
   stats                        show what's in the catalog
   player                       run the streamer (the throwaway account)
   bot                          run the remote-control bot

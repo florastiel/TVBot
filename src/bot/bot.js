@@ -76,7 +76,7 @@ const COMMANDS = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((s) => s.setName("skip").setDescription("Skip this episode or movie (the block goes on with its next one)"))
     .addSubcommand((s) => s.setName("skipblock").setDescription("Skip the rest of this block (the next block starts at the next quarter hour)"))
-    .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex and local catalog now"))
+    .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex, local and Real-Debrid catalog now"))
     .addSubcommand((s) => s.setName("regen").setDescription("New random picks for the upcoming blocks (same lineup of block types)")
       .addBooleanOption((o) => o.setName("new_grid").setDescription("Also have Claude lay out a new week of block types")))
     .addSubcommand((s) => s.setName("add").setDescription("Download a commercial or clip (YouTube link etc.) into rotation")

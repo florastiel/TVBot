@@ -40,9 +40,11 @@ export function parsePath(kind, root, file) {
   return y && kind === "movie" ? { title: tidy(y[1]), year: Number(y[2]) } : { title: tidy(name) };
 }
 
-async function probe(file) {
+// file: a path, or a URL (Real-Debrid items).
+export async function probe(file) {
   const { stdout } = await run(process.env.FFPROBE_PATH || "ffprobe",
-    ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", file], { maxBuffer: 16 << 20 });
+    ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", file],
+    { maxBuffer: 16 << 20, timeout: 120000 });
   return JSON.parse(stdout);
 }
 

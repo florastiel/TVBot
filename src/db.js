@@ -148,6 +148,16 @@ const MIGRATIONS = [
   );
   ALTER TABLE items ADD COLUMN themes_checked INTEGER;
   `,
+  `
+  -- Real-Debrid torrents already read (their file list never changes once downloaded),
+  -- so a sync only asks Real-Debrid about new ones. items.source = 'realdebrid',
+  -- source_key = '<torrent id>:<file id>', media_path = the real-debrid.com/d/... link.
+  CREATE TABLE rd_torrents (
+    id       TEXT PRIMARY KEY,
+    filename TEXT,
+    read_at  TEXT NOT NULL
+  );
+  `,
 ];
 
 let db;

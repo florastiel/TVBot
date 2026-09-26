@@ -47,7 +47,8 @@ Already done on glados: `tools\node` (Node 24 LTS), `tools\ffmpeg` (BtbN build),
    and `tools\node\npm rebuild node-av zeromq`.
 
 Copy `.env.example` to `.env` and fill it in: `STREAMER_TOKEN` (the streamer account),
-`BOT_TOKEN` (coupbot), `PLEX_TOKEN`, `ANTHROPIC_API_KEY`, `GUILD_ID`. `.env` is
+`BOT_TOKEN` (coupbot), `PLEX_TOKEN`, `ANTHROPIC_API_KEY`, `GUILD_ID`, and optionally
+`RD_TOKEN` (real-debrid.com/apitoken). `.env` is
 gitignored; never commit it.
 
 **If the player log says "invalid token"**: the streamer account's token was reset (logging out
@@ -97,7 +98,7 @@ show during ads.
 ## Command line
 
 ```
-tv.cmd sync                          pull the catalog from Plex + local folders (~30 s)
+tv.cmd sync                          pull the catalog from Plex + local folders + Real-Debrid (~30 s)
 tv.cmd stats                         what's in the catalog, why things can't be scheduled
 tv.cmd tag                           tag anything untagged with Claude (batch, half price)
 tv.cmd tag --dry                     estimate what tagging would cost, no API calls
@@ -149,6 +150,19 @@ foreign-audio items need them to be scheduled at all.
 - shorts: `shorts\<Series>\Series S01E02.mkv`. Short shows (2–15 min, e.g. short anime)
   that are never scheduled on their own; they fill the odd minutes after a skip (below).
   Run `tv.cmd sync` (or wait for the weekly one) after adding files.
+
+**Real-Debrid**: with `RD_TOKEN` in `.env`, every finished torrent on the account joins
+the catalog (library "Real-Debrid"), one item per video file. There's no metadata server
+behind it, so what a file is comes from its release name: `Show.Name.S01E02.Title...`,
+`1x02`, anime-style `[Group] Show - 05`, or `Movie.Title.1994...`; files named with none
+of those count as unidentified. Show titles are tidied the way Plex names them
+(`The Office (US)`, `Doctor Who (2005)`), but a show that's also on Plex under a
+different name becomes two shows. Tracks are read with ffprobe over the network at sync
+(new torrents only; a failed read is retried next sync). Shows and movies are downloaded
+ahead like Plex ones (subtitles inside the file, break detection); anything not
+downloaded yet streams straight from Real-Debrid, with a fresh link made right before
+it plays. Removing a torrent from Real-Debrid takes its items off the schedule at the
+next sync. Settings under `realdebrid:` in config.yaml.
 
 **Tagging commercials and clips** is by hand: each of those folders gets a
 `tags.csv`. Sync adds a blank row for new files; fill in `decade` (90s, 1990s, 1994
