@@ -122,158 +122,215 @@ function catalog() {
 }
 
 // ---------- Claude ----------
+// Two steps, so every title gets looked at on its own: (1) define buckets (names and
+// rules, no members), (2) go through the catalog in chunks, listing for each title every
+// bucket it fits.
 
-const BUCKET = {
+const DEFINE_SCHEMA = {
   type: "object",
   properties: {
-    name: { type: "string" },
-    about: { type: "string" },
-    format: { type: "string", enum: FORMATS },
-    dayparts: { type: "array", items: { type: "string", enum: DAYPARTS } },
-    active_from: { type: "string" },
-    active_to: { type: "string" },
-    members: { type: "array", items: { type: "string" } },
-  },
-  required: ["name", "about", "format", "dayparts", "active_from", "active_to", "members"],
-  additionalProperties: false,
-};
-const SCHEMA = {
-  type: "object",
-  properties: {
-    buckets: { type: "array", items: BUCKET },
-    additions: {
+    buckets: {
       type: "array",
       items: {
         type: "object",
-        properties: { bucket: { type: "string" }, members: { type: "array", items: { type: "string" } } },
-        required: ["bucket", "members"],
+        properties: {
+          name: { type: "string" },
+          about: { type: "string" },
+          format: { type: "string", enum: FORMATS },
+          dayparts: { type: "array", items: { type: "string", enum: DAYPARTS } },
+          active_from: { type: "string" },
+          active_to: { type: "string" },
+        },
+        required: ["name", "about", "format", "dayparts", "active_from", "active_to"],
         additionalProperties: false,
       },
     },
   },
-  required: ["buckets", "additions"],
+  required: ["buckets"],
   additionalProperties: false,
 };
 
-const SYSTEM = `You're the program director of a retro cable-TV style channel run for a group of friends. You sort its catalog into buckets: kinds of programming blocks, like Saturday Morning Cartoons, Shonen Anime, Rom-Coms, Tearjerkers, Westerns, Samurai, Sentai, Tarantino, a Harry Potter series run, So Bad It's Good. Code later fills each block with random picks from its bucket, so everything in a bucket should be interchangeable for that block.
+const ASSIGN_SCHEMA = {
+  type: "object",
+  properties: {
+    titles: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { id: { type: "string" }, buckets: { type: "array", items: { type: "string" } } },
+        required: ["id", "buckets"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["titles"],
+  additionalProperties: false,
+};
 
-Each bucket:
+const RULES = `Buckets are kinds of programming blocks for a retro cable-TV style channel run for a group of friends, like Saturday Morning Cartoons, Shonen Anime, Rom-Coms, Tearjerkers, Westerns, Samurai, Sentai, Tarantino, a Harry Potter series run, So Bad It's Good. Code fills each block with random picks from its bucket, so everything in a bucket should be interchangeable for that block.
+
+Each bucket has:
 - name: what viewers see as the block's title. 1 to 4 plain words (letters, numbers, spaces, & ' -). No emoji. Fun is fine, puns sparingly.
-- about: one line on what belongs in it (only the admin sees this).
-- format: one_show = each block is 1 to 3 episodes of one show (needs ${MIN_MEMBERS.one_show}+ shows); variety = each block mixes single episodes of different shows (needs ${MIN_MEMBERS.variety}+ shows; good for cartoons and sitcoms); movie = one movie per block (needs ${MIN_MEMBERS.movie}+ movies); movie_series = a franchise or series played in order across back-to-back blocks, members in watching order (${MIN_MEMBERS.movie_series}+ movies).
+- about: one line on exactly what belongs in it.
+- format: one_show = each block is 1 to 3 episodes of one show (needs ${MIN_MEMBERS.one_show}+ shows); variety = each block mixes single episodes of different shows (needs ${MIN_MEMBERS.variety}+ shows; good for cartoons and sitcoms); movie = one movie per block (needs ${MIN_MEMBERS.movie}+ movies); movie_series = one franchise or series played in order across back-to-back blocks (${MIN_MEMBERS.movie_series}+ movies of that series).
 - dayparts: when it may air: morning (6-12), afternoon (12-17), evening (17-22), late (22-6). Kids material fits mornings and afternoons; adult, scary, gory or explicit material only evening and late.
 - active_from / active_to: an MM-DD window for seasonal buckets (Halloween, Christmas, summer, Shark Week style events); both "" for all year.
-- members: ids from the catalog (s... for shows, m... for movies). Shows only in one_show or variety buckets, movies only in movie or movie_series buckets.
+Shows only go in one_show or variety buckets; movies only in movie or movie_series buckets.`;
 
-Judge each title by what it actually is (genre, tone, era, reputation, including bad reputation), never by how famous it is: an obscure show belongs in every bucket it fits, the same as a famous one. Titles can be in many buckets; most should be in 2 to 4. Specific, flavorful buckets beat generic ones, but every title needs a home.`;
+const DEFINE_SYSTEM = `You're the program director of the channel. ${RULES}
 
-const bucketName = (n) => n.trim();
+You define buckets that suit the catalog you're shown: specific, flavorful ones beat generic ones, but together they must give every show and movie a home. Base them on what the titles actually are (genre, tone, era, reputation, including bad reputation), and cover the obscure corners of the catalog as well as the famous parts.`;
+
+const ASSIGN_SYSTEM = `You sort a TV channel's catalog into its buckets. ${RULES}
+
+For each title you're given, list the name of every bucket it fits (exact names from the list). Judge each title by what it actually is (genre, tone, era, reputation, including bad reputation), never by how famous it is: an obscure title goes in every bucket it fits, the same as a famous one. Most titles fit 2 to 4 buckets. A movie_series bucket takes only the movies of that one series.`;
+
 const nameOk = (n) => n.trim() && n.trim().split(/\s+/).length <= 4 && n.length <= 32 && /^[\p{L}\p{N} &'-]+$/u.test(n.trim());
 const mmdd = (s) => /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s);
 
-// Check Claude's answer. Returns { problems, fresh: [bucket rows to add], additions: [{id|name, shows, items}] }.
-function check(out, cat, existing, mustPlace) {
-  const problems = [];
-  const names = new Set(existing.map((b) => b.name.toLowerCase()));
-  const fresh = [];
-  const placed = new Set();
-  const members = (list, where, format) => {
-    const shows = [], items = [];
-    for (const raw of list) {
-      const id = raw.trim();
-      const t = cat.ids.get(id);
-      if (!t) { problems.push(`${where}: "${id}" isn't a catalog id.`); continue; }
-      if (isMovieFormat(format) !== (t.kind === "movie")) {
-        problems.push(`${where}: ${id} (${t.title}) is a ${t.kind}, which doesn't fit a ${format} bucket.`);
-        continue;
-      }
-      placed.add(id);
-      if (t.kind === "show") { if (!shows.includes(t.title)) shows.push(t.title); } else if (!items.includes(t.id)) items.push(t.id);
-    }
-    return { shows, items };
-  };
-  for (const b of out.buckets) {
-    const where = `Bucket "${b.name}"`;
-    if (!nameOk(b.name)) problems.push(`${where}: the name must be 1 to 4 plain words.`);
-    if (names.has(bucketName(b.name).toLowerCase())) problems.push(`${where}: that name is already taken.`);
-    names.add(bucketName(b.name).toLowerCase());
-    if (!b.dayparts.length) problems.push(`${where}: give it at least one daypart.`);
-    if ((b.active_from || b.active_to) && !(mmdd(b.active_from) && mmdd(b.active_to))) problems.push(`${where}: active_from/active_to must both be MM-DD, or both "".`);
-    const m = members(b.members, where, b.format);
-    const n = m.shows.length + m.items.length;
-    if (n < MIN_MEMBERS[b.format]) problems.push(`${where}: a ${b.format} bucket needs at least ${MIN_MEMBERS[b.format]} members; it has ${n}.`);
-    fresh.push({ name: bucketName(b.name), about: b.about, format: b.format, dayparts: [...new Set(b.dayparts)],
-      active_from: b.active_from || null, active_to: b.active_to || null, ...m });
-  }
-  const additions = [];
-  for (const a of out.additions) {
-    const target = existing.find((b) => b.name.toLowerCase() === a.bucket.trim().toLowerCase())
-      || fresh.find((b) => b.name.toLowerCase() === a.bucket.trim().toLowerCase());
-    if (!target) { problems.push(`Addition to "${a.bucket}": there's no bucket by that name.`); continue; }
-    additions.push({ target, ...members(a.members, `Addition to "${a.bucket}"`, target.format) });
-  }
-  const missing = [...mustPlace].filter((id) => !placed.has(id));
-  if (missing.length) {
-    problems.push(`These titles aren't in any bucket yet; put each into at least one (new buckets or additions): ${missing.map((id) => `${id} ${cat.ids.get(id).title}`).join("; ")}`);
-  }
-  return { problems, fresh, additions };
-}
-
-async function ask(client, prompt, mustPlace, cat, existing) {
+// One structured Claude call with a few retries on problems. check(out) -> problems[].
+// No extended thinking: this is classification, and the answer itself is the reasoning
+// (with thinking on, it spent the whole token budget deliberating over the catalog).
+async function askClaude(client, { system, schema, prompt, check, maxTokens = 32000, tag }) {
   const messages = [{ role: "user", content: prompt }];
+  let out;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const msg = await client.messages.create({
+    // Streamed: a big answer can take a few minutes.
+    const msg = await client.messages.stream({
       model: config.claude.model,
-      max_tokens: 32000,
-      thinking: { type: "adaptive" },
-      output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
-      system: SYSTEM,
+      max_tokens: maxTokens,
+      thinking: { type: "disabled" },
+      output_config: { format: { type: "json_schema", schema } },
+      system,
       messages,
-    });
+    }).finalMessage();
     const text = msg.content.find((b) => b.type === "text")?.text;
-    if (msg.stop_reason !== "end_turn" || !text) throw new Error(`Claude stopped: ${msg.stop_reason}`);
+    if (msg.stop_reason !== "end_turn" || !text) throw new Error(`Claude stopped: ${msg.stop_reason} (${msg.usage.input_tokens} in / ${msg.usage.output_tokens} out tokens)`);
     messages.push({ role: "assistant", content: msg.content });
-    const r = check(JSON.parse(text), cat, existing, mustPlace);
-    log.info(`buckets: attempt ${attempt}: ${r.fresh.length} new, ${r.additions.length} additions, ${r.problems.length} problem(s) (${msg.usage.input_tokens} in / ${msg.usage.output_tokens} out tokens)`);
-    if (!r.problems.length || attempt === MAX_ATTEMPTS) return r;
-    messages.push({ role: "user", content: `That has problems. Fix them and send the whole answer again:\n- ${r.problems.slice(0, 40).join("\n- ")}` });
+    out = JSON.parse(text);
+    const problems = check(out);
+    log.info(`buckets: ${tag} attempt ${attempt}: ${problems.length} problem(s) (${msg.usage.input_tokens} in / ${msg.usage.output_tokens} out tokens)`);
+    if (!problems.length) break;
+    if (attempt < MAX_ATTEMPTS) messages.push({ role: "user", content: `That has problems. Fix them and send the whole answer again:\n- ${problems.slice(0, 40).join("\n- ")}` });
   }
+  return out;
 }
 
-// Saves what's valid even after the last attempt: bad buckets are left out, and titles
-// still without a bucket go into plain catch-all ones so everything can air.
-function save(r, cat) {
-  const placed = new Set();
-  tx((db) => {
-    for (const b of r.fresh) {
-      if (!nameOk(b.name) || !b.dayparts.length || b.shows.length + b.items.length < MIN_MEMBERS[b.format]) continue;
-      if (db.prepare("SELECT 1 FROM buckets WHERE lower(name) = lower(?) AND NOT retired").get(b.name)) continue;
-      b.id = saveBucket(db, b, "claude");
-      b.shows.forEach((s) => placed.add(s)); b.items.forEach((i) => placed.add(i));
+// Step 1: new bucket definitions (no members). Returns the valid ones.
+async function defineBuckets(client, prompt, existing) {
+  const taken = new Set(existing.map((b) => b.name.toLowerCase()));
+  const problemsOf = (out) => {
+    const problems = [];
+    const seen = new Set();
+    for (const b of out.buckets) {
+      const where = `Bucket "${b.name}"`;
+      const key = b.name.trim().toLowerCase();
+      if (!nameOk(b.name)) problems.push(`${where}: the name must be 1 to 4 plain words.`);
+      if (taken.has(key) || seen.has(key)) problems.push(`${where}: that name is already taken.`);
+      seen.add(key);
+      if (!b.dayparts.length) problems.push(`${where}: give it at least one daypart.`);
+      if ((b.active_from || b.active_to) && !(mmdd(b.active_from) && mmdd(b.active_to))) problems.push(`${where}: active_from/active_to must both be MM-DD, or both "".`);
     }
-    for (const a of r.additions) {
-      if (!a.target.id) continue;
-      const have = new Set(db.prepare("SELECT COALESCE(show_title, item_id) k FROM bucket_members WHERE bucket_id = ?").all(a.target.id).map((x) => x.k));
-      addMembers(db, a.target.id, a.shows.filter((s) => !have.has(s)), a.items.filter((i) => !have.has(i)));
+    return problems;
+  };
+  const out = await askClaude(client, { system: DEFINE_SYSTEM, schema: DEFINE_SCHEMA, prompt, check: problemsOf, tag: "define" });
+  const seen = new Set(taken);
+  return out.buckets.filter((b) => {
+    const key = b.name.trim().toLowerCase();
+    const ok = nameOk(b.name) && b.dayparts.length && !seen.has(key) && (!(b.active_from || b.active_to) || (mmdd(b.active_from) && mmdd(b.active_to)));
+    seen.add(key);
+    return ok;
+  }).map((b) => ({ ...b, name: b.name.trim(), dayparts: [...new Set(b.dayparts)], active_from: b.active_from || null, active_to: b.active_to || null }));
+}
+
+const bucketLine = (b) => `${b.name} | ${b.format} | ${b.dayparts.join("/")} | ${b.active_from ? `${b.active_from} to ${b.active_to}` : "all year"} | ${b.about || ""}`;
+
+// Step 2: for each title (ids), the buckets it fits, in chunks. mustPlace: every title
+// needs at least one. Returns Map id -> [bucket].
+async function assign(client, buckets, ids, cat, { mustPlace }) {
+  const byName = new Map(buckets.map((b) => [b.name.toLowerCase(), b]));
+  const lineOf = new Map(cat.text.split("\n").map((l) => [l.split(" | ")[0], l]));
+  const result = new Map();
+  const CHUNK = 80;
+  for (let k = 0; k < ids.length; k += CHUNK) {
+    const chunk = ids.slice(k, k + CHUNK);
+    const want = new Set(chunk);
+    const fitOf = (id, name) => {
+      const b = byName.get(name.trim().toLowerCase());
+      return b && isMovieFormat(b.format) === (cat.ids.get(id).kind === "movie") ? b : null;
+    };
+    const problemsOf = (out) => {
+      const problems = [];
+      const got = new Set();
+      for (const t of out.titles) {
+        if (!want.has(t.id)) { problems.push(`"${t.id}" isn't one of the titles in this list.`); continue; }
+        got.add(t.id);
+        for (const n of t.buckets) {
+          if (!byName.has(n.trim().toLowerCase())) problems.push(`${t.id}: there's no bucket called "${n}".`);
+          else if (!fitOf(t.id, n)) problems.push(`${t.id} (${cat.ids.get(t.id).title}) is a ${cat.ids.get(t.id).kind}; "${n}" is for ${cat.ids.get(t.id).kind === "movie" ? "shows" : "movies"}.`);
+        }
+        if (mustPlace && !t.buckets.some((n) => fitOf(t.id, n))) problems.push(`${t.id} (${cat.ids.get(t.id).title}) needs at least one bucket.`);
+      }
+      const missing = chunk.filter((id) => !got.has(id));
+      if (missing.length) problems.push(`These titles are missing from your answer: ${missing.join(", ")}.`);
+      return problems;
+    };
+    const prompt = `BUCKETS (name | format | dayparts | season | about)
+${buckets.map(bucketLine).join("\n")}
+
+For each of these titles, list every bucket it fits${mustPlace ? " (at least one each)" : " (an empty list if none fits)"}:
+${chunk.map((id) => lineOf.get(id)).join("\n")}`;
+    const out = await askClaude(client, { system: ASSIGN_SYSTEM, schema: ASSIGN_SCHEMA, prompt, check: problemsOf, tag: `assign ${k / CHUNK + 1}/${Math.ceil(ids.length / CHUNK)}` });
+    for (const t of out.titles) {
+      if (!want.has(t.id)) continue;
+      result.set(t.id, [...new Set(t.buckets.map((n) => fitOf(t.id, n)).filter(Boolean))]);
+    }
+  }
+  return result;
+}
+
+// Saves buckets and their members (from assign's map). Buckets too small to fill blocks
+// are dropped. Series are ordered by release year.
+function saveAssigned(fresh, placed, cat) {
+  const members = new Map(fresh.map((b) => [b, { shows: [], items: [] }]));
+  const existingAdds = new Map();
+  for (const [id, list] of placed) {
+    const t = cat.ids.get(id);
+    for (const b of list) {
+      const m = members.get(b) ?? existingAdds.get(b) ?? existingAdds.set(b, { shows: [], items: [] }).get(b);
+      if (t.kind === "show") m.shows.push(t.title); else m.items.push(t.id);
+    }
+  }
+  const year = getDb().prepare("SELECT year FROM items WHERE id = ?");
+  let saved = 0;
+  tx((db) => {
+    for (const [b, m] of members) {
+      if (m.shows.length + m.items.length < MIN_MEMBERS[b.format]) { log.info(`buckets: dropped "${b.name}" (only ${m.shows.length + m.items.length} titles)`); continue; }
+      if (b.format === "movie_series") m.items.sort((x, y) => (year.get(x)?.year || 0) - (year.get(y)?.year || 0));
+      saveBucket(db, { ...b, ...m }, "claude");
+      saved++;
+    }
+    for (const [b, m] of existingAdds) {
+      const have = new Set(db.prepare("SELECT COALESCE(show_title, item_id) k FROM bucket_members WHERE bucket_id = ?").all(b.id).map((x) => x.k));
+      addMembers(db, b.id, m.shows.filter((s) => !have.has(s)), m.items.filter((i) => !have.has(i)));
     }
   });
-  return catchAll(cat);
+  return saved;
 }
 
-// Anything schedulable that's in no bucket at all: a plain "Reruns" / "Movie" bucket.
+// Anything schedulable that's in no Claude bucket: plain "Reruns" / "Movie" buckets, so
+// everything can still air. Titles placed elsewhere later leave them.
 function catchAll(cat) {
   const db = getDb();
-  const inShows = new Set(db.prepare("SELECT DISTINCT m.show_title t FROM bucket_members m JOIN buckets b ON b.id = m.bucket_id WHERE NOT b.retired AND m.show_title IS NOT NULL").all().map((r) => r.t));
-  const inItems = new Set(db.prepare("SELECT DISTINCT m.item_id i FROM bucket_members m JOIN buckets b ON b.id = m.bucket_id WHERE NOT b.retired AND m.item_id IS NOT NULL").all().map((r) => r.i));
+  const real = "SELECT DISTINCT {col} v FROM bucket_members m JOIN buckets b ON b.id = m.bucket_id WHERE b.source = 'claude' AND NOT b.retired AND m.{col} IS NOT NULL";
+  const inShows = new Set(db.prepare(real.replaceAll("{col}", "show_title")).all().map((r) => r.v));
+  const inItems = new Set(db.prepare(real.replaceAll("{col}", "item_id")).all().map((r) => r.v));
   const shows = [...cat.ids.values()].filter((t) => t.kind === "show" && !inShows.has(t.title)).map((t) => t.title);
   const movies = [...cat.ids.values()].filter((t) => t.kind === "movie" && !inItems.has(t.id)).map((t) => t.id);
   tx((d) => {
-    for (const [name, format, shows_, items] of [["Reruns", "one_show", shows, []], ["Movie", "movie", [], movies]]) {
-      if (!shows_.length && !items.length) continue;
-      const have = d.prepare("SELECT id FROM buckets WHERE name = ? AND source = 'fallback'").get(name);
-      if (have) addMembers(d, have.id, shows_, items);
-      else saveBucket(d, { name, about: "titles no other bucket took", format, dayparts: ["afternoon", "evening", "late"], shows: shows_, items }, "fallback");
-    }
+    d.prepare("DELETE FROM buckets WHERE source = 'fallback'").run();
+    if (shows.length) saveBucket(d, { name: "Reruns", about: "titles no other bucket took", format: "one_show", dayparts: ["afternoon", "evening", "late"], shows }, "fallback");
+    if (movies.length) saveBucket(d, { name: "Movie", about: "movies no other bucket took", format: "movie", dayparts: ["afternoon", "evening", "late"], items: movies }, "fallback");
   });
   return shows.length + movies.length;
 }
@@ -284,52 +341,50 @@ function upcomingDates(days) {
   return out;
 }
 
-// The first pass: the whole catalog into 30-60 buckets.
+// The first pass: 30-60 buckets, then the whole catalog sorted into them.
 export async function buildBuckets() {
   const client = new Anthropic({ apiKey: secrets.anthropicKey });
   refreshHolidayBuckets();
   const cat = catalog();
-  const existing = listBuckets();
-  const prompt = `Create this channel's buckets: 30 to 60 of them, covering the whole catalog (every show and movie in at least one bucket). Today is ${upcomingDates(1)[0]}. Include seasonal buckets for the coming months too, with their active window. Halloween, Thanksgiving and Christmas episode/movie buckets already exist (made from holiday tags); you can still make more specific seasonal ones. additions: [].
+  const fresh = await defineBuckets(client, `Define this channel's buckets: 30 to 60 of them that together give every show and movie below a home. Today is ${upcomingDates(1)[0]}; include seasonal buckets for the coming months too, with their active window. Halloween, Thanksgiving and Christmas episode and movie buckets already exist (made from holiday tags), but more specific seasonal ones are welcome.
 
 CATALOG
-${cat.text}`;
-  const r = await ask(client, prompt, new Set(cat.ids.keys()), cat, existing);
-  const leftover = save(r, cat);
+${cat.text}`, listBuckets());
+  const placed = await assign(client, fresh, [...cat.ids.keys()], cat, { mustPlace: true });
+  const saved = saveAssigned(fresh, placed, cat);
+  const leftover = catchAll(cat);
   setMeta("buckets_updated", new Date().toISOString());
-  log.info(`buckets: built ${r.fresh.length} buckets${leftover ? `; ${leftover} titles went to catch-all buckets` : ""}`);
+  log.info(`buckets: built ${saved} buckets${leftover ? `; ${leftover} titles went to catch-all buckets` : ""}`);
 }
 
 // The weekly pass: a handful of new buckets for the next two weeks (seasonal and event
-// ideas especially), and titles new to the catalog sorted into buckets.
+// ideas especially), the whole catalog checked against them, and titles that have no
+// bucket yet (new to the catalog) sorted into all of them.
 export async function newBuckets({ count = 5 } = {}) {
   const client = new Anthropic({ apiKey: secrets.anthropicKey });
   refreshHolidayBuckets();
   const cat = catalog();
-  const existing = listBuckets();
-  const inShows = new Set(existing.filter((b) => b.source !== "fallback").flatMap((b) => b.shows));
-  const inItems = new Set(existing.filter((b) => b.source !== "fallback").flatMap((b) => b.items));
-  const unplaced = [...cat.ids].filter(([, t]) => (t.kind === "show" ? !inShows.has(t.title) : !inItems.has(t.id))).map(([id]) => id);
-  const list = existing.filter((b) => b.source !== "auto").map((b) =>
-    `${b.name} | ${b.format} | ${b.dayparts.join("/")} | ${b.active_from ? `${b.active_from} to ${b.active_to}` : "all year"} | ${b.shows.length + b.items.length} titles | ${b.about || ""}`);
-  const prompt = `The channel's existing buckets (name | format | dayparts | season | size | about):
-${list.join("\n")}
+  const existing = listBuckets().filter((b) => b.source === "claude");
+  const fresh = await defineBuckets(client, `The channel's existing buckets (name | format | dayparts | season | about):
+${existing.map(bucketLine).join("\n")}
 
 The next two weeks: ${upcomingDates(14).join(", ")}.
-Invent up to ${count} new buckets that would make these weeks fun: seasonal or event ideas especially (holidays, notable dates, "Shark Week" style themes), or fresh angles on the catalog nobody has used yet. Don't duplicate existing buckets. You can also add members to existing buckets (additions), e.g. titles that fit them better.
-${unplaced.length ? `\nThese titles aren't in any bucket yet (new to the catalog, or left in the catch-all); place each one (additions or new buckets): ${unplaced.map((id) => `${id} ${cat.ids.get(id).title}`).join("; ")}\n` : ""}
+Define up to ${count} new buckets that would make these weeks fun: seasonal or event ideas especially (holidays, notable dates, "Shark Week" style themes), or fresh angles on the catalog nobody has used yet. Don't duplicate existing buckets, and only define ones the catalog below can fill.
+
 CATALOG
-${cat.text}`;
-  const r = await ask(client, prompt, new Set(unplaced), cat, existing);
-  // Titles placed now leave the catch-all buckets.
-  save(r, cat);
-  tx((db) => {
-    db.prepare(`DELETE FROM bucket_members WHERE bucket_id IN (SELECT id FROM buckets WHERE source = 'fallback') AND (
-      show_title IN (SELECT m.show_title FROM bucket_members m JOIN buckets b ON b.id = m.bucket_id WHERE b.source != 'fallback' AND NOT b.retired)
-      OR item_id IN (SELECT m.item_id FROM bucket_members m JOIN buckets b ON b.id = m.bucket_id WHERE b.source != 'fallback' AND NOT b.retired))`).run();
-  });
+${cat.text}`, listBuckets());
+  const placed = fresh.length ? await assign(client, fresh, [...cat.ids.keys()], cat, { mustPlace: false }) : new Map();
+  const inShows = new Set(existing.flatMap((b) => b.shows));
+  const inItems = new Set(existing.flatMap((b) => b.items));
+  const unplaced = [...cat.ids].filter(([, t]) => (t.kind === "show" ? !inShows.has(t.title) : !inItems.has(t.id))).map(([id]) => id);
+  if (unplaced.length) {
+    const more = await assign(client, [...existing, ...fresh], unplaced, cat, { mustPlace: true });
+    for (const [id, list] of more) placed.set(id, [...new Set([...(placed.get(id) || []), ...list])]);
+  }
+  const saved = saveAssigned(fresh, placed, cat);
+  catchAll(cat);
   setMeta("buckets_updated", new Date().toISOString());
-  log.info(`buckets: ${r.fresh.map((b) => b.name).join(", ") || "no new buckets"}`);
+  log.info(`buckets: ${saved} new (${fresh.map((b) => b.name).join(", ") || "none"}); ${unplaced.length} unsorted titles placed`);
 }
 
 // Called before planning: the first pass if there are no buckets, else the weekly pass

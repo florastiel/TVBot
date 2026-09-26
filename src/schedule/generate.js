@@ -14,13 +14,22 @@ import { fillSchedule } from "./fill.js";
 
 const DAY = 86400000;
 
-// How long a block runs: its shows plus at least min_ad_minutes_per_hour of ads,
-// rounded up to the grid. Returns { lengthMs, adMs, adPerHour }.
+// How long a block is planned to run: its shows plus the commercials expected with them
+// (the middle of spots_per_hour, at the library's average length), to the nearest grid
+// step but never less than the shows plus half a minute. Only a plan: while the TV is
+// on, the schedule moves to match what actually played. Returns { lengthMs, adMs }.
+let avgSpot = null;
 export function blockLength(contentMs) {
-  const rate = config.broadcast.min_ad_minutes_per_hour / 60;
-  const lengthMs = Math.ceil(contentMs / (1 - rate) / gridMs()) * gridMs();
-  const adMs = lengthMs - contentMs;
-  return { lengthMs, adMs, adPerHour: (adMs / lengthMs) * 60 };
+  if (avgSpot === null) {
+    const r = getDb().prepare(`SELECT AVG(duration_ms) a FROM items WHERE kind IN ('commercial', 'clip') AND present = 1 AND playable = 1
+      AND duration_ms <= ?`).get(config.broadcast.max_spot_minutes * 60000);
+    avgSpot = r?.a || 30000;
+  }
+  const [lo, hi] = config.broadcast.spots_per_hour;
+  const ads = Math.max(1, (contentMs / 3600000) * ((lo + hi) / 2)) * avgSpot;
+  const g = gridMs();
+  const lengthMs = Math.max(Math.round((contentMs + ads) / g) * g, Math.ceil((contentMs + 30000) / g) * g);
+  return { lengthMs, adMs: lengthMs - contentMs };
 }
 
 // Shows play their episodes in order unless listed under shows.random.

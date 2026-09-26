@@ -48,20 +48,22 @@ export function appendToBlock(blockId, itemId) {
   db.prepare("INSERT INTO block_items (block_id, position, item_id) VALUES (?, ?, ?)").run(blockId, pos, itemId);
 }
 
-// A skip freed time in block `blockId` (ending at endAt): it now ends `by` ms earlier
-// and the blocks after it move up by the same amount. Stops at a special (it keeps its
-// announced time; the block just before it keeps its end, and shows fill the spare
-// time) or at a gap. Returns false if nothing could move.
-export function shiftEarlier(blockId, endAt, by) {
+// Block `blockId` (ending at oldEnd) now ends at newEnd, and the blocks after it move by
+// the same amount, earlier or later. The move stops at a gap or at a special, which keeps
+// its announced time: moving earlier, the block just before it keeps its end (the spare
+// time gets filled); moving later into a special isn't possible. Returns false if
+// nothing could move.
+export function shiftBlocks(blockId, oldEnd, newEnd) {
+  const delta = newEnd - oldEnd;
   return tx((db) => {
     const at = db.prepare("SELECT * FROM blocks WHERE start_at = ? ORDER BY id LIMIT 1");
     const run = [];
-    for (let t = endAt, b; (b = at.get(t)) && b.source !== "special"; t = b.end_at) run.push(b);
-    if (!run.length) return false;
-    const special = at.get(run.at(-1).end_at)?.source === "special";
-    db.prepare("UPDATE blocks SET end_at = ? WHERE id = ?").run(endAt - by, blockId);
+    for (let t = oldEnd, b; (b = at.get(t)) && b.source !== "special"; t = b.end_at) run.push(b);
+    const special = at.get(run.length ? run.at(-1).end_at : oldEnd)?.source === "special";
+    if (special && (delta > 0 || !run.length)) return false;
+    db.prepare("UPDATE blocks SET end_at = ? WHERE id = ?").run(newEnd, blockId);
     const set = db.prepare("UPDATE blocks SET start_at = ?, end_at = ? WHERE id = ?");
-    run.forEach((b, i) => set.run(b.start_at - by, special && i === run.length - 1 ? b.end_at : b.end_at - by, b.id));
+    run.forEach((b, i) => set.run(b.start_at + delta, special && i === run.length - 1 ? b.end_at : b.end_at + delta, b.id));
     return true;
   });
 }

@@ -64,7 +64,7 @@ const run = (rows) => rows.reduce((n, r) => n + r.duration_ms, 0);
 const maxShow = () => config.broadcast.max_show_block_minutes * 60000;
 const fits = (rows, room) => {
   const l = blockLength(run(rows));
-  return l.lengthMs <= room && l.adPerHour <= config.broadcast.max_ad_minutes_per_hour + 0.01 ? l : null;
+  return l.lengthMs <= room ? l : null;
 };
 
 // One block from this bucket in at most `room` ms, or null. Returns { rows, lengthMs }.
@@ -83,7 +83,7 @@ function pickBlock(bucket, at, room, ctx) {
   }
   if (bucket.format === "variety") {
     // Single episodes of different shows (or the bucket's own episodes); the best of a
-    // few random combinations (fewest commercials).
+    // few random combinations (the one that fills the block best).
     const pool = [];
     for (const show of stalest(bucket.shows.filter((s) => !today.has(s)), (s) => ctx.showLast.get(s)).slice(0, 16)) {
       const e = episodesOf(show, 1, at, ctx)[0];
@@ -101,7 +101,7 @@ function pickBlock(bucket, at, room, ctx) {
         if (blockLength(run([...rows, e])).lengthMs <= Math.min(room, maxShow())) rows.push(e);
       }
       const l = rows.length && fits(rows, Math.min(room, maxShow()));
-      if (l && (!best || l.adPerHour < best.l.adPerHour)) best = { rows, l };
+      if (l && (!best || run(rows) > run(best.rows))) best = { rows, l };
     }
     return best && { rows: best.rows, lengthMs: best.l.lengthMs };
   }

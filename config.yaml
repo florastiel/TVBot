@@ -9,12 +9,12 @@ discord:
 
 broadcast:
   timezone: America/New_York
-  grid_minutes: 15             # blocks start and end on these marks (:00 :15 :30 :45)
-  min_ad_minutes_per_hour: 2   # every block gets at least this much ad time per hour...
+  grid_minutes: 5              # planned block times round to this; while the TV is on, times follow what actually played
+  spots_per_hour: [1, 4]       # commercials/clips per hour of shows: at least / at most
+  break_every_minutes: 15      # a break comes after at least this much show (long shows/movies get breaks inside, ~every 30 min)
+  max_spot_minutes: 3          # longest commercial/clip that plays in a break
   max_show_block_minutes: 75   # regular blocks of episodes are at most this long (movies and specials can run longer)
-  max_break_minutes: 5         # no commercial break longer than this; long shows/movies get breaks inside them
   split_without_chapters: true # if a file has no chapter markers, allow a break at its middle (may be mid-scene)
-  max_ad_minutes_per_hour: 9   # ...and at most this (rounding up to the grid decides where in between)
   clip_chance: 0.3             # chance a break includes one of the clips (0 to 1)
   no_repeat_days: 14           # don't reuse an episode/movie within this many days
   plan_days: 1                 # how far ahead blocks are filled from the week's grid (upkeep tops it up)

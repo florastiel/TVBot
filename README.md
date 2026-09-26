@@ -25,7 +25,7 @@ files) is next. Until then the two parts are started by hand (see *Running it*).
   kicked out of the stream between items.
 - **Bot** (`tv.cmd bot`): slash commands, the Skip button, now-playing posts. Also
   does the upkeep: weekly catalog sync + tagging new items, and keeps at least 2 days
-  scheduled (programs a new week when it runs low).
+  scheduled.
 
 ## Why it runs natively (not Docker)
 
@@ -112,7 +112,7 @@ tv.cmd playlist --clear              back to the schedule
 ## Settings
 
 Everything you'd want to change is in **`config.yaml`** (comments explain each line):
-broadcast hours, the block grid (15 min), min/max ad minutes per hour, clip chance, no-repeat window,
+the block grid (15 min), min/max ad minutes per hour, clip chance, no-repeat window,
 idle timeout, encode size/bitrate, Plex server + libraries, local folders, jingle and
 volume, encoder (qsv = Intel Quick Sync, falls back to CPU by itself), Claude model.
 After changing settings: `tv.cmd restart` (the player waits until the TV is off).
@@ -162,32 +162,54 @@ episodes are Halloween/Thanksgiving/Christmas episodes. The first full pass cost
 
 ## The schedule
 
-Claude programs `plan_days` ahead (1 by default; the bot tops it up when less than 12
-hours are left), one day at a time, from a menu: a few random episodes of each show
-(reruns in any order, like real TV), in-season holiday episodes, and a sample of
-movies, all skipping anything aired within `no_repeat_days`. It
-returns blocks (a 1–3 word label and which items). Code works out each block's length:
-its shows plus at least `min_ad_minutes_per_hour` of ads, rounded up to the next quarter hour, so
-blocks start and end on :00/:15/:30/:45. Code checks every answer: ids from the menu,
-nothing repeats within `no_repeat_days`, a movie gets its own block, labels are plain
-words, and no block's rounding leaves more than `max_ad_minutes_per_hour` of ads.
-Problems go back to Claude (3 tries), then a simple code-built schedule is used.
-Roughly $0.25 per day of schedule with Sonnet 5.
+Three layers; Claude never picks individual episodes or movies.
+
+1. **Buckets** are kinds of blocks: "Saturday Morning Cartoons", "Westerns", "So Bad
+   It's Good", a movie series in order. Each has a format (1–3 episodes of one show /
+   single episodes of different shows / one movie / a movie series in order), the times
+   of day it may air (morning 6–12, afternoon 12–17, evening 17–22, late 22–6) and an
+   optional seasonal date window. Titles can be in many buckets. Claude defines them,
+   then goes through the catalog 80 titles at a time listing every bucket each title fits,
+   judging titles by what they are, not how famous they are. Every title gets at least
+   one bucket; anything left over lands in plain "Reruns"/"Movie" buckets. Halloween,
+   Thanksgiving and Christmas buckets are made automatically from the holiday tags.
+   Once a week Claude adds a handful of new buckets for the coming two weeks (seasonal
+   and event ideas especially) and sorts in titles new to the catalog.
+   `tv.cmd buckets` lists them; `--build` redoes the first pass, `--new` the weekly one.
+2. **The grid.** Once a week Claude lays out the next 7 days as bucket slots ("Sat 06:00
+   Saturday Morning Cartoons, 10:00 Shonen Slop, ..."), from the bucket list alone. Code
+   checks it (times of day, seasons, every day covered from 00:00, slots at least an
+   hour, a bucket at most twice a day) and sends problems back (3 tries), then falls back
+   to a simple code-made grid. `tv.cmd plan` prints it.
+3. **Filling**, in code, `plan_days` ahead (the bot tops it up when less than 12 hours
+   are left): each slot gets blocks of random picks from its bucket, back to back until
+   the next slot. Picks favor what hasn't aired in the longest time (never-aired first),
+   so the whole catalog gets turns. Rules: nothing repeats within `no_repeat_days`, a
+   show at most once a day, episode blocks at most `max_show_block_minutes`, a movie
+   gets its own block, holiday episodes/movies only in their season. A block's length is
+   its shows plus at least `min_ad_minutes_per_hour` of ads, rounded up to the quarter
+   hour, and never more than `max_ad_minutes_per_hour`. When a bucket runs out of things
+   that fit, another bucket for that time of day covers the rest of the slot.
+
+Cost: the first bucket pass is about $1; after that roughly $0.20 a week (new buckets
+plus the grid). `/tvadmin regen` (or `tv.cmd schedule --replace`) re-fills the upcoming
+blocks with new random picks for free; add `new_grid` (`--replan`) to have Claude lay
+out a new grid too.
 
 **Episode order.** The first time a show airs it starts at a random episode; after that
 it continues in order, picking up where it left off (and wrapping around after the finale). Shows listed under `shows.random` in
 config.yaml play random episodes instead, like reruns.
 Shows under `shows.never` are never scheduled.
 
-**Specials** (marathons, themed nights) take over the regular schedule for a few hours.
-Claude plans `specials_per_week` of them by itself (usually weekend evenings), and
-`/tvadmin special` or `tv.cmd special "..."` plans one on request. A separate Claude
-call sees the whole catalog, so it can spot movie series (Scream, the Dragon Ball Z
-movies, Knives Out...) or themes (Ghibli, David Lynch). Code checks it, removes the
-regular blocks it overlaps, and re-fills any gaps around it.
+**Specials** (a marathon or themed night on request) take over the schedule for a few
+hours: `/tvadmin special` or `tv.cmd special "..."`. A separate Claude call sees the
+whole catalog and picks the titles, so it can spot movie series or themes (Ghibli,
+David Lynch). Code checks it, removes the regular blocks it overlaps, and re-fills any
+gaps around it. `specials_per_week` has Claude add some by itself (0 by default; the
+weekly grid already has marathons).
 
 Seasons: Halloween material through October, Thanksgiving until Thanksgiving Day,
-then Christmas until the 25th, ramping up as the day gets closer.
+then Christmas until the 25th.
 
 **Playback follows the wall clock.** `/tv` works out where the current block "should"
 be and starts that show at the right point. A block's ad time is spread evenly across

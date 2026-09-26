@@ -8,11 +8,11 @@ import { join } from "node:path";
 import { DATA_DIR, config } from "../config.js";
 import { getItem, toSegment, makeBreak, fillBreak, card } from "./segments.js";
 import { wantSpool } from "./spool.js";
-import { blockAt, nextBlockAfter, blocksBetween, usedIds, appendToBlock, shiftEarlier } from "../schedule/store.js";
+import { blockAt, nextBlockAfter, blocksBetween, usedIds, appendToBlock, shiftBlocks } from "../schedule/store.js";
 import { inOrder, nextInOrder } from "../schedule/generate.js";
 import { getDb } from "../db.js";
 import { schedulableSql } from "../catalog/schedulable.js";
-import { localTime, gridCeil, gridMs } from "../schedule/time.js";
+import { localTime } from "../schedule/time.js";
 
 export const PLAYLIST_FILE = join(DATA_DIR, "playlist.json");
 
@@ -49,32 +49,30 @@ export class PlaylistProgram {
 
 const LOOKAHEAD_MS = 3 * 3600000; // how far ahead to download files that need it for subtitles
 const MIN_LEFT = 20000; // don't join the last 20 seconds of a show; go to the next thing
-const EDGE = 5 * 60000;  // never break within 5 minutes of the start/end of a show or another break
+const EDGE = 5 * 60000;  // never break within 5 minutes of the start/end of a show
+const PIECE_MS = 30 * 60000; // long shows and movies get a break about this often
 
-// Cut a block's items into pieces (at chapter points where the file has them) until
-// the block's ad time, spread over one break per piece, fits max_break_minutes each.
-export function planPieces(items, blockMs) {
-  const maxBreak = config.broadcast.max_break_minutes * 60000;
-  const pieces = items.map((r) => ({ row: r, from: 0, to: r.duration_ms }));
-  const adMs = blockMs - items.reduce((n, r) => n + r.duration_ms, 0);
-  while (pieces.length && adMs / pieces.length > maxBreak) {
-    let best = null;
-    for (const p of pieces) {
-      const size = p.to - p.from;
-      if (size < 2 * EDGE) continue;
-      const mid = p.from + size / 2;
-      const cues = (p.row.cues ? JSON.parse(p.row.cues) : []).filter((c) => c > p.from + EDGE && c < p.to - EDGE);
-      const cut = cues.length ? cues.reduce((a, c) => (Math.abs(c - mid) < Math.abs(a - mid) ? c : a))
-        : config.broadcast.split_without_chapters ? Math.round(mid) : null;
+// Cut long items into pieces of about PIECE_MS, at the chapter point nearest each cut
+// (within 10 minutes), or right at it if the file has no chapters and
+// split_without_chapters is on.
+export function planPieces(items) {
+  const out = [];
+  for (const r of items) {
+    const n = Math.max(1, Math.round(r.duration_ms / PIECE_MS));
+    const cues = r.cues ? JSON.parse(r.cues) : [];
+    let from = 0;
+    for (let k = 1; k < n; k++) {
+      const target = (r.duration_ms * k) / n;
+      const ok = cues.filter((c) => c > from + EDGE && c < r.duration_ms - EDGE && Math.abs(c - target) <= 10 * 60000);
+      let cut = ok.length ? ok.reduce((x, c) => (Math.abs(c - target) < Math.abs(x - target) ? c : x)) : null;
+      if (cut === null && config.broadcast.split_without_chapters && target > from + EDGE) cut = Math.round(target);
       if (cut === null) continue;
-      // Prefer real chapter points, then the longest piece.
-      const score = (cues.length ? 1e9 : 0) + size;
-      if (!best || score > best.score) best = { p, cut, score };
+      out.push({ row: r, from, to: cut });
+      from = cut;
     }
-    if (!best) break;
-    pieces.splice(pieces.indexOf(best.p), 1, { ...best.p, to: best.cut }, { ...best.p, from: best.cut });
+    out.push({ row: r, from, to: r.duration_ms });
   }
-  return pieces;
+  return out;
 }
 
 export class ScheduleProgram {
@@ -90,8 +88,8 @@ export class ScheduleProgram {
     this.skipped.add(itemId);
   }
 
-  // Drop everything still to come in the current block; the next block starts at the
-  // next quarter hour. Returns what was dropped, for taking it off the schedule.
+  // Drop everything still to come in the current block; the next block starts right
+  // away. Returns what was dropped, for taking it off the schedule.
   skipBlock() {
     if (!this.block) return null;
     for (const id of this.blockRest) this.skipped.add(id);
@@ -135,35 +133,32 @@ export class ScheduleProgram {
     }
   }
 
-  // Plays one block. Returns the next block if this one finished late (so it can be
-  // played from its start), otherwise nothing.
+  // Plays one block. Returns the next block if this one finished late and the schedule
+  // couldn't move (a special comes next), so it can be played from its start.
   *playBlock(block, now, { fromStart = false } = {}) {
     const items = block.items.filter((r) => r.present && r.playable);
     const nextBlock = nextBlockAfter(block.end_at);
-    // Long shows/movies may be cut into pieces at chapter points so no break has to be
-    // longer than max_break_minutes.
-    const pieces = planPieces(items, block.end_at - block.start_at);
+    const pieces = planPieces(items);
     const upNextOf = (i) => pieces.slice(i + 1).find((p) => p.row.id !== pieces[i].row.id)?.row || nextBlock?.items[0] || null;
     const len = (p) => p.to - p.from;
 
-    // Where "now" falls on the block's ideal timeline: pieces spread evenly, with equal
-    // breaks after each (the last one is the end-of-block filler).
+    // Where "now" falls on the block's planned timeline: pieces with the planned
+    // commercial time spread evenly after each.
     const total = pieces.reduce((n, p) => n + len(p), 0);
     const gap = pieces.length ? Math.max(0, (block.end_at - block.start_at - total) / pieces.length) : 0;
     let t = block.start_at;
     let start = fromStart ? 0 : pieces.length;
     let offsetMs = 0;
-    let breakFirstMs = 0;
     for (let i = 0; !fromStart && i < pieces.length; i++) {
       const dur = len(pieces[i]);
       if (now < t + dur) {
         start = i;
         offsetMs = Math.max(0, now - t);
-        if (dur - offsetMs < MIN_LEFT) { start = i + 1; offsetMs = 0; breakFirstMs = t + dur + gap - now; }
+        if (dur - offsetMs < MIN_LEFT) { start = i + 1; offsetMs = 0; }
         break;
       }
       t += dur;
-      if (now < t + gap) { start = i + 1; breakFirstMs = t + gap - now; break; }
+      if (now < t + gap) { start = i + 1; break; } // between pieces: straight to the next one
       t += gap;
     }
 
@@ -171,7 +166,8 @@ export class ScheduleProgram {
     this.blockRest = new Set(pieces.slice(start).map((p) => p.row.id)); // not aired yet (incl. what's on)
     const titleOf = (row) => (row ? toSegment(row, this.plex).title : null);
     const before = (segs, row) => segs.map((s) => ({ ...s, nextTitle: titleOf(row) }));
-    if (breakFirstMs > 3000 && start < pieces.length) yield* before(makeBreak(this.plex, { theme: block.theme, budgetMs: breakFirstMs }), pieces[start].row);
+    const breakEvery = config.broadcast.break_every_minutes * 60000;
+    let sinceBreak = 0;
 
     for (let i = start; i < pieces.length; i++) {
       const p = pieces[i];
@@ -184,6 +180,7 @@ export class ScheduleProgram {
       wantSpool(ahead, this.plex);
       const up = upNextOf(i);
       const seekMs = p.from + (i === start ? offsetMs : 0);
+      const startedAt = this.clock();
       yield {
         ...toSegment(p.row, this.plex, { seekMs }),
         durationMs: p.to, // play up to the end of this piece
@@ -193,41 +190,54 @@ export class ScheduleProgram {
         upNext: up ? toSegment(up, this.plex) : null,
       };
       if (this.live) return null;
+      sinceBreak += this.clock() - startedAt;
       const remaining = pieces.slice(i + 1).filter((q) => !this.skipped.has(q.row.id));
-      const rest = remaining.reduce((n, q) => n + len(q), 0);
-      // Just skipped: the rest of the day moves up now, keeping only what the rest of
-      // this block needs (its shows plus the minimum ads).
-      if (this.skipped.has(p.row.id)) this.pullUp(block, rest / (1 - config.broadcast.min_ad_minutes_per_hour / 60));
-      if (remaining.length) {
-        // Share whatever time is left over equally between the remaining breaks, so the
-        // next block still starts on time even if a break was skipped or ran long.
-        const budgetMs = (block.end_at - this.clock() - rest) / (remaining.length + 1);
-        if (budgetMs > 3000) yield* before(makeBreak(this.plex, { theme: block.theme, budgetMs }), remaining[0].row);
+      if (remaining.length && sinceBreak >= breakEvery) {
+        yield* before(this.spotBreak(block), remaining[0].row);
+        sinceBreak = 0;
         if (this.live) return null;
       }
     }
-
-    // Content ran out early (a skip): the rest of the day moves up by whole grid steps,
-    // so the next block starts sooner. Whatever can't move gets shows, not ads.
     this.blockRest = new Set();
-    this.pullUp(block);
+    // The break between blocks.
+    if (sinceBreak >= breakEvery) {
+      yield* before(this.spotBreak(block), nextBlock?.items[0]);
+      if (this.live) return null;
+    }
+
+    // The block ends now: the rest of the day moves to match (earlier if it ran short or
+    // something was skipped, later if it ran long or was paused).
+    if (this.retime(block)) return null;
+    // A special comes next and keeps its announced time. Early: shows, then commercials,
+    // until it starts. Late: it plays from its start.
     yield* this.fillWithShows(block);
     if (this.live) return null;
-
     const left = block.end_at - this.clock();
     if (left > 1000) {
       const nextTitle = nextBlock?.items[0] ? toSegment(nextBlock.items[0], this.plex).title : null;
       yield* before(fillBreak(this.plex, left, { theme: block.theme, upNextTitle: nextTitle }), nextBlock?.items[0]);
     }
-    // Finished late (more than half a minute): the next block starts from its top.
     return this.clock() > block.end_at + 30000 && nextBlock?.start_at === block.end_at ? nextBlock : null;
   }
 
-  pullUp(block, needMs = 0) {
-    const end = gridCeil(this.clock() + needMs + 60000);
-    const by = block.end_at - end;
-    if (by < gridMs()) return;
-    if (shiftEarlier(block.id, block.end_at, by)) block.end_at = end;
+  // 1 commercial (sometimes 2), keeping to spots_per_hour over the last hour.
+  spotBreak(block) {
+    const now = this.clock();
+    this.spotTimes = (this.spotTimes || []).filter((t) => t > now - 3600000);
+    const room = config.broadcast.spots_per_hour[1] - this.spotTimes.length;
+    if (room <= 0) return [];
+    const spots = Math.min(room, Math.random() < 0.3 ? 2 : 1);
+    for (let k = 0; k < spots; k++) this.spotTimes.push(now);
+    return makeBreak(this.plex, { theme: block.theme, spots });
+  }
+
+  // Make the block end now and move the rest of the day with it. False if it can't.
+  retime(block) {
+    const now = this.clock();
+    if (Math.abs(now - block.end_at) < 5000) return true;
+    if (!shiftBlocks(block.id, block.end_at, now)) return false;
+    block.end_at = now;
+    return true;
   }
 
   // Fills the rest of the block: episodes while a whole one fits (only shows with
@@ -235,13 +245,12 @@ export class ScheduleProgram {
   // left off; this block's shows first), then shorts (the shorts folder), leaving a
   // couple of minutes for ads. Each one is saved into the block as it starts.
   *fillWithShows(block) {
-    const maxBreak = config.broadcast.max_break_minutes * 60000;
     const minute = 60000;
+    const maxBreak = 5 * minute;
     const adsAtEnd = 3 * minute;
     for (;;) {
-      // The block was skipped (maybe while this filler played): get to the next one.
-      const skipped = this.blockSkipped === block.id;
-      if (skipped) this.pullUp(block);
+      // The block was skipped (maybe while this filler played): stop filling.
+      if (this.blockSkipped === block.id) return;
       const left = block.end_at - this.clock();
       const row = (left > maxBreak + minute && this.fillerEpisode(block, left - minute))
         || (left > adsAtEnd && this.fillerShort(left - minute));
@@ -250,9 +259,7 @@ export class ScheduleProgram {
       this.blockRest = new Set([row.id]);
       yield { ...toSegment(row, this.plex), blockId: block.id, upNext: null };
       if (this.live) return;
-      const after = block.end_at - this.clock() - adsAtEnd;
-      const budgetMs = Math.min(row.kind === "short" ? 45000 : 2 * minute, after);
-      if (budgetMs > 15000) yield* makeBreak(this.plex, { theme: block.theme, budgetMs });
+      if (block.end_at - this.clock() - adsAtEnd > minute) yield* makeBreak(this.plex, { theme: block.theme, spots: 1 });
       if (this.live) return;
     }
   }

@@ -45,7 +45,6 @@ export function getItem(id) {
 }
 
 const recent = []; // item ids of the last commercials/clips played, oldest first
-const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
 // Everything of this kind that fits in maxMs and isn't already in this break, preferring
 // the block's holiday theme (and non-holiday ones otherwise, so no Christmas ads in July).
@@ -99,30 +98,18 @@ function remember(rows) {
 let breakCounter = 0;
 const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
 
-// A commercial break of about budgetMs: whole commercial files until the budget is used
-// up (the last one may run a few seconds over; the end of the block makes up for it),
-// sometimes a clip. Empty if nothing fits, in which case the next show just starts.
-// Without a budget (test playlist): about half the max ad time of an hour, per episode.
-const OVERRUN_MS = 20000;
-export function makeBreak(plex, { theme = null, budgetMs = null } = {}) {
-  const budget = Math.min(budgetMs ?? (config.broadcast.max_ad_minutes_per_hour * 60000 * 22) / 60 / 2,
-    config.broadcast.max_break_minutes * 60000);
+// A commercial break: `spots` commercials (the first one sometimes a clip), each at most
+// max_spot_minutes, from different groups.
+export function makeBreak(plex, { theme = null, spots = 1 } = {}) {
+  const maxMs = config.broadcast.max_spot_minutes * 60000;
   const rows = [];
   const groups = new Set(); // spread a break over different groups
-  let left = budget;
-  if (Math.random() < config.broadcast.clip_chance) {
-    const c = pick("clip", theme, [], left + OVERRUN_MS, groups);
-    if (c) { rows.push(c); left -= c.duration_ms; }
-  }
-  while (left > 5000) {
-    // Once there's a minute of ads, end the break rather than repeat a group (the
-    // time left over goes to the next break).
-    const filled = budget - left;
-    const r = pick("commercial", theme, rows.map((x) => x.id), left + OVERRUN_MS, groups, filled >= 60000)
-      || (rows.length ? null : pick("clip", theme, [], left + OVERRUN_MS, groups)); // no commercials yet: a clip instead
-    if (!r) break;
-    rows.splice(rand(0, rows.length), 0, r);
-    left -= r.duration_ms;
+  for (let k = 0; k < spots; k++) {
+    const kind = k === 0 && Math.random() < config.broadcast.clip_chance ? "clip" : "commercial";
+    const other = kind === "clip" ? "commercial" : "clip";
+    const avoid = rows.map((x) => x.id);
+    const r = pick(kind, theme, avoid, maxMs, groups) || pick(other, theme, avoid, maxMs, groups);
+    if (r) rows.push(r);
   }
   remember(rows);
   const breakId = newBreakId();
