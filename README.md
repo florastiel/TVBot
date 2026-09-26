@@ -118,7 +118,8 @@ Everything you'd want to change is in **`config.yaml`** (comments explain each l
 planned-time rounding (5 min), commercials per break, clip chance, longest commercial,
 no-repeat window, idle timeout, which shows always/never play in order, encode
 size/bitrate, Plex server + libraries, local folders, entrance sound length and volume,
-encoder (qsv = Intel Quick Sync, falls back to CPU by itself), Claude model.
+encoder (qsv = Intel Quick Sync, falls back to CPU by itself), how often the Go Live
+thumbnail updates (`player.stream_preview_minutes`, 5; 0 = none), Claude model.
 After changing settings: `tv.cmd restart`.
 
 ## The catalog
@@ -158,13 +159,26 @@ the catalog (library "Real-Debrid"), one item per video file. There's no metadat
 behind it, so what a file is comes from its release name: `Show.Name.S01E02.Title...`,
 `1x02`, anime-style `[Group] Show - 05`, or `Movie.Title.1994...`; files named with none
 of those count as unidentified. Show titles are tidied the way Plex names them
-(`The Office (US)`, `Doctor Who (2005)`), but a show that's also on Plex under a
-different name becomes two shows. Tracks are read with ffprobe over the network at sync
-(new torrents only; a failed read is retried next sync). Shows and movies are downloaded
+(`The Office (US)`, `Doctor Who (2005)`).
+Tracks are read with ffprobe over the network at sync (new torrents only; a failed read
+is retried next sync). A torrent whose files Real-Debrid has lost (`hoster_unavailable`)
+is given up on for that sync after its first failure; re-add it on Real-Debrid. Shows and movies are downloaded
 ahead like Plex ones (subtitles inside the file, break detection); anything not
 downloaded yet streams straight from Real-Debrid, with a fresh link made right before
 it plays. Removing a torrent from Real-Debrid takes its items off the schedule at the
 next sync. Settings under `realdebrid:` in config.yaml.
+
+**Duplicates.** The same episode or movie often comes in more than once (Plex plus a
+torrent, a season pack plus single episodes, two releases). After every sync, show names
+from Real-Debrid and local folders are lined up with Plex's: same name ignoring case and
+punctuation, ignoring a `(2019)`/`(US)` tag (when Plex has only one show by that name),
+`Show S2` / `Show 2nd Season` become season 2 of `Show`, and `shows.aliases` in
+config.yaml covers the rest (`Boku no Hero Academia: My Hero Academia`; a name mapped to
+itself is never merged). Then one copy of each episode (show + season + episode) and
+movie (title + year) is kept: a playable one, Plex over local over Real-Debrid, 1080p or
+less. The rest are marked `duplicate_of` the kept one, never scheduled and never read
+over the network; if the kept Real-Debrid copy can't be read, the next copy is tried.
+`tv.cmd stats` counts them.
 
 **Tagging commercials and clips** is by hand: each of those folders gets a
 `tags.csv`. Sync adds a blank row for new files; fill in `decade` (90s, 1990s, 1994

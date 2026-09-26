@@ -9,6 +9,7 @@ import { log } from "../log.js";
 import { RealDebrid } from "../realdebrid.js";
 import { probe } from "./localScan.js";
 import { chooseTracks, fromFfprobeStreams } from "./tracks.js";
+import { dedupeCatalog } from "./dedupe.js";
 
 export const RD_LIBRARY = "Real-Debrid";
 const VIDEO = new Set([".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts", ".webm"]);
@@ -124,22 +125,37 @@ export async function syncRealDebrid(client = new RealDebrid()) {
   });
   log.info(`realdebrid: ${done.length} torrents on the account`);
 
-  await probeNew(client);
+  // Only the copy of each episode/movie that dedupe keeps is read. When a read fails, the
+  // next dedupe picks another copy (if there is one), so go round a few times.
+  const seen = { tried: new Set(), dead: new Set() };
+  for (let round = 0; round < 4; round++) {
+    dedupeCatalog();
+    if (!(await probeNew(client, seen))) break;
+  }
 }
 
 // Durations and tracks for new files, read over the network (ffprobe only fetches the
-// start of the file).
-async function probeNew(client) {
+// start of the file). Returns how many files it tried.
+async function probeNew(client, { tried, dead }) {
   const db = getDb();
-  const todo = db.prepare(`SELECT id, media_path, show_title, source_updated FROM items
-    WHERE source = 'realdebrid' AND present = 1 AND (streams_checked IS NULL OR streams_checked != source_updated)`).all();
-  if (!todo.length) return;
+  const todo = db.prepare(`SELECT id, source_key, media_path, show_title, source_updated FROM items
+    WHERE source = 'realdebrid' AND present = 1 AND duplicate_of IS NULL
+      AND (streams_checked IS NULL OR streams_checked != source_updated)`).all().filter((r) => !tried.has(r.id));
+  if (!todo.length) return 0;
+  todo.forEach((r) => tried.add(r.id));
   log.info(`realdebrid: reading durations/tracks for ${todo.length} files`);
   const save = db.prepare(`UPDATE items SET duration_ms = ?, video_height = ?, audio_stream = ?, audio_lang = ?, subs = ?,
     playable = ?, unplayable_reason = ?, streams_checked = ?, cues = ? WHERE id = ?`);
   let n = 0;
   const worker = async () => {
     for (let r; (r = todo.shift()); ) {
+      const torrent = r.source_key.split(":")[0];
+      if (dead.has(torrent)) {
+        // Real-Debrid lost this torrent's files (they're gone from its cache); every other
+        // file in it would fail the same way. Re-adding the torrent on Real-Debrid fixes it.
+        save.run(null, null, null, null, null, 0, "couldn't read from Real-Debrid: hoster_unavailable (whole torrent)", null, null, r.id);
+        continue;
+      }
       try {
         const p = await probe(await client.unrestrict(r.media_path));
         const video = p.streams.find((s) => s.codec_type === "video" && !s.disposition?.attached_pic);
@@ -152,6 +168,7 @@ async function probeNew(client) {
         // Error text can contain the unrestricted URL: keep only the first line, without it.
         // Not marked as checked: Real-Debrid hiccups are usually temporary, so the next sync tries again.
         const why = e.message.split("\n")[0].replace(/https?:\/\/\S+/g, "<url>");
+        if (why.includes("hoster_unavailable")) dead.add(torrent);
         save.run(null, null, null, null, null, 0, `couldn't read from Real-Debrid: ${why}`, null, null, r.id);
         log.warn(`realdebrid: couldn't read item ${r.id}: ${why}`);
       }
@@ -159,4 +176,6 @@ async function probeNew(client) {
     }
   };
   await Promise.all(Array.from({ length: 3 }, worker));
+  if (dead.size) log.warn(`realdebrid: ${dead.size} torrents have lost their files on Real-Debrid (hoster_unavailable); re-add them there to get them back`);
+  return n;
 }

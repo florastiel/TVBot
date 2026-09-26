@@ -36,6 +36,27 @@ shows:
   random: []                   # always random episodes (overrides Claude's serialized/episodic call)
   in_order: []                 # always in order
   never: []                    # these never get scheduled
+  # Show names from Real-Debrid / local folders that mean a Plex show (or each other).
+  # Case, punctuation, a "(2019)"/"(US)" tag and "S2"/"2nd Season" are matched by
+  # themselves; these are the ones that need telling (other language, other wording).
+  # A name mapped to itself is never merged. Applied at the next sync.
+  aliases:
+    Boku no Hero Academia: My Hero Academia
+    Vigilante - Boku no Hero Academia Illegals: "My Hero Academia: Vigilantes"
+    Dungeon Meshi: Delicious in Dungeon
+    Kimetsu no Yaiba: Demon Slayer
+    Tongari Boushi no Atelier: Witch Hat Atelier
+    JoJo: JoJo's Bizarre Adventure
+    Bleach： Sennen Kessen Hen: "Bleach: Thousand-Year Blood War"
+    Dirilis: Dirilis Ertugrul
+    Haikyu!!: Haikyuu!!
+    Princess Session Orchestra: Princession Orchestra
+    Arcane League of Legends: Arcane
+    Pop Star Akademisi KATSEYE (2024): Pop Star Academy KATSEYE
+    Love Island USA: Love Island (US)
+    Hibi wa Sugiredo: Hibi wa Sugiredo Meshi Umashi
+    怒呛人生 第一季 Beef (2023): Beef
+    Interview with the Vampire - The Vampire Lestat: Interview with the Vampire
 
 buckets:
   # Exact bucket names (tv.cmd buckets). Shows in these kinds of blocks always play
@@ -83,6 +104,7 @@ player:
   spool_max_gb: 30             # download-ahead folder (for subtitles inside files) never grows past this
   spool_max_mbps: 20           # download-ahead speed limit, leaving the Plex server's upload for the live stream
   spool_max_file_gb: 8         # files bigger than this aren't downloaded ahead; they play without subtitles
+  stream_preview_minutes: 5    # how often the Go Live thumbnail updates (0 = no thumbnail)
 
 claude:
   model: claude-sonnet-5       # used for tagging and weekly scheduling

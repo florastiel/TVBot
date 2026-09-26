@@ -6,6 +6,7 @@ import { syncPlex } from "./plexSync.js";
 import { scanLocal } from "./localScan.js";
 import { syncRealDebrid } from "./rdSync.js";
 import { importCsvTags } from "./csvTags.js";
+import { dedupeCatalog } from "./dedupe.js";
 
 // The full catalog sync: Plex, local folders, Real-Debrid, then the commercial/clip tag sheets.
 export async function runSync({ plex = new Plex() } = {}) {
@@ -25,6 +26,7 @@ export async function runSync({ plex = new Plex() } = {}) {
       log.error("sync: Real-Debrid part failed:", e.message);
     }
   }
+  dedupeCatalog(); // Real-Debrid also runs it between its reads; this covers syncs without it
   importCsvTags();
   setMeta("last_sync", new Date().toISOString());
   log.info(`sync: done in ${((Date.now() - t0) / 1000).toFixed(0)}s`);

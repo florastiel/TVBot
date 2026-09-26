@@ -158,6 +158,10 @@ const MIGRATIONS = [
     read_at  TEXT NOT NULL
   );
   `,
+  `
+  -- Another copy of the same episode/movie is used instead (catalog/dedupe.js).
+  ALTER TABLE items ADD COLUMN duplicate_of INTEGER;
+  `,
 ];
 
 let db;

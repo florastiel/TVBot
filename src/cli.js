@@ -22,7 +22,9 @@ const commands = {
 
     console.log("\nWhy identified items can't be scheduled:");
     console.table(db.prepare(`SELECT COALESCE(unplayable_reason, 'not checked yet') reason, COUNT(*) n
-      FROM items WHERE present = 1 AND match != 'none' AND playable = 0 GROUP BY reason ORDER BY n DESC`).all());
+      FROM items WHERE present = 1 AND match != 'none' AND playable = 0 AND duplicate_of IS NULL GROUP BY reason ORDER BY n DESC`).all());
+    const dup = db.prepare(`SELECT COUNT(*) n FROM items WHERE present = 1 AND duplicate_of IS NOT NULL`).get().n;
+    if (dup) console.log(`(plus ${dup} duplicate copies of episodes/movies that play from another copy)`);
 
     console.log("\nSubtitle handling for schedulable items:");
     console.table(db.prepare(`SELECT json_extract(subs, '$.mode') mode, COUNT(*) n FROM items

@@ -1,0 +1,131 @@
+// The same episode or movie can come in more than once: Plex, a local folder, and several
+// Real-Debrid torrents (a season pack plus single episodes, two releases of one show).
+// After every sync:
+//  1. Show names from local folders and Real-Debrid are lined up with Plex's (and each
+//     other's): shows.aliases in config.yaml first, then the same name ignoring case and
+//     punctuation, then ignoring a "(2005)" / "(US)" tag. "Show 2nd Season" / "Show S2"
+//     become season 2 of "Show".
+//  2. One copy of each episode (show + season + episode) and movie (title + year) is kept;
+//     the others get items.duplicate_of = the kept one, and are left out of the schedule
+//     and never read over the network.
+import { config } from "../config.js";
+import { getDb, tx } from "../db.js";
+import { log } from "../log.js";
+
+const norm = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+const TAG = /\s*\((?:(?:19|20)\d{2}|US|UK|AU|NZ|CA)\)\s*$/i;
+const loose = (s) => norm(String(s ?? "").replace(TAG, ""));
+const ORDINAL = { second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6 };
+// "Haikyuu!! S2", "Bungou Stray Dogs 2nd Season", "Haikyuu!! Second Season", "Show Season 3"
+const SEASON_IN_NAME = /[\s._-]+(?:S(\d{1,2})|(\d{1,2})(?:st|nd|rd|th)[\s._-]*Season|(Second|Third|Fourth|Fifth|Sixth)[\s._-]*Season|Season[\s._-]*(\d{1,2}))$/i;
+
+function splitSeason(title) {
+  const m = title.match(SEASON_IN_NAME);
+  if (!m) return { base: title, season: null };
+  const season = Number(m[1] ?? m[2] ?? m[4]) || ORDINAL[m[3]?.toLowerCase()];
+  return { base: title.slice(0, m.index).trim(), season };
+}
+
+// Step 1. Returns how many show names changed.
+function lineUpShowNames(db) {
+  const aliases = new Map(Object.entries(config.shows?.aliases || {}).map(([k, v]) => [norm(k), String(v)]));
+  const plex = db.prepare(`SELECT DISTINCT show_title t FROM items WHERE source = 'plex' AND kind = 'episode' AND show_title IS NOT NULL`).all().map((r) => r.t);
+  const plexExact = new Map(plex.map((t) => [norm(t), t]));
+  const plexLoose = new Map();
+  for (const t of plex) plexLoose.set(loose(t), plexLoose.has(loose(t)) && plexLoose.get(loose(t)) !== t ? null : t); // null = ambiguous
+  const others = db.prepare(`SELECT show_title t, COUNT(*) n FROM items WHERE source != 'plex' AND kind = 'episode' AND show_title IS NOT NULL
+    GROUP BY show_title`).all();
+
+  // Per original name: the name it should have, and the season its "season 1" episodes really are.
+  const plan = new Map();
+  for (const { t } of others) {
+    const aliased = aliases.get(norm(t));
+    if (aliased !== undefined) { plan.set(t, { title: aliased, season: null, pinned: norm(aliased) === norm(t) }); continue; }
+    const { base, season } = splitSeason(t);
+    const a = aliases.get(norm(base));
+    plan.set(t, { title: a ?? base, season, pinned: a !== undefined && norm(a) === norm(base) });
+  }
+  for (const p of plan.values()) {
+    if (p.pinned) continue; // an alias to itself: keep the name exactly as is
+    p.title = plexExact.get(norm(p.title)) ?? plexLoose.get(loose(p.title)) ?? p.title;
+  }
+  // Names that match no Plex show: variants of one name become the most common spelling.
+  const counts = new Map();
+  for (const { t, n } of others) { const k = plan.get(t).title; counts.set(k, (counts.get(k) || 0) + n); }
+  const best = new Map();
+  for (const [title, n] of [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
+    if (plexExact.has(norm(title)) || plan.get(title)?.pinned) continue;
+    if (!best.has(loose(title))) best.set(loose(title), title);
+  }
+  for (const p of plan.values()) {
+    if (!p.pinned && !plexExact.has(norm(p.title))) p.title = best.get(loose(p.title)) ?? p.title;
+  }
+
+  const rename = db.prepare(`UPDATE items SET show_title = :to, season = CASE WHEN :season IS NOT NULL AND season = 1 THEN :season ELSE season END
+    WHERE source != 'plex' AND kind = 'episode' AND show_title = :from`);
+  let changed = 0;
+  for (const [from, p] of plan) {
+    if (p.title === from && !p.season) continue;
+    rename.run({ from, to: p.title, season: p.season ?? null });
+    log.info(`dedupe: show "${from}" -> "${p.title}"${p.season ? ` season ${p.season}` : ""}`);
+    changed++;
+  }
+  if (changed) db.exec(`INSERT OR IGNORE INTO shows (title) SELECT DISTINCT show_title FROM items
+    WHERE kind = 'episode' AND show_title IS NOT NULL`);
+  return changed;
+}
+
+// Which copy to keep, best first: a manual veto wins (so it keeps covering the episode),
+// then known playable, then not tried yet, then a failed network read (worth retrying),
+// then known unplayable; Plex over local over Real-Debrid; 1080p or less, the sharper the
+// better; the one already kept; the oldest.
+const SOURCE_RANK = { plex: 0, local: 1, realdebrid: 2 };
+function rank(r) {
+  const state = r.playable ? 0
+    : r.streams_checked == null && r.unplayable_reason == null ? 1
+    : r.streams_checked == null ? 2 : 3;
+  const h = r.video_height ?? 0;
+  return [r.excluded ? 0 : 1, state, SOURCE_RANK[r.source] ?? 3, h > 1080 ? h : 1080 - h, r.duplicate_of == null ? 0 : 1, r.id];
+}
+const better = (a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
+
+// Step 2. Returns { groups, duplicates, changed }.
+function markDuplicates(db) {
+  const rows = db.prepare(`SELECT id, source, kind, show_title, season, episode, title, year, playable, excluded,
+      streams_checked, unplayable_reason, video_height, duplicate_of
+    FROM items WHERE present = 1 AND match = 'full' AND kind IN ('episode', 'movie')`).all();
+  const groups = new Map();
+  for (const r of rows) {
+    const key = r.kind === "episode"
+      ? (r.show_title && r.season != null && r.episode != null ? `e|${norm(r.show_title)}|${r.season}|${r.episode}` : null)
+      : (r.year ? `m|${norm(r.title)}|${r.year}` : null);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  const want = new Map(); // id -> duplicate_of
+  let dupGroups = 0, duplicates = 0;
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    g.sort(better);
+    dupGroups++;
+    for (const r of g.slice(1)) { want.set(r.id, g[0].id); duplicates++; }
+  }
+  const current = db.prepare("SELECT id, duplicate_of FROM items WHERE duplicate_of IS NOT NULL").all();
+  const set = db.prepare("UPDATE items SET duplicate_of = ? WHERE id = ?");
+  let changed = 0;
+  for (const r of current) if (!want.has(r.id)) { set.run(null, r.id); changed++; }
+  const had = new Map(current.map((r) => [r.id, r.duplicate_of]));
+  for (const [id, of] of want) if (had.get(id) !== of) { set.run(of, id); changed++; }
+  return { groups: dupGroups, duplicates, changed };
+}
+
+export function dedupeCatalog() {
+  const db = getDb();
+  return tx(() => {
+    const renamed = lineUpShowNames(db);
+    const r = markDuplicates(db);
+    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""})`);
+    return { renamed, ...r };
+  });
+}
