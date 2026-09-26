@@ -41,7 +41,7 @@ const DEFAULTS = {
   encode: { height: 720, frame_rate: 30, bitrate_kbps: 2500, max_bitrate_kbps: 4000, encoder: "software", hw_decode: false },
   entrance: { max_seconds: 8, loudness_lufs: -32 },
   player: { port: 7651, spool_max_gb: 30, spool_max_mbps: 20, spool_max_file_gb: 8, stream_preview_minutes: 5 },
-  claude: { model: "claude-sonnet-5" },
+  claude: { model: "claude-sonnet-5", scheduling: "api" },
 };
 
 function merge(base, over) {

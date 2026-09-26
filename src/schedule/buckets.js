@@ -446,9 +446,20 @@ ${cat.text}`, listBuckets());
 }
 
 // Called before planning: the first pass if there are no buckets, else the weekly pass
-// once a week.
+// once a week. With claude.scheduling: local, no API: the weekly Claude Code job
+// (PROGRAMMING.md) curates the buckets; in between, once a day, the holiday buckets are
+// refreshed and titles new to the catalog go to the catch-all buckets so they can air.
 export async function ensureBuckets() {
   const n = getDb().prepare("SELECT COUNT(*) n FROM buckets WHERE source = 'claude' AND NOT retired").get().n;
+  if (config.claude.scheduling === "local") {
+    const last = Date.parse(getMeta("buckets_refreshed") || 0) || 0;
+    if (Date.now() - last < DAY) return;
+    refreshHolidayBuckets();
+    const leftover = catchAll(catalog());
+    setMeta("buckets_refreshed", new Date().toISOString());
+    if (leftover) log.info(`buckets: ${leftover} titles in no bucket yet went to the catch-all buckets (the weekly programming pass sorts them)`);
+    return;
+  }
   if (!n) return buildBuckets();
   const last = Date.parse(getMeta("buckets_updated") || 0) || 0;
   if (Date.now() - last > 6.5 * DAY) await newBuckets();

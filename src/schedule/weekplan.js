@@ -8,6 +8,7 @@ import { log } from "../log.js";
 import { localDay, localToUtc, localTime, gridMs, season } from "./time.js";
 import { listBuckets, inSeason, daypart, isMovieFormat } from "./buckets.js";
 import { blockLength } from "./generate.js";
+import { templateSlots } from "./templategrid.js";
 
 const DAY = 86400000;
 const MAX_ATTEMPTS = 3;
@@ -122,11 +123,19 @@ function fallbackSlots(days, buckets) {
 // Plan `count` days starting with the local day containing fromMs. Replaces any slots
 // already planned for those days.
 export async function planWeek({ fromMs = Date.now(), count = 7 } = {}) {
-  const client = new Anthropic({ apiKey: secrets.anthropicKey });
   const buckets = listBuckets();
   if (!buckets.length) throw new Error("no buckets yet (tv.cmd buckets --build)");
   const days = [];
   for (let d = localDay(fromMs), k = 0; k < count; k++, d = localDay(d.endMs + 1)) days.push(d);
+  if (config.claude.scheduling === "local") {
+    // No API: programming.yaml's template (templategrid.js), or the plain grid if that fails.
+    let slots;
+    try { slots = templateSlots(days, buckets); log.info(`plan: ${slots.length} slots from programming.yaml for ${days[0].date}..${days.at(-1).date}`); }
+    catch (e) { log.warn(`plan: template failed (${e.message}); using a simple code-made grid`); slots = fallbackSlots(days, buckets); }
+    saveSlots(days, slots);
+    return slots;
+  }
+  const client = new Anthropic({ apiKey: secrets.anthropicKey });
   const specials = getDb().prepare("SELECT label, MIN(start_at) a, MAX(end_at) z FROM blocks WHERE source = 'special' AND end_at > ? AND start_at < ? GROUP BY label")
     .all(days[0].startMs, days.at(-1).endMs);
   const seasons = [...new Set(days.map((d) => season(d)).filter((s) => s.theme !== "none").map((s) => `${s.theme} season (the day itself is ${s.holidayDate})`))];
@@ -166,6 +175,11 @@ ${bucketLines(buckets, days).join("\n")}`;
     log.warn("plan: using a simple code-made grid");
     slots = fallbackSlots(days, buckets);
   }
+  saveSlots(days, slots);
+  return slots;
+}
+
+function saveSlots(days, slots) {
   const now = new Date().toISOString();
   tx((db) => {
     db.prepare("DELETE FROM plan_slots WHERE start_at >= ? AND start_at < ?").run(days[0].startMs, days.at(-1).endMs);
@@ -173,7 +187,6 @@ ${bucketLines(buckets, days).join("\n")}`;
     for (const s of slots) put.run(s.at, s.bucket.id, now);
   });
   applyStandingSlots(days[0].startMs, days.at(-1).endMs);
-  return slots;
 }
 
 // Standing slots (broadcast.standing_slots): the same bucket at the same time every week,

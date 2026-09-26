@@ -124,4 +124,8 @@ player:
   stream_preview_minutes: 5    # how often the Go Live thumbnail updates (0 = no thumbnail)
 
 claude:
-  model: claude-sonnet-5       # used for tagging and weekly scheduling
+  model: claude-sonnet-5       # used for tagging (and scheduling, with scheduling: api)
+  # local: no API for scheduling. The grid comes from programming.yaml, and a weekly
+  # Claude Code job on glados (scripts\weekly-program.ps1, PROGRAMMING.md) curates the
+  # buckets and the template. api: Claude API calls plan the grid and new buckets weekly.
+  scheduling: local

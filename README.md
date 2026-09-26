@@ -247,6 +247,20 @@ plus the grid). `/tvadmin regen` (or `tv.cmd schedule --replace`) re-fills the u
 blocks with new random picks for free; add `new_grid` (`--replan`) to have Claude lay
 out a new grid too.
 
+**Scheduling without the API** (`claude.scheduling: local`, the current setting). The
+grid comes from `programming.yaml`: pools of buckets and, for each weekday, the slot
+times and which pool each draws from (least recently used bucket that may air then, so
+the weeks rotate and seasonal buckets drop in while in season). No Claude involved; it
+extends two weeks ahead by itself. Buckets are curated once a week by Claude Code
+running headless on glados on your subscription: `scripts\weekly-program.ps1`, a
+scheduled task (Sundays 04:00, `scripts\install-weekly-program.ps1`), follows
+`PROGRAMMING.md` (the procedure, the rules, and the owner's seasonal wishlist) using
+`scripts\program\tv.mjs` (review the catalog, check and apply a bucket plan, check the
+template). It syncs and tags first (tagging still uses the API, pennies). Between passes,
+titles new to the catalog air from the catch-all "Reruns"/"Movie" buckets. Summary:
+`data\program\last-run.md`; log: `logs\weekly-program-*.log`. If Claude Code is logged
+out the pass fails and the TV carries on from the template.
+
 **Episode order.** Claude marks each show serialized (a continuing story: Loki,
 Interview With The Vampire, most anime) or episodic (sitcoms, anthologies: Fresh Prince,
 Black Mirror). Episodic shows play random episodes, like reruns. Serialized ones play in
