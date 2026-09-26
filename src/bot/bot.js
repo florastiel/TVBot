@@ -17,7 +17,7 @@ import { planSpecials } from "../schedule/specials.js";
 import { addFromUrls, addFromFiles } from "../catalog/download.js";
 import { localDay, localTime } from "../schedule/time.js";
 import { scheduledUntil } from "../schedule/store.js";
-import { guideText, weekGrid, dayGuide } from "../schedule/guide.js";
+import { weekGrid, dayGuide } from "../schedule/guide.js";
 import { runTagging } from "../tagging/tagger.js";
 import { tagOrder } from "../tagging/order.js";
 import { tagEpisodeThemes } from "../tagging/episodes.js";
@@ -122,8 +122,8 @@ const COMMANDS = [
       .addStringOption((o) => o.setName("urls").setDescription("One or more links, separated by spaces").setRequired(true)))
     .addSubcommand((s) => s.setName("special").setDescription("Plan a marathon or themed special")
       .addStringOption((o) => o.setName("request").setDescription('e.g. "Scream marathon Saturday 8pm" or "Ghibli afternoon Sunday"').setRequired(true))),
-  new SlashCommandBuilder().setName("schedule").setDescription("What's on the TV today")
-    .addBooleanOption((o) => o.setName("week").setDescription("The whole week's lineup of block types instead")),
+  new SlashCommandBuilder().setName("schedule").setDescription("Refresh today's TV guide post in the TV channel")
+    .addBooleanOption((o) => o.setName("week").setDescription("Show me the whole week's lineup of block types instead (only you see it)")),
   new SlashCommandBuilder().setName("entrance").setDescription("Your sound when you join the TV's voice channel")
     .addSubcommand((s) => s.setName("set").setDescription(`Upload a sound (only the first ${config.entrance.max_seconds} seconds play)`)
       .addAttachmentOption((o) => o.setName("file").setDescription("mp3, wav, ogg, or a video clip").setRequired(true)))
@@ -243,27 +243,74 @@ export async function startBot() {
   // 12 hours filled, so the rest of the day is programmed first. If the bot was down
   // at midnight it still posts in the first few hours; later than that it waits for
   // tomorrow rather than post a guide for a half-gone day.
-  async function dailyGuide() {
-    const channelId = config.discord.guide_channel_id || config.discord.now_playing_channel_id;
-    if (!config.discord.daily_guide || !channelId) return;
+  const guideChannel = () => config.discord.guide_channel_id || config.discord.now_playing_channel_id;
+  const linkTo = (m) => `https://discord.com/channels/${m.guildId}/${m.channelId}/${m.id}`;
+
+  // Program the rest of today if it isn't yet (upkeep keeps only ~12 hours filled). Can
+  // fail (nothing to plan from): then the guide shows what there is.
+  async function fillToday() {
     const day = localDay(Date.now());
-    if (getMeta("daily_guide_posted") === day.date || Date.now() - day.startMs > 6 * 3600000) return;
-    // Filling can fail (Claude down while planning the grid): then post what there is
-    // rather than retry every minute.
     await maintenance.run(async () => {
       const until = scheduledUntil();
       if (until < day.endMs) await generateSchedule({ fromMs: until, days: (day.endMs - until) / 86400000 });
     }).catch((e) => log.warn(`bot: couldn't program the rest of today for the guide: ${e.message}`));
+  }
+
+  // The TV channel keeps one guide post (one or more messages; ids in meta guide_post),
+  // always updated by editing, which notifies nobody: a new message is posted only for a
+  // part the post doesn't have yet (the day's guide got longer, or the post was deleted),
+  // and parts no longer needed are deleted. Returns its first message, or null.
+  async function publishGuide() {
+    const channelId = guideChannel();
+    const ch = channelId && await client.channels.fetch(channelId).catch(() => null);
+    if (!ch?.isTextBased()) return null;
     const guide = dayGuide();
-    if (!guide.lines.length) {
+    const parts = guide.lines.length ? guideMessages([guide]) : [[]];
+    const header = guide.lines.length ? "Today on TV (times shift a little as the day goes; /schedule refreshes this)" : "Nothing scheduled today.";
+    const saved = JSON.parse(getMeta("guide_post") || "null");
+    let old = [];
+    if (saved?.channelId === channelId) {
+      for (const id of saved.ids) { const m = await ch.messages.fetch(id).catch(() => null); if (m) old.push(m); }
+    } else {
+      // No record yet (guides posted before this was tracked): take over the newest guide
+      // post (and its "continued" parts) and delete older ones.
+      const recent = [...(await ch.messages.fetch({ limit: 100 }).catch(() => new Map())).values()]
+        .filter((m) => m.author.id === client.user.id).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+      const isHead = (m) => m.content.startsWith("Today on TV") || m.content.startsWith("Nothing scheduled today");
+      const isPart = (m) => !m.content && m.embeds[0]?.title?.endsWith("(continued)");
+      const head = recent.findLastIndex(isHead);
+      if (head >= 0) {
+        old.push(recent[head]);
+        for (let k = head + 1; k < recent.length && isPart(recent[k]); k++) old.push(recent[k]);
+      }
+      for (const m of recent) if ((isHead(m) || isPart(m)) && !old.includes(m)) await remove(m);
+    }
+    const msgs = [];
+    for (let k = 0; k < parts.length; k++) {
+      const body = { content: k ? "" : header, embeds: parts[k], allowedMentions: { parse: [] } };
+      const m = (old[k] && await old[k].edit(body).catch(() => null)) || await post(channelId, body.content, { embeds: parts[k] });
+      if (!m) return null; // tried again later; what was edited stays
+      msgs.push(m);
+    }
+    for (const m of old.slice(parts.length)) await remove(m);
+    setMeta("guide_post", JSON.stringify({ channelId, ids: msgs.map((m) => m.id) }));
+    return msgs[0];
+  }
+
+  // The whole day's programming just after midnight (yesterday's post is edited into today's).
+  // If the bot was down at midnight it still posts in the first few hours; later than
+  // that it waits for tomorrow rather than post a guide for a half-gone day.
+  async function dailyGuide() {
+    if (!config.discord.daily_guide || !guideChannel()) return;
+    const day = localDay(Date.now());
+    if (getMeta("daily_guide_posted") === day.date || Date.now() - day.startMs > 6 * 3600000) return;
+    await fillToday();
+    if (!dayGuide().lines.length) {
       setMeta("daily_guide_posted", day.date);
       return log.warn("bot: nothing scheduled today; no daily guide post");
     }
-    const [first, ...rest] = guideMessages([guide]);
-    const sent = await post(channelId, "Today on TV (times shift a little as the day goes; /schedule for what's on now)", { embeds: first });
-    if (!sent) return; // tried again next minute
+    if (!await publishGuide()) return; // tried again next minute
     setMeta("daily_guide_posted", day.date);
-    for (const embeds of rest) await post(channelId, "", { embeds });
     log.info(`bot: posted the guide for ${day.date}`);
   }
 
@@ -421,7 +468,28 @@ export async function startBot() {
           for (const embeds of messages.slice(1)) await i.followUp({ embeds, ...ephemeral });
           return;
         }
-        return i.reply({ content: guideText(), ...ephemeral, allowedMentions: { parse: [] } });
+        // Refresh the guide post in the TV channel (no new copy of the schedule), then say so
+        // there with a link; the previous "updated" note is removed so they don't pile up.
+        const inTvChannel = i.channelId === guideChannel();
+        await i.deferReply(inTvChannel ? {} : ephemeral);
+        await fillToday();
+        const guide = await publishGuide();
+        if (!guide) return i.editReply("Couldn't update the TV guide post right now. Try again in a minute.");
+        const note = `Schedule updated (asked by <@${i.user.id}>): ${linkTo(guide)}`;
+        const prev = getMeta("guide_note");
+        let noteMsg;
+        if (inTvChannel) {
+          noteMsg = await i.editReply({ content: note, allowedMentions: { parse: [] } });
+        } else {
+          noteMsg = await post(guideChannel(), note);
+          await i.editReply(`Updated the TV guide: ${linkTo(guide)}`);
+        }
+        if (prev && prev !== noteMsg?.id) {
+          const ch = await client.channels.fetch(guideChannel()).catch(() => null);
+          await remove(await ch?.messages.fetch(prev).catch(() => null));
+        }
+        if (noteMsg) setMeta("guide_note", noteMsg.id);
+        return;
       }
       if (i.isButton() && i.customId.startsWith("tv:skip:")) {
         const breakId = i.customId.slice("tv:skip:".length);
