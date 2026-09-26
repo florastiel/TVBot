@@ -11,6 +11,7 @@ import { parseRelease, showName, tidy as tidyName } from "./release.js";
 
 const run = promisify(execFile);
 const VIDEO = new Set([".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts", ".webm", ".flv"]);
+const SPOTS = new Set(["commercial", "clip", "eyecatch"]);
 const FOLDERS = { shows: "episode", movies: "movie", clips: "clip", commercials: "commercial", shorts: "short", eyecatches: "eyecatch" };
 
 function walk(dir) {
@@ -165,10 +166,10 @@ export async function scanLocal() {
   // ffprobe only new/changed files, and ones missing subtitles that now have a usable
   // subtitle file next to them (English or unlabeled).
   const usableSidecar = (f) => sidecarStreams(f).some((s) => s.lang == null || s.lang === config.language.subtitles);
-  const todo = db.prepare(`SELECT id, source_key, show_title, source_updated, streams_checked FROM items
+  const todo = db.prepare(`SELECT id, kind, source_key, show_title, source_updated, streams_checked FROM items
     WHERE source = 'local' AND present = 1 AND (streams_checked IS NULL OR streams_checked != source_updated
       OR unplayable_reason LIKE '%subtitles%')`).all()
-    .filter((r) => r.streams_checked == null || r.streams_checked !== r.source_updated || usableSidecar(r.source_key));
+    .filter((r) => r.streams_checked == null || r.streams_checked !== r.source_updated || SPOTS.has(r.kind) || usableSidecar(r.source_key));
   const save = db.prepare(`UPDATE items SET duration_ms = ?, video_height = ?, audio_stream = ?, audio_lang = ?, subs = ?,
     playable = ?, unplayable_reason = ?, streams_checked = ?, cues = ? WHERE id = ?`);
   const worker = async () => {
@@ -176,7 +177,10 @@ export async function scanLocal() {
       try {
         const p = await probe(r.source_key);
         const video = p.streams.find((s) => s.codec_type === "video" && !s.disposition?.attached_pic);
-        const t = video ? chooseTracks([...fromFfprobeStreams(p.streams), ...sidecarStreams(r.source_key)], { showTitle: r.show_title }) : { playable: false, reason: "no video track" };
+        let t = video ? chooseTracks([...fromFfprobeStreams(p.streams), ...sidecarStreams(r.source_key)], { showTitle: r.show_title }) : { playable: false, reason: "no video track" };
+        // Commercials, clips and eyecatches play whatever language they're in (a Japanese
+        // eyecatch jingle, an uploader's wrong language tag); only shows need subtitles.
+        if (SPOTS.has(r.kind) && video && !t.playable && /subtitles/.test(t.reason || "")) t = { ...t, playable: true, reason: null, subs: { mode: "none" } };
         if (t.subs?.mode === "sidecar") {
           // Copy it where the player looks: data\subs\<id>.ass or .srt.
           mkdirSync(SUBS_DIR, { recursive: true });
