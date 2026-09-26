@@ -124,18 +124,17 @@ function remember(rows) {
 let breakCounter = 0;
 const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
 
-// Does a break inside this show/movie get eyecatches? Never anime (Claude's anime tag):
-// anime has its own eyecatches built in, so ours would double up. Otherwise
-// broadcast.eyecatches: "tv" (whatever Claude judged would have aired with
-// network-TV-style breaks: tagging/breaks.js), "all", or "none". Per show for episodes,
+// Does a break inside this show/movie get eyecatches? broadcast.eyecatches: "tv"
+// (whatever Claude judged would have aired with network-TV-style breaks:
+// tagging/breaks.js), "all", or "none". Anime counts like anything else; pickEyecatch
+// just never uses the show's own eyecatches (they'd double up). Per show for episodes,
 // per item for movies.
 function wantsEyecatches(row, mode) {
   if (!row || (mode !== "tv" && mode !== "all")) return false;
   const db = getDb();
   const r = row.kind === "episode" && row.show_title
-    ? db.prepare("SELECT anime, tv_breaks FROM shows WHERE title = ?").get(row.show_title)
-    : db.prepare("SELECT t.anime, i.tv_breaks FROM items i LEFT JOIN tags t ON t.item_id = i.id WHERE i.id = ?").get(row.id);
-  if (r?.anime) return false;
+    ? db.prepare("SELECT tv_breaks FROM shows WHERE title = ?").get(row.show_title)
+    : db.prepare("SELECT tv_breaks FROM items WHERE id = ?").get(row.id);
   return mode === "all" || !!r?.tv_breaks;
 }
 
@@ -155,7 +154,15 @@ function pickEyecatch(show, avoid) {
   const dirOf = (r) => { const parts = relative(root, r.source_key).split(sep); return parts.length > 1 ? parts[0] : ""; };
   const name = normTitle(String(show?.show_title || show?.title || "").replace(/\s*\((?:(?:19|20)\d{2}|US|UK)\)\s*$/i, ""));
   // "Tengen Toppa Gurren Lagann" is the folder of the show catalogued as "Gurren Lagann".
-  const isOwn = (r) => { const f = normTitle(dirOf(r)); return f && name.length >= 5 && (f === name || f.includes(name) || (f.length >= 5 && name.includes(f))); };
+  // A loose file (no folder) is the show's own when its title names the show, or one of
+  // its longer words ("Trigun Eyecatch" for "Trigun Stampede").
+  const words = String(show?.show_title || show?.title || "").split(/[^\p{L}\p{N}]+/u).map(normTitle).filter((w) => w.length >= 5 && !["season", "series", "movie"].includes(w));
+  const isOwn = (r) => {
+    if (name.length < 5) return false;
+    const f = normTitle(dirOf(r));
+    if (!f || SHARED_DIRS.has(dirOf(r).toLowerCase())) { const t = normTitle(r.title); return t.includes(name) || words.some((w) => t.includes(w)); }
+    return f === name || f.includes(name) || (f.length >= 5 && name.includes(f));
+  };
   const all = candidates("eyecatch", null, [], 60000).filter((r) => !isOwn(r));
   if (!all.length) return null;
   const notHere = all.filter((r) => !avoid.includes(r.id));
