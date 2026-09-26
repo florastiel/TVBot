@@ -106,14 +106,18 @@ function remember(rows) {
 let breakCounter = 0;
 const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
 
-// Is this show/movie anime (Claude's tag: per show for episodes, per item for movies)?
-function isAnime(row) {
-  if (!row) return false;
+// Does a break inside this show/movie get eyecatches? broadcast.eyecatches: "all", "none",
+// "anime" (Claude's anime tag), or "tv" (anime, plus whatever Claude judged would have
+// aired with network-TV-style breaks: tagging/breaks.js). Per show for episodes, per item
+// for movies.
+function wantsEyecatches(row, mode) {
+  if (mode === "all") return true;
+  if (!row || (mode !== "anime" && mode !== "tv")) return false;
   const db = getDb();
   const r = row.kind === "episode" && row.show_title
-    ? db.prepare("SELECT anime FROM shows WHERE title = ?").get(row.show_title)
-    : db.prepare("SELECT anime FROM tags WHERE item_id = ?").get(row.id);
-  return !!r?.anime;
+    ? db.prepare("SELECT anime, tv_breaks FROM shows WHERE title = ?").get(row.show_title)
+    : db.prepare("SELECT t.anime, i.tv_breaks FROM items i LEFT JOIN tags t ON t.item_id = i.id WHERE i.id = ?").get(row.id);
+  return !!r?.anime || (mode === "tv" && !!r?.tv_breaks);
 }
 
 const normTitle = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
@@ -141,8 +145,8 @@ function pickEyecatch(show, avoid) {
 
 // A commercial break. Between shows (inside: false): between_spots videos, the first
 // sometimes a clip. Inside a show: one commercial (with inside_spots 2, a second one when
-// both are short_spot_seconds or less), bookended by eyecatches (broadcast.eyecatches:
-// "anime" = only in anime, "all", or "none"). Each at most max_spot_minutes, from
+// both are short_spot_seconds or less), bookended by eyecatches where wantsEyecatches
+// says so (broadcast.eyecatches). Each at most max_spot_minutes, from
 // different groups. show: the row of the show the break is inside.
 export function makeBreak(plex, { theme = null, inside = false, show = null } = {}) {
   const b = config.broadcast;
@@ -161,7 +165,7 @@ export function makeBreak(plex, { theme = null, inside = false, show = null } = 
     const first = add("commercial", Math.min(maxMs, 60000)); // mid-show: a minute at most
     if (b.inside_spots > 1 && first && first.duration_ms <= shortMs) add("commercial", shortMs);
     const mode = String(b.eyecatches || "none").toLowerCase();
-    if (rows.length && (mode === "all" || (mode === "anime" && isAnime(show)))) {
+    if (rows.length && wantsEyecatches(show, mode)) {
       const into = pickEyecatch(show, rows.map((x) => x.id));
       const outOf = pickEyecatch(show, [...rows, into].filter(Boolean).map((x) => x.id)) || into;
       if (into) rows.unshift(into);

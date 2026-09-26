@@ -18,7 +18,7 @@ broadcast:
   between_spots: 2             # videos in the break between shows (the first is sometimes a clip, see clip_chance)
   inside_spots: 1              # commercials in a break inside a show (at a fade to black): 1, or 2 = add a second when both are short
   short_spot_seconds: 35       # with inside_spots 2: "short" means this long or less
-  eyecatches: anime            # an eyecatch before and after a break inside a show: anime (only anime), all, or none
+  eyecatches: tv               # an eyecatch before and after a break inside a show: tv (anime + what Claude judged would air with TV breaks: sitcoms, cartoons, network dramas, rom-coms...), anime, all, or none
   # A folder of commercials counts as one brand (so 88 Pop-Tarts ads don't take over);
   # folders named here are packs of many different ads, and each file counts on its own.
   variety_folders: ["commercialpack1", "Collectionof90sCommercials"]

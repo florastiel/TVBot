@@ -162,6 +162,11 @@ const MIGRATIONS = [
   -- Another copy of the same episode/movie is used instead (catalog/dedupe.js).
   ALTER TABLE items ADD COLUMN duplicate_of INTEGER;
   `,
+  `
+  -- Would it have aired with network-TV-style breaks (eyecatches)? tagging/breaks.js.
+  ALTER TABLE shows ADD COLUMN tv_breaks INTEGER;
+  ALTER TABLE items ADD COLUMN tv_breaks INTEGER;
+  `,
 ];
 
 let db;

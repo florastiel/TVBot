@@ -21,6 +21,7 @@ import { guideText, weekGrid, dayGuide } from "../schedule/guide.js";
 import { runTagging } from "../tagging/tagger.js";
 import { tagOrder } from "../tagging/order.js";
 import { tagEpisodeThemes } from "../tagging/episodes.js";
+import { tagBreaks } from "../tagging/breaks.js";
 import { getMeta, setMeta, getDb } from "../db.js";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -50,6 +51,7 @@ async function upkeep() {
     await runTagging().catch((e) => log.warn(`bot: tagging failed: ${e.message}`));
     await tagOrder().catch((e) => log.warn(`bot: order tagging failed: ${e.message}`));
     await tagEpisodeThemes().catch((e) => log.warn(`bot: episode theme tagging failed: ${e.message}`));
+    await tagBreaks().catch((e) => log.warn(`bot: TV-break tagging failed: ${e.message}`));
   }
   const until = scheduledUntil();
   if (until < Date.now() + 12 * 3600000) {

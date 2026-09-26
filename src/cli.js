@@ -50,11 +50,14 @@ Object.assign(commands, {
     if (flags.includes("--sample")) return t.sample();
     const { tagOrder } = await import("./tagging/order.js");
     const { tagEpisodeThemes } = await import("./tagging/episodes.js");
+    const { tagBreaks } = await import("./tagging/breaks.js");
     if (flags.includes("--order")) return tagOrder({ redo: flags.includes("--redo") });
     if (flags.includes("--episodes")) return tagEpisodeThemes({ redo: flags.includes("--redo") });
+    if (flags.includes("--breaks")) return tagBreaks({ redo: flags.includes("--redo") });
     await t.runTagging({ redo: flags.includes("--redo") });
     await tagOrder({ redo: flags.includes("--redo") });
     await tagEpisodeThemes({ redo: flags.includes("--redo") });
+    await tagBreaks({ redo: flags.includes("--redo") });
   },
 
   // Fill the schedule from the week's grid (free). --replace: new random picks after

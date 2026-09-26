@@ -18,7 +18,7 @@ const DEFAULTS = {
     short_spot_seconds: 35,
     inside_spots: 1,
     episode_breaks: 1,
-    eyecatches: "anime",
+    eyecatches: "tv",
     variety_folders: [],
     standing_slots: [],
     break_every_minutes: 8,
