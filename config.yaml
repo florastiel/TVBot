@@ -8,7 +8,7 @@ discord:
   admin_user_id: "*"           # who can use /tvadmin (skip, sync, regen...): a user ID, or "*" for anyone. Yours: ""
   daily_guide: true            # post the whole day's programming just after midnight
   guide_channel_id: ""         # where that goes (blank = the now-playing channel)
-  drop_thread_id: ""           # thread (or channel) where anyone can post links to add commercials ("clip" in the message: clips)
+  drop_thread_id: ""   # the "Commercials" thread: thread (or channel) where anyone can post links to add commercials ("clip" in the message: clips)
 
 broadcast:
   timezone: America/New_York
