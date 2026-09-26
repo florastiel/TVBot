@@ -8,6 +8,11 @@
 //  2. One copy of each episode (show + season + episode) and movie (title + year) is kept;
 //     the others get items.duplicate_of = the kept one, and are left out of the schedule
 //     and never read over the network.
+//  3. Local commercials/clips/shorts: the same file in several formats (archive.org
+//     downloads come as .mpg plus .mp4/.ogv copies) counts once; the biggest file, usually
+//     the original, is kept.
+import { statSync } from "node:fs";
+import { dirname, basename, extname } from "node:path";
 import { config } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
@@ -111,6 +116,24 @@ function markDuplicates(db) {
     dupGroups++;
     for (const r of g.slice(1)) { want.set(r.id, g[0].id); duplicates++; }
   }
+
+  // Step 3: one local file in several formats (same folder, same name).
+  const files = db.prepare(`SELECT id, source_key, playable, excluded FROM items
+    WHERE source = 'local' AND present = 1 AND kind IN ('commercial', 'clip', 'short')`).all();
+  const same = new Map();
+  for (const r of files) {
+    const key = `${dirname(r.source_key).toLowerCase()}|${basename(r.source_key, extname(r.source_key)).toLowerCase()}`;
+    if (!same.has(key)) same.set(key, []);
+    same.get(key).push(r);
+  }
+  const size = (r) => { try { return statSync(r.source_key).size; } catch { return 0; } };
+  for (const g of same.values()) {
+    if (g.length < 2) continue;
+    for (const r of g) r.size = size(r);
+    g.sort((a, b) => b.excluded - a.excluded || b.playable - a.playable || b.size - a.size || a.id - b.id);
+    dupGroups++;
+    for (const r of g.slice(1)) { want.set(r.id, g[0].id); duplicates++; }
+  }
   const current = db.prepare("SELECT id, duplicate_of FROM items WHERE duplicate_of IS NOT NULL").all();
   const set = db.prepare("UPDATE items SET duplicate_of = ? WHERE id = ?");
   let changed = 0;
@@ -125,7 +148,7 @@ export function dedupeCatalog() {
   return tx(() => {
     const renamed = lineUpShowNames(db);
     const r = markDuplicates(db);
-    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""})`);
+    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies/spots left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""})`);
     return { renamed, ...r };
   });
 }

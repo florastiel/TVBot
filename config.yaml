@@ -13,7 +13,12 @@ broadcast:
   timezone: America/New_York
   grid_minutes: 5              # planned block times round to this; while the TV is on, times follow what actually played
   between_spots: 2             # videos in the break between shows (the first is sometimes a clip, see clip_chance)
-  short_spot_seconds: 35       # a break inside a show is one commercial, or two if both are this short
+  inside_spots: 1              # commercials in a break inside a show (at a fade to black): 1, or 2 = add a second when both are short
+  short_spot_seconds: 35       # with inside_spots 2: "short" means this long or less
+  # A folder of commercials counts as one brand (so 88 Pop-Tarts ads don't take over);
+  # folders named here are packs of many different ads, and each file counts on its own.
+  variety_folders: ["commercialpack1", "Collectionof90sCommercials"]
+  episode_breaks: 1            # most breaks inside one episode (the one nearest the middle); 0 = none. Movies still get one about every 30 min
   break_every_minutes: 8       # no break between shows after less than this much show (back-to-back shorts)
   max_spot_minutes: 3          # longest commercial/clip that plays in a break
   max_show_block_minutes: 75   # regular blocks of episodes are at most this long (movies and specials can run longer)

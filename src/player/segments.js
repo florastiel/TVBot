@@ -56,7 +56,7 @@ function candidates(kind, theme, exclude, maxMs) {
   const notIn = exclude.length ? `AND i.id NOT IN (${exclude.map(() => "?").join(",")})` : "";
   const cap = Number.isFinite(maxMs) ? maxMs : 1e12;
   const rows = getDb().prepare(`SELECT i.*, COALESCE(t.holiday, 'none') holiday FROM items i LEFT JOIN tags t ON t.item_id = i.id
-    WHERE i.kind = ? AND i.present = 1 AND i.playable = 1 AND NOT i.excluded AND i.duration_ms <= ? ${notIn}`).all(kind, cap, ...exclude);
+    WHERE i.kind = ? AND i.present = 1 AND i.playable = 1 AND NOT i.excluded AND i.duplicate_of IS NULL AND i.duration_ms <= ? ${notIn}`).all(kind, cap, ...exclude);
   const themed = theme && theme !== "none" ? rows.filter((r) => r.holiday === theme) : [];
   const plain = rows.filter((r) => r.holiday === "none");
   return themed.length ? themed : plain.length ? plain : rows;
@@ -64,13 +64,17 @@ function candidates(kind, theme, exclude, maxMs) {
 
 // A big batch (a playlist of 88 Pop-Tarts ads) shouldn't take over every break. Files
 // in the same subfolder form one group; loose files (and files straight in "youtube")
-// are each their own group. First a group is picked (bigger groups a bit more often:
-// weight = size, capped at GROUP_WEIGHT_CAP), avoiding groups already in this break;
-// then, within the group, something not played recently (or the least recent one).
+// are each their own group, and so are files in a broadcast.variety_folders folder (a
+// pack of many different ads, like an archive.org collection). First a group is picked
+// (bigger groups a bit more often: weight = size, capped at GROUP_WEIGHT_CAP), avoiding
+// groups already in this break; then, within the group, something not played recently
+// (or the least recent one).
 const GROUP_WEIGHT_CAP = 3;
 function groupOf(row, kind) {
   const root = kind === "clip" ? config.local.clips : config.local.commercials;
   const dir = relative(root || "", row.source_key).split(sep).slice(0, -1).join("/");
+  const variety = (config.broadcast.variety_folders || []).map((f) => String(f).toLowerCase());
+  if (dir && variety.includes(dir.split("/").at(-1).toLowerCase())) return row.source_key;
   return !dir || dir.toLowerCase() === "youtube" ? row.source_key : dir;
 }
 
@@ -103,8 +107,8 @@ let breakCounter = 0;
 const newBreakId = () => `b${++breakCounter}-${Date.now()}`;
 
 // A commercial break. Between shows (inside: false): between_spots videos, the first
-// sometimes a clip. Inside a show: one commercial, or two when both are short
-// (short_spot_seconds or less). Each at most max_spot_minutes, from different groups.
+// sometimes a clip. Inside a show: one commercial (with inside_spots 2, a second one when
+// both are short_spot_seconds or less). Each at most max_spot_minutes, from different groups.
 export function makeBreak(plex, { theme = null, inside = false } = {}) {
   const b = config.broadcast;
   const maxMs = b.max_spot_minutes * 60000;
@@ -120,7 +124,7 @@ export function makeBreak(plex, { theme = null, inside = false } = {}) {
   };
   if (inside) {
     const first = add("commercial", Math.min(maxMs, 60000)); // mid-show: a minute at most
-    if (first && first.duration_ms <= shortMs) add("commercial", shortMs);
+    if (b.inside_spots > 1 && first && first.duration_ms <= shortMs) add("commercial", shortMs);
   } else {
     for (let k = 0; k < b.between_spots; k++) add(k === 0 && Math.random() < b.clip_chance ? "clip" : "commercial", maxMs);
   }

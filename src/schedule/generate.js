@@ -23,7 +23,7 @@ let avgSpot = null;
 export function blockLength(contentMs, items = 1) {
   if (avgSpot === null) {
     const r = getDb().prepare(`SELECT AVG(duration_ms) a FROM items WHERE kind IN ('commercial', 'clip') AND present = 1 AND playable = 1
-      AND duration_ms <= ?`).get(config.broadcast.max_spot_minutes * 60000);
+      AND duplicate_of IS NULL AND duration_ms <= ?`).get(config.broadcast.max_spot_minutes * 60000);
     avgSpot = r?.a || 30000;
   }
   const ads = (items * config.broadcast.between_spots + (contentMs / 600000) * 1.3) * avgSpot;

@@ -55,14 +55,30 @@ const PIECE_MS = 30 * 60000; // long shows and movies get a break about this oft
 // Cut items into pieces at their original commercial-break points (black + silence,
 // found in download-ahead). Items without any: long ones (40+ minutes) in pieces of about
 // PIECE_MS, at the chapter point nearest each cut (within 10 minutes), or right at it
-// if the file has no chapters and split_without_chapters is on.
+// if the file has no chapters and split_without_chapters is on. Episodes get at most
+// broadcast.episode_breaks breaks inside them (movies aren't limited).
 export function planPieces(items) {
   const out = [];
+  const cap = config.broadcast.episode_breaks;
   for (const r of items) {
-    const found = (r.ad_cues ? JSON.parse(r.ad_cues) : []).filter((c) => c > 3 * 60000 && c < r.duration_ms - 3 * 60000);
+    const limit = r.kind === "episode" ? cap : Infinity;
+    if (limit <= 0) { out.push({ row: r, from: 0, to: r.duration_ms }); continue; }
+    let found = [];
+    for (const c of (r.ad_cues ? JSON.parse(r.ad_cues) : []).filter((c) => c > 3 * 60000 && c < r.duration_ms - 3 * 60000)) {
+      if (c - (found.at(-1) ?? 0) >= 3 * 60000) found.push(c);
+    }
+    if (found.length > limit) {
+      // Keep the ones nearest evenly spaced points (one break: the one nearest the middle).
+      const keep = new Set();
+      for (let k = 1; k <= limit; k++) {
+        const target = (r.duration_ms * k) / (limit + 1);
+        keep.add(found.filter((c) => !keep.has(c)).reduce((x, c) => (Math.abs(c - target) < Math.abs(x - target) ? c : x)));
+      }
+      found = found.filter((c) => keep.has(c));
+    }
     if (found.length) {
       let from = 0;
-      for (const c of found) if (c - from >= 3 * 60000) { out.push({ row: r, from, to: c }); from = c; }
+      for (const c of found) { out.push({ row: r, from, to: c }); from = c; }
       out.push({ row: r, from, to: r.duration_ms });
       continue;
     }
@@ -74,7 +90,7 @@ export function planPieces(items) {
         .sort((x, y) => Math.abs(x - r.duration_ms / 2) - Math.abs(y - r.duration_ms / 2))[0];
       if (mid) { out.push({ row: r, from: 0, to: mid }, { row: r, from: mid, to: r.duration_ms }); continue; }
     }
-    const n = r.duration_ms >= 40 * 60000 ? Math.max(1, Math.round(r.duration_ms / PIECE_MS)) : 1;
+    const n = r.duration_ms >= 40 * 60000 ? Math.min(limit + 1, Math.max(1, Math.round(r.duration_ms / PIECE_MS))) : 1;
     let from = 0;
     for (let k = 1; k < n; k++) {
       const target = (r.duration_ms * k) / n;

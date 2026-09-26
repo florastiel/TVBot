@@ -23,7 +23,8 @@ export function parseDecade(s) {
 function importFolder(kind, root) {
   const file = join(root, "tags.csv");
   const db = getDb();
-  const items = db.prepare("SELECT id, source_key FROM items WHERE source = 'local' AND kind = ? AND present = 1").all(kind);
+  // One row per commercial: other formats of the same file (dedupe) share the kept one's row.
+  const items = db.prepare("SELECT id, source_key FROM items WHERE source = 'local' AND kind = ? AND present = 1 AND duplicate_of IS NULL").all(kind);
 
   const rows = existsSync(file)
     ? parse(readFileSync(file, "utf8").replace(/^﻿/, ""), { columns: (h) => h.map((c) => c.trim().toLowerCase()), skip_empty_lines: true, relax_column_count: true })
@@ -40,7 +41,9 @@ function importFolder(kind, root) {
       const name = relative(root, it.source_key);
       const row = byName.get(name.toLowerCase());
       if (!row) {
-        rows.push({ filename: name, decade: "", holiday: "", notes: "" });
+        // A year or "90s" in the name is almost always when it aired: start from that.
+        const era = name.match(/\b(19[4-9]\d|20[0-3]\d)\b/)?.[1] ?? name.match(/\b([4-9]0)'?s\b/i)?.[1]?.concat("s") ?? "";
+        rows.push({ filename: name, decade: era, holiday: "", notes: "" });
         added++;
         continue;
       }
