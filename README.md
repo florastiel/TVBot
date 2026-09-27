@@ -385,18 +385,18 @@ not yours. The controller bot is a normal, allowed bot.
 ## Weather
 
 A weather report airs once or twice a day (`weather.times` in `config.yaml`, default 7:00 and 18:00), in the first
-commercial break between shows after that time. It is made about 25 minutes before by the bot: for each place in
-`weather.locations` it reads the National Weather Service forecast and alerts (US only, no key), draws a scene
-(the NWS radar loop for that place's `radar` station, cards for the next three periods, an alert banner) and has a
-built-in Windows voice (`weather.voice`, `Microsoft Zira Desktop` or `Microsoft David Desktop`) read a script filled
-in from those numbers. Nothing is written by an AI. If no break comes within `weather.window_hours` (3) of the time,
+commercial break between shows after that time. It is made about 15 minutes before by the bot: for each place in
+`weather.locations` it reads the National Weather Service forecast, hourly forecast, and alerts (US only, no key),
+and builds one clean static board - every place, stacked vertically, its next 8 hours side by side (`src/weather/board.js`,
+rendered as real HTML/CSS via a headless Puppeteer browser and screenshotted to a PNG, not hand-placed ffmpeg text).
+A short voice-over (a sentence or two per place, more only for real rain/snow/an alert/an extreme temp) plays under
+it start to finish. Nothing is written by an AI. If no break comes within `weather.window_hours` (3) of the time,
 that report is skipped. `tv.cmd weather` makes one right now and prints where the mp4 is, without airing it.
-Places: `{ name, lat, lon, radar }`; the radar station is on radar.weather.gov.
+Places: `{ name, lat, lon }`.
 
-Character voices: `weather.voices` is a pool of voice models (Applio RVC, installed under `tools\rvc`, which git ignores:
-a Python 3.12 environment, Applio, and each voice as `tools\rvc\models\<name>\model.pth` + `model.index`). Each
-location gets a different presenter picked at random from the pool. The presenter speaks in a Google or Windows
-voice first, then `scripts\rvc-convert.py` converts it to the character on the CPU at low priority (about 7 minutes
-for a whole report), and the presenters hand off to each other ("I'll hand it off now to Deku for Long Island").
-`/weather` and `tv.cmd weather --fast` skip the character voices. Only download models you trust, and scan
-them first: `tools\rvc\venv312\Scripts\picklescan.exe --path model.pth`.
+Voices: `weather.voices` is a weighted pool - one is picked per place (they repeat freely; there's no per-voice setup
+cost like the old character-voice models had). Each entry is `"edge:<voice>"` (a Microsoft/Azure neural voice via
+edge-tts) or `"google:<lang>"` (the Google Translate TTS voice for that language code); `"edge:random"` /
+`"google:random"` pick randomly from that entry's `pool` (edge) or a built-in language grab-bag (google) each time
+that tier comes up. Numbers in the script are spelled out as words ("eighty-nine degrees," not "89") before any of
+this, because a non-English voice reading a bare digit tends to read it in its own language instead of English.

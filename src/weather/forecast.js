@@ -21,10 +21,13 @@ async function getJson(url) {
 // weather.locations in config.yaml: [{ name, lat, lon, radar? }]
 export const locations = () => (config.weather?.locations || []).filter((l) => l?.name && l.lat != null && l.lon != null);
 
-// { name, radar, periods: [{ name, day, temp, short, pop, wind, dir }], alerts: ["Flood Watch"] }
+const HOURS_SHOWN = 8;
+
+// { name, periods: [{ name, day, temp, short, pop, wind, dir }], hours: [{ time, temp, short, pop }], alerts: [...] }
 export async function fetchPlace(loc) {
   const point = await getJson(`https://api.weather.gov/points/${loc.lat},${loc.lon}`);
   const forecast = await getJson(point.properties.forecast);
+  const hourly = await getJson(point.properties.forecastHourly).catch(() => null);
   const alerts = await getJson(`https://api.weather.gov/alerts/active?point=${loc.lat},${loc.lon}`)
     .then((a) => [...new Set((a.features || []).map((f) => f.properties.event))].filter((e) => e && !/Special Weather Statement/i.test(e)).slice(0, 2))
     .catch(() => []);
@@ -32,51 +35,52 @@ export async function fetchPlace(loc) {
     name: x.name, day: x.isDaytime, temp: x.temperature, short: x.shortForecast,
     pop: x.probabilityOfPrecipitation?.value ?? 0, wind: x.windSpeed, dir: x.windDirection,
   }));
-  return { name: loc.name, radar: loc.radar || point.properties.radarStation, periods, alerts };
+  const hours = (hourly?.properties?.periods || []).slice(0, HOURS_SHOWN).map((x) => ({
+    time: x.startTime, temp: x.temperature, short: x.shortForecast, pop: x.probabilityOfPrecipitation?.value ?? 0,
+  }));
+  return { name: loc.name, periods, hours, alerts };
 }
-
-const DIRS = { N: "north", NNE: "north northeast", NE: "northeast", ENE: "east northeast", E: "east", ESE: "east southeast", SE: "southeast", SSE: "south southeast",
-  S: "south", SSW: "south southwest", SW: "southwest", WSW: "west southwest", W: "west", WNW: "west northwest", NW: "northwest", NNW: "north northwest" };
 
 const pick = (...options) => options[Math.floor(Math.random() * options.length)];
 const WET = /rain|shower|storm|drizzle|snow|sleet|flurr|ice/i;
 const lower = (s) => String(s).toLowerCase();
-// 54 -> "mid 50s", 51 -> "low 50s", 58 -> "upper 50s"
-const band = (t) => { const n = Math.round(t); if (n < 10) return `around ${n}`; const o = n % 10; return `${o <= 2 ? "low" : o <= 6 ? "mid" : "upper"} ${Math.trunc(n / 10) * 10}s`; };
 
-// What the weathercaster says at the map for one place: sentences filled in from the real
-// forecast (the wording is only varied at random; every claim comes from the numbers).
-export function spoken(place) {
-  const [a, b] = place.periods;
-  const n = place.name;
-  const wet = a && (WET.test(a.short) || a.pop >= 50);
-  const say = [];
-  say.push(wet
-    ? pick(`Taking a look at the radar behind me, ${n} is going to want the umbrella.`,
-      `The radar behind me tells the story for ${n}: it's going to be a wet one.`,
-      `If you're in ${n}, keep an eye on the radar behind me, because there's rain in the forecast.`)
-    : pick(`Looking at the radar behind me, ${n} is nice and quiet.`,
-      `Over in ${n}, the map behind me is looking pretty calm.`,
-      `Good news for ${n}: nothing on the radar behind me to worry about.`));
-  if (place.alerts.length) {
-    say.push(`We do have ${place.alerts.map((x) => `a ${x}`).join(" and ")} in effect, so ${pick("stay weather aware.", "keep an eye on that.", "be careful out there.")}`);
-  }
-  if (a) {
-    say.push(`${a.name}: ${lower(a.short)}. ${a.day ? "Highs" : "Lows"} in the ${band(a.temp)}, right around ${a.temp} degrees.`);
-    if (a.pop >= 20) say.push(`${pick("We're looking at a", "There's a")} ${a.pop} percent chance of precipitation${a.pop >= 70 ? pick(", so grab the umbrella.", ", so don't leave home without the rain gear.") : "."}`);
-    if (a.temp <= 40) say.push(pick("Bundle up out there.", "You'll want a warm coat."));
-    else if (a.temp >= 85) say.push(pick("It's going to feel hot out there.", "Stay cool and drink plenty of water."));
-    if (a.dir && a.wind) say.push(`Winds will be ${DIRS[a.dir] ? `out of the ${DIRS[a.dir]}` : a.dir} at ${a.wind.replace(/mph/i, "miles per hour")}.`);
-  }
-  if (b) say.push(`${pick("Now, looking ahead to", "Heading into", "And then for")} ${b.name}: ${lower(b.short)}, ${b.day ? "high" : "low"} of ${b.temp}${b.pop >= 20 ? `, with a ${b.pop} percent chance of precipitation` : ""}.`);
-  return say.join(" ");
+// Spells out numbers as words ("89" -> "eighty-nine"): a non-English voice reading a plain
+// digit tends to switch into its own language's number words, which defeats the point of
+// putting it in the rotation at all - spelled-out English words get read (badly) as English.
+const ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+  "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+const TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+export function numWord(n) {
+  n = Math.round(n);
+  const neg = n < 0;
+  n = Math.abs(n);
+  let s;
+  if (n < 20) s = ONES[n];
+  else if (n < 100) s = TENS[Math.floor(n / 10)] + (n % 10 ? `-${ONES[n % 10]}` : "");
+  else if (n < 1000) s = `${ONES[Math.floor(n / 100)]} hundred${n % 100 ? ` ${numWord(n % 100)}` : ""}`;
+  else s = String(n); // out of range for anything weather actually produces
+  return neg ? `minus ${s}` : s;
 }
+// Every bare integer in a string, spelled out (leaves decimals like "0.5" alone - rare in practice).
+export const numbersToWords = (s) => String(s).replace(/-?\d+\b(?!\.\d)/g, (m) => numWord(Number(m)));
 
-// One presenter passing to the next.
-export const handoff = (nextName, placeName) => pick(
-  `I'll hand it off now to ${nextName} for ${placeName}.`,
-  `Let's go to ${nextName} for ${placeName}.`,
-  `Over to you, ${nextName}, for ${placeName}.`,
-  `${nextName}, what's it looking like in ${placeName}?`,
-  `I'll pass it along to ${nextName} for ${placeName}.`);
-export const thanks = (prevName) => pick(`Thanks, ${prevName}.`, `Thank you, ${prevName}.`, `Appreciate it, ${prevName}.`);
+// What gets spoken for one place: at most a sentence or two, unless there's something worth
+// mentioning (real rain/snow chance, an alert, or an extreme temp) - not a full local-news segment.
+export function spoken(place) {
+  const [a] = place.periods;
+  const n = place.name;
+  if (!a) return `${n}: no forecast available right now.`;
+  const wet = WET.test(a.short) || a.pop >= 40;
+  const say = [`In ${n}, ${lower(a.short)}, ${numWord(a.temp)} degrees.`];
+  if (place.alerts.length) {
+    say.push(`There's ${place.alerts.map((x) => `a ${x}`).join(" and ")} in effect.`);
+  } else if (wet && a.pop >= 40) {
+    say.push(`${pick("Looks like", "That's")} a ${numWord(a.pop)} percent chance of precipitation${a.pop >= 70 ? ", so grab an umbrella." : "."}`);
+  } else if (a.temp <= 32) {
+    say.push(pick("Bundle up out there.", "It'll be a cold one."));
+  } else if (a.temp >= 90) {
+    say.push(pick("Stay cool out there.", "It's going to feel hot."));
+  }
+  return numbersToWords(say.join(" "));
+}

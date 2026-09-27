@@ -139,13 +139,24 @@ claude:
   # buckets and the template. api: Claude API calls plan the grid and new buckets weekly.
   scheduling: local
 
-# A weather report from the National Weather Service (US places), read by a built-in Windows voice,
-# in the first commercial break after each time. One scene per location, in this order. Remove this
-# section (or leave "times" empty) for no weather. "radar" is the NWS radar station (radar.weather.gov).
+# A weather report from the National Weather Service (US places): one clean static board (every
+# place, its next few hours side by side), read over by a different TTS voice per place. In the
+# first commercial break after each time. Remove this section (or leave "times" empty) for no weather.
 weather:
   times: ["07:00", "18:00"]
   window_hours: 3
-  voice: "Microsoft Zira Desktop"
-  rate: 0
+  rate: 0                     # -10 (slow) to 10 (fast), applies to the Microsoft/edge-tts voices
   locations:
-    - { name: "New York, New York", lat: 40.7128, lon: -74.006, radar: KOKX }
+    - { name: "New York, New York", lat: 40.7128, lon: -74.006 }
+  # Who reads it: one is picked per place, at random by weight (they can repeat - there's no
+  # shortage like there was with character-voice models). "edge:<voice>" is a Microsoft/Azure
+  # neural voice (via edge-tts); "google:<lang>" is the Google Translate TTS voice for that
+  # language, any code. The special values "edge:random" / "google:random" pick randomly from
+  # `pool` (edge) or a built-in language grab-bag (google) each time that tier comes up. Leave
+  # this out entirely for a sensible default pool.
+  voices:
+    - { name: "Tita", voice: "google:fil", weight: 50 }
+    - { name: "the Bengali voice", voice: "google:bn", weight: 15 }
+    - { name: "the English voice", voice: "google:en", weight: 12 }
+    - { name: "a Microsoft voice", voice: "edge:random", weight: 15, pool: ["en-US-SteffanNeural", "en-US-GuyNeural", "en-US-DavisNeural", "en-US-TonyNeural", "en-US-JasonNeural"] }
+    - { name: "a mystery voice", voice: "google:random", weight: 8 }

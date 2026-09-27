@@ -2,15 +2,14 @@
 // makes each one a little before its time (makeReport); the player puts it into the first
 // commercial break after that time (takeWeather in onair.js), once.
 import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { config, ROOT } from "../config.js";
+import { config } from "../config.js";
 import { getMeta, setMeta } from "../db.js";
 import { log } from "../log.js";
 import { localDay, localToUtc } from "../schedule/time.js";
 import { fetchPlace, locations } from "./forecast.js";
 import { renderReport } from "./render.js";
 
-const LEAD_MS = 45 * 60000; // made this long before its time (with character voices it takes about 7 minutes)
+const LEAD_MS = 15 * 60000; // made this long before its time
 
 // The report slot we're in (or about to be in): { key: "2026-09-27 07:00", start }.
 export function currentSlot(now = Date.now()) {
@@ -28,23 +27,13 @@ export function currentSlot(now = Date.now()) {
 
 const greeting = (ms) => { const h = Number(new Intl.DateTimeFormat("en-US", { timeZone: config.broadcast.timezone, hourCycle: "h23", hour: "2-digit" }).format(new Date(ms))); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; };
 
-// A different presenter for each place, at random from config weather.voices (the pool is
-// only the ones whose model files are installed in tools\rvc\models); reused if there are more places than voices.
-function choosePresenters(count) {
-  const pool = (config.weather?.voices || []).filter((v) => v?.name && v.model && existsSync(join(ROOT, "tools", "rvc", "models", String(v.model), "model.pth")));
-  if (!pool.length) return [];
-  const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  return Array.from({ length: count }, (_, i) => shuffled[i % shuffled.length]);
-}
-
 // Fetch every place and render the video for this slot. Returns what takeWeather() needs.
-// fast: skip the character voices (about a minute instead of several) for on-demand reports.
-export async function makeReport(slot, { fast = false } = {}) {
+export async function makeReport(slot) {
   const results = await Promise.allSettled(locations().map(fetchPlace));
   const places = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
   for (const r of results) if (r.status === "rejected") log.warn(`weather: ${r.reason.message}`);
   if (!places.length) throw new Error("no forecast could be fetched");
-  const out = await renderReport(places, greeting(slot.start), slot.key, fast ? [] : choosePresenters(places.length));
+  const out = await renderReport(places, greeting(slot.start), slot.key);
   const ready = { slot: slot.key, at: Date.now(), ...out };
   setMeta("weather_ready", JSON.stringify(ready));
   return ready;
@@ -81,7 +70,7 @@ export async function requestWeather() {
     ready = readyReport();
     if (!ready || Date.now() - ready.at > 90 * 60000) {
       busy = true;
-      try { ready = await makeReport({ key: `request ${new Date().toISOString()}`, start: Date.now() }, { fast: true }); } finally { busy = false; }
+      try { ready = await makeReport({ key: `request ${new Date().toISOString()}`, start: Date.now() }); } finally { busy = false; }
     }
   }
   setMeta("weather_force", "1");

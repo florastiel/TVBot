@@ -33,7 +33,7 @@ const DEFAULTS = {
     idle_leave_minutes: 5,
     no_premiere_hours: ["02:30", "07:00"],
   },
-  weather: { enabled: true, times: [], window_hours: 3, voice: "Microsoft Zira Desktop", rate: 0, locations: [], voices: [] },
+  weather: { enabled: true, times: [], window_hours: 3, rate: 0, locations: [], voices: [] },
   plex: { server_name: "", libraries: [], include_unmatched: false, include_show_only_matches: true },
   shows: { random: [], in_order: [], never: [], aliases: {}, rename: {}, prefer_source: {} },
   buckets: { shuffle: [], in_order: [] },
