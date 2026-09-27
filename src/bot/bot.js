@@ -117,7 +117,7 @@ export function helpEmbeds() {
       "**Pause and catch up** (people in the TV's voice channel)",
       "• `/tvpause` or the **Pause** button: freezes it on a \"Paused\" card. `/tvresume` picks up at the same second, and the TV catches up by cutting ads.",
       "• `/tvlive`: skip the catch-up and jump to what's on now.",
-      "• **Skip commercials** button (on the break message): ends the current break.",
+      "• **Skip commercials** button (on the break message) or `/skipcommercials`: ends the current break.",
       "• `/commercials minutes: 5`: want ads? Cuts to that many minutes (1 to 20) of commercials and clips right now; the show picks up at the same second after.",
       "",
       "**What's on**",
@@ -159,6 +159,7 @@ const COMMANDS = [
   new SlashCommandBuilder().setName("tvlive").setDescription("Jump back to what the schedule says is on right now"),
   new SlashCommandBuilder().setName("commercials").setDescription("Cut to some commercials now; the show picks up where it left off")
     .addIntegerOption((o) => o.setName("minutes").setDescription("How many minutes of commercials (1 to 20)").setRequired(true).setMinValue(1).setMaxValue(20)),
+  new SlashCommandBuilder().setName("skipcommercials").setDescription("Skip the commercials that are on right now (same as the Skip commercials button)"),
   new SlashCommandBuilder().setName("tvadmin").setDescription("TV admin controls")
     // admin_user_id "*": anyone may use it, so don't hide it from people without Manage Server.
     .setDefaultMemberPermissions(ANYONE_ADMIN ? null : PermissionFlagsBits.ManageGuild)
@@ -473,6 +474,13 @@ export async function startBot() {
         flagBadBot(`BADBOT ${new Date().toLocaleString("sv-SE", { hour12: false })}  from ${by}\n  said: ${text || "(nothing)"}\n  on air: ${on}  |  player: ${st ? `${st.state}, ${st.viewers ?? "?"} watching` : "not answering"}`,
           [["player log, last 40 lines", tailLog("player", 40)], ["bot log, last 15 lines", tailLog("bot", 15)]]);
         return i.reply({ content: "Flagged in the logs at this moment. Thanks!", ...ephemeral });
+      }
+      // /skipcommercials: the button's job as a command (people in the TV's voice channel).
+      if (i.isChatInputCommand() && i.commandName === "skipcommercials") {
+        if (!(await inTvChannel(i))) return i.reply({ content: "Only people in the TV's voice channel can do that.", ...ephemeral });
+        const r = await callPlayer("/skip-break", {});
+        if (!r?.skipped) return i.reply({ content: "No commercials on right now.", ...ephemeral });
+        return i.reply({ content: "Commercials skipped.", ...ephemeral }); // the break message goes away with the break
       }
       // /commercials: anyone watching in the TV's voice channel.
       if (i.isChatInputCommand() && i.commandName === "commercials") {
