@@ -43,10 +43,17 @@ scripts/program/tv.mjs ...` from the project folder (that's the only command all
 - Seasonal buckets get `active_from`/`active_to` (MM-DD). Halloween, Thanksgiving and
   Christmas *episode* and *movie* buckets are made automatically from the holiday tags;
   make more specific seasonal buckets on top of them.
-- Anime never gets eyecatches, nothing to do there. Don't touch `config.yaml`, the
-  schedule (`blocks`), or anything outside buckets and `programming.yaml`. Never delete
-  titles; `exclude` only for a broken or mislabeled file (say why).
+- Don't touch `config.yaml`, the schedule (`blocks`), or anything outside buckets and
+  `programming.yaml`. Never delete titles; `exclude` only for a broken or mislabeled
+  file (say why).
 - Keep it proportionate: a typical week is a handful of changes.
+- Media-type mix: a slot's pool picker only looks at which bucket in the pool was used
+  longest ago, never at genre, so a pool leaning heavily anime will draw anime often by
+  chance even if the catalog overall isn't anime-heavy (checked 2026-09-27: about a
+  quarter of airtime is anime, evenly spread across dayparts - not actually skewed). When
+  adding a bucket to a pool or building a new one, avoid making any single pool mostly
+  anime buckets (see `LATE_B` for what to avoid piling onto further), so two anime blocks
+  back to back stays the exception, not the rule.
 
 ## Programming notes (the owner's wishlist; build these as the titles arrive)
 
