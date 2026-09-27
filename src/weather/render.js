@@ -60,6 +60,12 @@ function sceneGraph(place, dir, hasRadar, extra = {}) {
 // name reads it with SAPI. If Google can't be reached the Windows voice steps in.
 async function speak(dir, id, script) {
   const v = String(config.weather?.voice || "");
+  if (/^edge:/i.test(v)) {
+    try { return edgeSpeak(dir, id, script, v.slice(5).trim() || "en-US-AriaNeural"); }
+    catch (e) { log.warn(`weather: Edge voice failed (${e.message}); using Google`); }
+    try { return await googleSpeak(dir, id, script, "en"); }
+    catch (e) { log.warn(`weather: Google voice failed (${e.message}); using the Windows voice`); }
+  }
   if (/^google:/i.test(v)) {
     try { return await googleSpeak(dir, id, script, v.slice(7).trim() || "en"); }
     catch (e) { log.warn(`weather: Google voice failed (${e.message}); using the Windows voice`); }
@@ -105,6 +111,23 @@ async function googleSpeak(dir, id, script, lang) {
   const wav = join(dir, `${id}.wav`);
   const r = spawnSync(FFMPEG(), ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", list, "-ar", "48000", "-ac", "2", wav], { encoding: "utf8", timeout: 60000, windowsHide: true });
   if (r.status !== 0) throw new Error(`joining the voice pieces: ${String(r.stderr).trim().split("\n").pop()}`);
+  const d = execFileSync(FFPROBE(), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", wav], { encoding: "utf8" });
+  return { wav, seconds: Number(d.trim()) };
+}
+
+// Microsoft Edge's online neural voices via the edge-tts in the RVC venv: much livelier than Google's.
+// voice: "edge:en-US-AriaNeural"; weather.rate (-10..10) maps to a +-% speed change.
+function edgeSpeak(dir, id, script, voice) {
+  const exe = join(ROOT, "tools", "rvc", "venv312", "Scripts", "edge-tts.exe");
+  if (!existsSync(exe)) throw new Error("edge-tts is not installed");
+  const mp3 = join(dir, `${id}_edge.mp3`);
+  const wav = join(dir, `${id}.wav`);
+  const pct = (config.weather?.rate ?? 0) * 3 + 8;
+  const args = ["--voice", voice, `--rate=${pct >= 0 ? "+" : ""}${pct}%`, "--text", script, "--write-media", mp3];
+  const r = spawnSync(exe, args, { encoding: "utf8", timeout: 120000, windowsHide: true });
+  if (r.status !== 0 || !existsSync(mp3)) throw new Error(String(r.stderr || r.error || "no audio").trim().split("\n").pop());
+  const c = spawnSync(FFMPEG(), ["-hide_banner", "-loglevel", "error", "-y", "-i", mp3, "-ar", "48000", "-ac", "2", wav], { encoding: "utf8", timeout: 60000, windowsHide: true });
+  if (c.status !== 0) throw new Error(`converting the voice: ${String(c.stderr).trim().split("\n").pop()}`);
   const d = execFileSync(FFPROBE(), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", wav], { encoding: "utf8" });
   return { wav, seconds: Number(d.trim()) };
 }
