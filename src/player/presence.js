@@ -1,5 +1,5 @@
 // Rich presence on the streamer account: what's on, shown in its profile and the
-// member list ("Watching TV / The Good Doctor / S3E3 "Claire" / 12:34 left").
+// member list ("Watching The Good Doctor / S3E3 "Claire" / Up next: ... / progress bar").
 // Text comes from real metadata only. Tied to the TV bot's application id (saved by
 // the bot at startup) so Discord shows the extra lines.
 import { existsSync, readFileSync } from "node:fs";
@@ -27,14 +27,19 @@ export class RichPresence {
     }
   }
 
-  // A show or movie: title, episode line, and a progress bar for the whole thing.
+  // A show or movie: its title is the big "Watching ..." header (instead of "TV"), then the
+  // episode line, then what's next; timestamps make Discord draw a progress bar for the
+  // whole episode or movie (start = when it would have begun, so the bar is right after a
+  // commercial break inside it, too).
   show(seg) {
     const into = seg.seekMs || 0;
     const start = Date.now() - into;
     const total = seg.fullDurationMs || seg.durationMs;
+    const next = seg.upNext?.title;
     this.set({
-      details: seg.title.slice(0, 128),
-      state: (seg.subtitle || (seg.kind === "movie" ? "Movie" : " ")).slice(0, 128),
+      name: seg.title.slice(0, 128),
+      details: (seg.subtitle || (seg.kind === "movie" ? "Movie" : " ")).slice(0, 128),
+      state: next ? `Up next: ${next}`.slice(0, 128) : " ",
       timestamps: { start, end: start + total },
     });
   }
