@@ -18,7 +18,7 @@ import { playMic } from "./mic.js";
 import { cleanSpool } from "./spool.js";
 import { makeProgram } from "./program.js";
 import { removeFromBlock } from "../schedule/store.js";
-import { card } from "./segments.js";
+import { card, fillBreak } from "./segments.js";
 
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
 // Written just before a restart so the fresh copy goes back to the same channel.
@@ -131,7 +131,7 @@ export class Player extends EventEmitter {
     const abort = new AbortController();
     // t0: the wall-clock time the stream's first frame plays (Go Live takes a moment to
     // set up); corrected when the stream really starts.
-    const session = { feed, abort, skippedBreaks: new Set(), t0: Date.now() + 2000, paused: false, replay: null, resume };
+    const session = { feed, abort, skippedBreaks: new Set(), t0: Date.now() + 2000, paused: false, replay: null, resume, adRequests: [], adQueue: [] };
     this.session = session;
     this.state = "on";
     feed.on("closed", () => session === this.session && this.leave("stream stopped"));
@@ -173,6 +173,20 @@ export class Player extends EventEmitter {
     return this.status();
   }
 
+  // /commercials: cut to `minutes` (1 to 20) of commercials and clips now; the show that
+  // was on picks up at the same second afterwards, and the schedule catches up by cutting
+  // later breaks (like after a pause).
+  commercials(minutes) {
+    const s = this.session;
+    const n = Math.min(20, Math.max(1, Math.round(Number(minutes) || 0)));
+    if (this.state !== "on" || !s) return { ok: false, why: "the TV isn't playing" };
+    s.adRequests.push(n * 60000);
+    s.pausing = true; // a show cut off here is picked up at the same second
+    s.feed.skip();
+    log.info(`player: ${n} minute${n === 1 ? "" : "s"} of commercials requested`);
+    return { ok: true, minutes: n };
+  }
+
   // Picks up exactly where it was paused. The channel is now running late; the
   // schedule catches up by cutting commercial breaks (see ScheduleProgram).
   resume() {
@@ -211,8 +225,16 @@ export class Player extends EventEmitter {
         await session.feed.play(card("Paused", 3000));
         continue;
       }
-      let seg = session.replay;
-      session.replay = null;
+      // /commercials: the requested minutes of ads come first; the show that was cut off
+      // (session.replay) picks up at the same second right after.
+      if (session.adRequests.length) {
+        session.adQueue = fillBreak(this.plex, session.adRequests.shift(), { theme: program.block?.theme ?? null, upNextTitle: session.replay?.title ?? null });
+      }
+      let seg = session.adQueue.shift() ?? null;
+      if (!seg) {
+        seg = session.replay;
+        session.replay = null;
+      }
       if (!seg) {
         const next = segments.next();
         if (next.done) return;
@@ -236,7 +258,9 @@ export class Player extends EventEmitter {
       }
       if (seg.breakId && !inBreak) {
         // A restart was asked for: use this commercial break for it instead of ads.
-        if (this.restartPending) return this.restartNow(resumeHint(lastShow));
+        // (A show cut off by /commercials picks up where it was cut, not at its piece's end.)
+        const cut = session.replay;
+        if (this.restartPending) return this.restartNow(cut?.blockId ? { blockId: cut.blockId, itemId: cut.itemId, seekMs: Math.max(0, (cut.seekMs || 0) - RESUME_REWIND_MS) } : resumeHint(lastShow));
         inBreak = seg.breakId;
         const endsAt = Date.now() + (seg.breakTotalMs ?? 0) - (seg.breakAtMs ?? 0);
         this.emitEvent("break-start", { breakId: inBreak, endsAt, nextTitle: seg.nextTitle ?? null });
@@ -410,6 +434,7 @@ export class Player extends EventEmitter {
       "POST /leave": () => this.leave("turned off"),
       "POST /pause": () => this.pause(),
       "POST /resume": () => this.resume(),
+      "POST /commercials": (b) => this.commercials(b.minutes),
       "POST /live": () => this.goLive(),
       "POST /skip-break": (b) => ({ skipped: this.skipBreak(b.breakId) }),
       "POST /skip-item": () => ({ skipped: this.skipItem() }),

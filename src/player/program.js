@@ -209,7 +209,9 @@ export class ScheduleProgram {
     const titleOf = (row) => (row ? toSegment(row, this.plex).title : null);
     const before = (segs, row) => segs.map((s) => ({ ...s, nextTitle: titleOf(row) }));
     const breakEvery = config.broadcast.break_every_minutes * 60000;
-    let sinceBreak = 0;
+    // Joined or restarted partway into a show: only the rest of it counts here, so a
+    // break is due after it (otherwise the next show starts with no commercials at all).
+    let sinceBreak = offsetMs > 0 || resume ? breakEvery : 0;
 
     for (let i = start; i < pieces.length; i++) {
       const p = pieces[i];

@@ -86,3 +86,13 @@ Snoopy Come Home, The Peanuts Movie, Hallmark-style fall movies.
 
 **Year-round**: a girl-power cartoon block (Winx Club, W.I.T.C.H., Totally Spies!, My
 Life as a Teenage Robot) for mornings/afternoons; Danny Phantom there too.
+
+**Lost from Real-Debrid, to find again** (couldn't be revived on 2026-09-26; the rest of the
+dead torrents came back). Add the title from a new source and it joins its buckets by name.
+- Needs a fresh download or another release (no longer cached): Good Eats (237 episodes),
+  Dirilis Ertugrul season 5, Bleach: Thousand-Year Blood War ("Season 17", 26 episodes),
+  Tropical-Rouge! Precure, Star☆Twinkle Precure (other releases of it did come back, so
+  check first), Princession Orchestra, Resurrection (2014, season 1), Hotel Portofino
+  (episodes 5–6), Peerless Battle Spirit Sr., Alien 9, The Clint Eastwood Collection.
+- Blocked by Real-Debrid (infringing_file), needs another source: SpongeBob SquarePants
+  (both releases), Teen Wolf season 1, Titans season 1, Tulsa King season 2.
