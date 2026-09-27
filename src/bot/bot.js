@@ -20,7 +20,7 @@ import { planSpecials } from "../schedule/specials.js";
 import { addFromUrls, addFromFiles, parseCuts } from "../catalog/download.js";
 import { localDay, localTime } from "../schedule/time.js";
 import { scheduledUntil } from "../schedule/store.js";
-import { weekGrid, dayGuide } from "../schedule/guide.js";
+import { weekGrid, dayGuide, nextHoursGuide } from "../schedule/guide.js";
 import { runTagging } from "../tagging/tagger.js";
 import { tagOrder } from "../tagging/order.js";
 import { tagEpisodeThemes } from "../tagging/episodes.js";
@@ -76,28 +76,53 @@ async function upkeep() {
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
 const ephemeral = { flags: MessageFlags.Ephemeral };
 
-// Days of guide lines ([{title, lines}]) as embeds, packed into as few messages as fit.
-// Discord: 4096 characters per embed; 6000 and 10 embeds per message. A day too long
-// for one embed carries on in the next.
+// One guide entry as an embed field: the time (and block) as the bold header Discord
+// already gives a field name, the shows as its body - separate little cards instead of
+// one long paragraph. The block on air right now gets a ▶ marker so /schedule (and the
+// daily post) show where in the schedule things stand.
+function entryField(en) {
+  const time = `<t:${Math.floor(en.time / 1000)}:t>`;
+  return { name: `${en.current ? "▶ " : ""}${time} · ${en.label}`.slice(0, 256), value: (en.text || "​").slice(0, 1024) };
+}
+
+// Days of guide entries ([{title, entries}], from dayGuide/nextHoursGuide) or plain
+// lines ([{title, lines}], from weekGrid, which isn't per-block enough for fields) as
+// embeds, packed into as few messages as fit. Discord: 25 fields/6000 chars per embed,
+// 10 embeds per message. A day too long for one embed carries on in the next.
 export function guideMessages(days) {
   const embeds = [];
   for (const d of days) {
+    let fields = [];
     let text = "";
+    let used = 0;
     let part = 0;
     const flush = () => {
-      embeds.push(new EmbedBuilder().setTitle(part++ ? `${d.title} (continued)` : d.title).setDescription(text));
+      const eb = new EmbedBuilder().setTitle(part++ ? `${d.title} (continued)` : d.title);
+      embeds.push(fields.length ? eb.addFields(fields) : eb.setDescription(text));
+      fields = [];
       text = "";
+      used = 0;
     };
-    for (const l of d.lines) {
-      if (text && text.length + l.length + 1 > 4000) flush();
-      text += `${text ? "\n" : ""}${l.slice(0, 4000)}`;
+    if (d.entries) {
+      for (const en of d.entries) {
+        const f = entryField(en);
+        const size = f.name.length + f.value.length;
+        if (fields.length && (fields.length === 25 || used + size > 5500)) flush();
+        fields.push(f);
+        used += size;
+      }
+    } else {
+      for (const l of d.lines) {
+        if (text && text.length + l.length + 1 > 4000) flush();
+        text += `${text ? "\n" : ""}${l.slice(0, 4000)}`;
+      }
     }
-    if (text) flush();
+    if (fields.length || text) flush();
   }
   const messages = [[]];
   let used = 0;
   for (const e of embeds) {
-    const size = e.data.title.length + e.data.description.length;
+    const size = e.data.title.length + (e.data.description?.length || 0) + (e.data.fields || []).reduce((t, f) => t + f.name.length + f.value.length, 0);
     if ((used + size > 5800 || messages.at(-1).length === 10) && messages.at(-1).length) { messages.push([]); used = 0; }
     messages.at(-1).push(e);
     used += size;
@@ -309,7 +334,6 @@ export async function startBot() {
   // at midnight it still posts in the first few hours; later than that it waits for
   // tomorrow rather than post a guide for a half-gone day.
   const guideChannel = () => config.discord.guide_channel_id || config.discord.now_playing_channel_id;
-  const linkTo = (m) => `https://discord.com/channels/${m.guildId}/${m.channelId}/${m.id}`;
 
   // Program the rest of today if it isn't yet (upkeep keeps only ~12 hours filled). Can
   // fail (nothing to plan from): then the guide shows what there is.
@@ -330,8 +354,8 @@ export async function startBot() {
     const ch = channelId && await client.channels.fetch(channelId).catch(() => null);
     if (!ch?.isTextBased()) return null;
     const guide = dayGuide();
-    const parts = guide.lines.length ? guideMessages([guide]) : [[]];
-    const header = guide.lines.length ? "Today on TV (times shift a little as the day goes; /schedule refreshes this)" : "Nothing scheduled today.";
+    const parts = guide.entries.length ? guideMessages([guide]) : [[]];
+    const header = guide.entries.length ? "Today on TV (▶ marks what's on now; times shift a little as the day goes; /schedule refreshes this)" : "Nothing scheduled today.";
     const saved = JSON.parse(getMeta("guide_post") || "null");
     let old = [];
     if (saved?.channelId === channelId) {
@@ -370,7 +394,7 @@ export async function startBot() {
     const day = localDay(Date.now());
     if (getMeta("daily_guide_posted") === day.date || Date.now() - day.startMs > 6 * 3600000) return;
     await fillToday();
-    if (!dayGuide().lines.length) {
+    if (!dayGuide().entries.length) {
       setMeta("daily_guide_posted", day.date);
       return log.warn("bot: nothing scheduled today; no daily guide post");
     }
@@ -604,13 +628,19 @@ export async function startBot() {
           for (const embeds of messages.slice(1)) await i.followUp({ embeds, ...ephemeral });
           return;
         }
-        // Refresh the guide post in the TV channel (edited, no new copy), and tell only the
-        // person who asked, with a link (a private reply they can dismiss).
+        // Silently refresh the guide post in the TV channel (edited in place, no new
+        // copy, nobody pinged), then reply to just the person who asked with the actual
+        // next 24 hours (▶ marks what's on now) as a dismissable private message - not
+        // just a link to the post.
         await i.deferReply(ephemeral);
         await fillToday();
-        const guide = await publishGuide();
-        if (!guide) return i.editReply("Couldn't update the TV guide post right now. Try again in a minute.");
-        return i.editReply(`Schedule updated: ${linkTo(guide)}`);
+        if (!await publishGuide()) return i.editReply("Couldn't update the TV guide post right now. Try again in a minute.");
+        const guide = nextHoursGuide();
+        if (!guide.entries.length) return i.editReply("Nothing scheduled in the next 24 hours.");
+        const messages = guideMessages([guide]);
+        await i.editReply({ content: "Next 24 hours (▶ = on now; times shift a little as the day goes):", embeds: messages[0] });
+        for (const embeds of messages.slice(1)) await i.followUp({ embeds, ...ephemeral });
+        return;
       }
       if (i.isButton() && i.customId.startsWith("tv:skip:")) {
         const breakId = i.customId.slice("tv:skip:".length);

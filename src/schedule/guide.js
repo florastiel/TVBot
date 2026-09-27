@@ -41,13 +41,24 @@ export function guideText(now = Date.now(), minBlocks = 6) {
 
 const dayTitle = (ms) => new Date(ms).toLocaleDateString("en-US", { timeZone: config.broadcast.timezone, weekday: "long", month: "short", day: "numeric" });
 
+// One block, as a guide entry: { time, label, text, current }. `current` marks the
+// block actually on air at `now`, so /schedule and the daily post can point at it.
+const entryOf = (b, now, maxLen) => ({ time: b.start_at, label: b.label, text: titles(b.items, maxLen), current: now >= b.start_at && now < b.end_at });
+
 // One whole day's programming (every block on air that day, including one still
 // running from last night), with its shows, for the post at midnight:
-// { title: "Saturday, Sep 26", lines: [...] }.
+// { title: "Saturday, Sep 26", entries: [{ time, label, text, current }] }.
 export function dayGuide(now = Date.now()) {
   const day = localDay(now);
-  const lines = blocksBetween(day.startMs, day.endMs).map((b) => `<t:${Math.floor(b.start_at / 1000)}:t>  **${b.label}**: ${titles(b.items, 400)}`);
-  return { title: dayTitle(day.startMs), lines };
+  const entries = blocksBetween(day.startMs, day.endMs).map((b) => entryOf(b, now, 400));
+  return { title: dayTitle(day.startMs), entries };
+}
+
+// A rolling window from right now (not the calendar day): what /schedule itself replies
+// with, dismissable and just for the person who asked. Same shape as dayGuide.
+export function nextHoursGuide(now = Date.now(), hours = 24) {
+  const entries = blocksBetween(now, now + hours * 3600000).map((b) => entryOf(b, now, 400));
+  return { title: `Next ${hours} hours`, entries };
 }
 
 // The week, a day at a time: [{ title: "Saturday, Sep 26", lines: [...] }]. Blocks
