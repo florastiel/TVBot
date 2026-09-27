@@ -76,53 +76,38 @@ async function upkeep() {
 const guildId = () => config.discord.guild_id || process.env.GUILD_ID;
 const ephemeral = { flags: MessageFlags.Ephemeral };
 
-// One guide entry as an embed field: the time (and block) as the bold header Discord
-// already gives a field name, the shows as its body - separate little cards instead of
-// one long paragraph. The block on air right now gets a ▶ marker so /schedule (and the
-// daily post) show where in the schedule things stand.
-function entryField(en) {
+// One guide entry as a compact line: the time, the block, its shows - and, for the
+// block actually on air right now, a ▶ marker so /schedule (and the daily post) show
+// where in the schedule things stand. Fields looked nicer but doubled the post's
+// length; a line per block is what fits on a screen.
+function entryLine(en) {
   const time = `<t:${Math.floor(en.time / 1000)}:t>`;
-  return { name: `${en.current ? "▶ " : ""}${time} · ${en.label}`.slice(0, 256), value: (en.text || "​").slice(0, 1024) };
+  return `${en.current ? "▶ " : ""}${time}  **${en.label}**: ${en.text}`;
 }
 
 // Days of guide entries ([{title, entries}], from dayGuide/nextHoursGuide) or plain
-// lines ([{title, lines}], from weekGrid, which isn't per-block enough for fields) as
-// embeds, packed into as few messages as fit. Discord: 25 fields/6000 chars per embed,
-// 10 embeds per message. A day too long for one embed carries on in the next.
+// lines ([{title, lines}], from weekGrid) as embeds, packed into as few messages as
+// fit. Discord: 4096 characters per embed; 6000 and 10 embeds per message. A day too
+// long for one embed carries on in the next.
 export function guideMessages(days) {
   const embeds = [];
   for (const d of days) {
-    let fields = [];
     let text = "";
-    let used = 0;
     let part = 0;
     const flush = () => {
-      const eb = new EmbedBuilder().setTitle(part++ ? `${d.title} (continued)` : d.title);
-      embeds.push(fields.length ? eb.addFields(fields) : eb.setDescription(text));
-      fields = [];
+      embeds.push(new EmbedBuilder().setTitle(part++ ? `${d.title} (continued)` : d.title).setDescription(text));
       text = "";
-      used = 0;
     };
-    if (d.entries) {
-      for (const en of d.entries) {
-        const f = entryField(en);
-        const size = f.name.length + f.value.length;
-        if (fields.length && (fields.length === 25 || used + size > 5500)) flush();
-        fields.push(f);
-        used += size;
-      }
-    } else {
-      for (const l of d.lines) {
-        if (text && text.length + l.length + 1 > 4000) flush();
-        text += `${text ? "\n" : ""}${l.slice(0, 4000)}`;
-      }
+    for (const l of d.entries ? d.entries.map(entryLine) : d.lines) {
+      if (text && text.length + l.length + 1 > 4000) flush();
+      text += `${text ? "\n" : ""}${l.slice(0, 4000)}`;
     }
-    if (fields.length || text) flush();
+    if (text) flush();
   }
   const messages = [[]];
   let used = 0;
   for (const e of embeds) {
-    const size = e.data.title.length + (e.data.description?.length || 0) + (e.data.fields || []).reduce((t, f) => t + f.name.length + f.value.length, 0);
+    const size = e.data.title.length + e.data.description.length;
     if ((used + size > 5800 || messages.at(-1).length === 10) && messages.at(-1).length) { messages.push([]); used = 0; }
     messages.at(-1).push(e);
     used += size;
