@@ -66,7 +66,16 @@ async function attempt(t) {
       await rd.call(`/torrents/selectFiles/${id}`, { method: "POST", form: { files: "all" } });
       info = await until(id, ["downloaded"], 30);
     }
-    if (info.status === "downloaded") return { result: "revived", newId: id, files: info.links?.length ?? null };
+    if (info.status === "downloaded") {
+      // "downloaded" isn't enough (the dead ones say that too): the first link must unlock.
+      try {
+        await rd.call("/unrestrict/link", { method: "POST", form: { link: info.links[0] } });
+        return { result: "revived", newId: id, files: info.links.length };
+      } catch (e) {
+        await rd.call(`/torrents/delete/${id}`, { method: "DELETE" }).catch(() => {});
+        return { result: "gave-up", why: `downloaded but ${e.message.replace(/^real-debrid [^:]*: /, "")}` };
+      }
+    }
     await rd.call(`/torrents/delete/${id}`, { method: "DELETE" }).catch(() => {});
     return { result: "gave-up", why: info.status };
   } catch (e) {
