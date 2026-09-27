@@ -11,6 +11,7 @@ import { config, secrets } from "../config.js";
 import { log, tailLog, flagBadBot } from "../log.js";
 import { PLAYER_URL, callPlayer, localSecret } from "../local.js";
 import { runSync } from "../catalog/index.js";
+import { weatherTick } from "../weather/report.js";
 import { setEntrance, clearEntrance } from "./entrance.js";
 import { generateSchedule } from "../schedule/generate.js";
 import { planSpecials } from "../schedule/specials.js";
@@ -621,6 +622,8 @@ export async function startBot() {
     };
     guideTick();
     setInterval(guideTick, 60000).unref();
+    // The weather report (config weather.times): made a little before its time.
+    setInterval(() => weatherTick().catch((e) => log.warn(`bot: weather failed: ${e.message}`)), 60000).unref();
     // Watchdog: if the player stops answering for 2 minutes (frozen, not just
     // restarting), kill it; the service manager starts a fresh one. The player's pid comes
     // from its status, or (this bot started after the player froze, so it never got one)

@@ -138,3 +138,14 @@ claude:
   # Claude Code job on glados (scripts\weekly-program.ps1, PROGRAMMING.md) curates the
   # buckets and the template. api: Claude API calls plan the grid and new buckets weekly.
   scheduling: local
+
+# A weather report from the National Weather Service (US places), read by a built-in Windows voice,
+# in the first commercial break after each time. One scene per location, in this order. Remove this
+# section (or leave "times" empty) for no weather. "radar" is the NWS radar station (radar.weather.gov).
+weather:
+  times: ["07:00", "18:00"]
+  window_hours: 3
+  voice: "Microsoft Zira Desktop"
+  rate: 0
+  locations:
+    - { name: "New York, New York", lat: 40.7128, lon: -74.006, radar: KOKX }

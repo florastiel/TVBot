@@ -5,6 +5,7 @@ import { config } from "../config.js";
 import { getDb } from "../db.js";
 import { SUBS_DIR } from "../catalog/plexSync.js";
 import { spooledPath } from "./spool.js";
+import { takeWeather } from "../weather/report.js";
 
 export function describe(row) {
   if (row.kind === "episode" || row.kind === "short") {
@@ -209,7 +210,10 @@ export function makeBreak(plex, { theme = null, inside = false, show = null } = 
   }
   remember(rows);
   const breakId = newBreakId();
-  return timed(rows.map((r) => toSegment(r, plex, { breakId })));
+  const segs = rows.map((r) => toSegment(r, plex, { breakId }));
+  // The weather report, when one is due (config weather.times), leads the first break between shows.
+  const wx = inside ? null : takeWeather();
+  return timed(wx ? [{ ...wx, breakId }, ...segs] : segs);
 }
 
 // Each piece of a break knows how long the whole break runs and how far into it it

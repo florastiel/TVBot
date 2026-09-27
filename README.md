@@ -377,3 +377,14 @@ Adapter" with an error). To enable it:
 Streaming from a user account ("selfbot") is against Discord's Terms of Service.
 That's why a throwaway account does it: the worst case is that account gets banned,
 not yours. The controller bot is a normal, allowed bot.
+
+## Weather
+
+A weather report airs once or twice a day (`weather.times` in `config.yaml`, default 7:00 and 18:00), in the first
+commercial break between shows after that time. It is made about 25 minutes before by the bot: for each place in
+`weather.locations` it reads the National Weather Service forecast and alerts (US only, no key), draws a scene
+(the NWS radar loop for that place's `radar` station, cards for the next three periods, an alert banner) and has a
+built-in Windows voice (`weather.voice`, `Microsoft Zira Desktop` or `Microsoft David Desktop`) read a script filled
+in from those numbers. Nothing is written by an AI. If no break comes within `weather.window_hours` (3) of the time,
+that report is skipped. `tv.cmd weather` makes one right now and prints where the mp4 is, without airing it.
+Places: `{ name, lat, lon, radar }`; the radar station is on radar.weather.gov.
