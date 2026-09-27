@@ -16,7 +16,9 @@ const VIDEO = new Set([".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", "
 import { parseRelease } from "./release.js";
 export { parseRelease };
 
-export async function syncRealDebrid(client = new RealDebrid()) {
+// quick: only files never read before are probed (not the ones that failed in an earlier
+// sync, which a full sync retries: that can be thousands over the network).
+export async function syncRealDebrid(client = new RealDebrid(), { quick = false } = {}) {
   const db = getDb();
   const skip = (config.realdebrid.skip_torrents || []).map((s) => String(s).toLowerCase());
   const all = await client.torrents();
@@ -82,17 +84,18 @@ export async function syncRealDebrid(client = new RealDebrid()) {
   const seen = { tried: new Set(), dead: new Set() };
   for (let round = 0; round < 4; round++) {
     dedupeCatalog();
-    if (!(await probeNew(client, seen))) break;
+    if (!(await probeNew(client, seen, quick))) break;
   }
 }
 
 // Durations and tracks for new files, read over the network (ffprobe only fetches the
 // start of the file). Returns how many files it tried.
-async function probeNew(client, { tried, dead }) {
+async function probeNew(client, { tried, dead }, quick = false) {
   const db = getDb();
   const todo = db.prepare(`SELECT id, source_key, media_path, show_title, source_updated FROM items
     WHERE source = 'realdebrid' AND present = 1 AND duplicate_of IS NULL
-      AND (streams_checked IS NULL OR streams_checked != source_updated)`).all().filter((r) => !tried.has(r.id));
+      AND (streams_checked IS NULL OR streams_checked != source_updated)
+      ${quick ? "AND unplayable_reason IS NULL" : ""}`).all().filter((r) => !tried.has(r.id));
   if (!todo.length) return 0;
   todo.forEach((r) => tried.add(r.id));
   log.info(`realdebrid: reading durations/tracks for ${todo.length} files`);

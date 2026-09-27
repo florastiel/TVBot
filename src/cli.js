@@ -6,8 +6,10 @@ import { savePlaylist, clearPlaylist } from "./player/program.js";
 import { describe } from "./player/segments.js";
 
 const commands = {
-  async sync() {
-    await runSync();
+  // tv.cmd sync            everything (the weekly one)
+  // tv.cmd sync --quick    only what's new since the last sync (minutes at most)
+  async sync(...flags) {
+    await runSync({ quick: flags.includes("--quick") });
     await commands.stats();
   },
 

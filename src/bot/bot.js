@@ -147,7 +147,7 @@ export function helpEmbeds() {
       "• `/tvadmin skipblock`: skip the rest of this block.",
       "• `/tvadmin special`: plan a marathon or themed special, e.g. \"Scream marathon Saturday 8pm\".",
       "• `/tvadmin regen`: new random picks for the upcoming blocks.",
-      "• `/tvadmin sync`: re-read the whole catalog now (takes a few minutes).",
+      "• `/tvadmin sync`: pick up what's new (added to Plex, the drive or Real-Debrid lately); `full: True` re-reads the whole catalog (many minutes).",
       "• `/tvadmin add`: add commercials or clips by link (the threads above are easier).",
     ].join("\n")),
   ];
@@ -168,7 +168,8 @@ const COMMANDS = [
     .setDefaultMemberPermissions(ANYONE_ADMIN ? null : PermissionFlagsBits.ManageGuild)
     .addSubcommand((s) => s.setName("skip").setDescription("Skip this episode or movie (the block goes on with its next one)"))
     .addSubcommand((s) => s.setName("skipblock").setDescription("Skip the rest of this block (the next block starts at the next quarter hour)"))
-    .addSubcommand((s) => s.setName("sync").setDescription("Re-read the Plex, local and Real-Debrid catalog now"))
+    .addSubcommand((s) => s.setName("sync").setDescription("Pick up what's new in Plex, the local drive and Real-Debrid (quick)")
+      .addBooleanOption((o) => o.setName("full").setDescription("Re-read the whole catalog instead (takes many minutes)")))
     .addSubcommand((s) => s.setName("regen").setDescription("New random picks for the upcoming blocks (same lineup of block types)")
       .addBooleanOption((o) => o.setName("new_grid").setDescription("Also have Claude lay out a new week of block types")))
     .addSubcommand((s) => s.setName("add").setDescription("Download a commercial or clip (YouTube link etc.) into rotation")
@@ -539,8 +540,9 @@ export async function startBot() {
         }
         if (sub === "sync") {
           await i.deferReply(ephemeral);
-          await maintenance.run(() => runSync()); // not alongside upkeep, a drop-thread add, ...
-          return i.editReply("Catalog sync finished.");
+          const full = i.options.getBoolean("full") ?? false;
+          await maintenance.run(() => runSync({ quick: !full })); // not alongside upkeep, a drop-thread add, ...
+          return i.editReply(full ? "Full catalog sync finished." : "Quick sync finished: what's new is in the catalog.");
         }
         if (sub === "add") {
           await i.deferReply(ephemeral);

@@ -78,6 +78,24 @@ export class Plex {
     return out;
   }
 
+  // Items of a type added since sinceSec (epoch seconds), newest first; stops at the first older one.
+  async listRecent(sectionKey, type, sinceSec, pageSize = 200) {
+    const out = [];
+    for (let start = 0; ; start += pageSize) {
+      const page = await this.get(
+        `/library/sections/${sectionKey}/all?type=${type}&includeGuids=1&sort=addedAt:desc` +
+          `&X-Plex-Container-Start=${start}&X-Plex-Container-Size=${pageSize}`,
+      );
+      const items = page.Metadata || [];
+      for (const it of items) {
+        if ((it.addedAt || 0) < sinceSec) return out;
+        out.push(it);
+      }
+      if (items.length < pageSize) break;
+    }
+    return out;
+  }
+
   // Full details (incl. audio/subtitle streams) for many items in one request.
   async metadataBatch(ratingKeys) {
     return (await this.get(`/library/metadata/${ratingKeys.join(",")}?includeChapters=1`, { timeoutMs: 60000 })).Metadata || [];

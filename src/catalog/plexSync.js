@@ -48,7 +48,9 @@ function baseRow(item, section, show) {
   };
 }
 
-export async function syncPlex(plex) {
+// sinceMs > 0: a quick sync, only what Plex has added since then.
+export async function syncPlex(plex, { sinceMs = 0 } = {}) {
+  const quick = sinceMs > 0;
   const db = getDb();
   const wanted = new Set(config.plex.libraries);
   const sections = (await plex.sections()).filter((s) => !wanted.size || wanted.has(s.title));
@@ -76,11 +78,12 @@ export async function syncPlex(plex) {
     const t0 = Date.now();
     let items;
     let shows = new Map();
+    const list = (type) => (quick ? plex.listRecent(section.key, type, Math.floor(sinceMs / 1000)) : plex.listAll(section.key, type));
     if (section.type === "show") {
-      shows = new Map((await plex.listAll(section.key, 2)).map((s) => [String(s.ratingKey), s]));
-      items = await plex.listAll(section.key, 4);
+      shows = new Map((await plex.listAll(section.key, 2)).map((s) => [String(s.ratingKey), s])); // shows are few; always all of them
+      items = await list(4);
     } else if (section.type === "movie") {
-      items = await plex.listAll(section.key, 1);
+      items = await list(1);
     } else {
       log.warn(`plex: skipping library "${section.title}" (type ${section.type})`);
       continue;
@@ -98,9 +101,10 @@ export async function syncPlex(plex) {
     log.info(`plex: ${section.title}: ${items.length} items listed in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   }
 
-  // Anything from these libraries that wasn't listed has been removed from Plex.
+  // Anything from these libraries that wasn't listed has been removed from Plex (only known
+  // after a full listing; a quick sync lists just what was added lately).
   const libs = sections.map((s) => s.title);
-  const gone = tx((d) => {
+  const gone = quick ? 0 : tx((d) => {
     const rows = d.prepare(`SELECT id, source_key FROM items WHERE source = 'plex' AND present = 1 AND library IN (${libs.map(() => "?").join(",")})`).all(...libs);
     const mark = d.prepare("UPDATE items SET present = 0 WHERE id = ?");
     let n = 0;
