@@ -33,7 +33,7 @@ export async function syncRealDebrid(client = new RealDebrid(), { quick = false 
       kind = excluded.kind, show_title = excluded.show_title, season = excluded.season, episode = excluded.episode,
       title = excluded.title, year = excluded.year, match = excluded.match, media_path = excluded.media_path,
       source_updated = excluded.source_updated, present = 1`);
-  const remember = db.prepare("INSERT OR REPLACE INTO rd_torrents (id, filename, read_at) VALUES (?, ?, ?)");
+  const remember = db.prepare("INSERT OR REPLACE INTO rd_torrents (id, filename, read_at, added_at) VALUES (?, ?, ?, ?)");
 
   const minBytes = config.realdebrid.min_file_mb * 1024 * 1024;
   let added = 0;
@@ -60,10 +60,13 @@ export async function syncRealDebrid(client = new RealDebrid(), { quick = false 
         });
         added++;
       });
-      remember.run(t.id, t.filename, new Date().toISOString());
+      remember.run(t.id, t.filename, new Date().toISOString(), t.added || null);
     });
   }
   if (fresh.length) log.info(`realdebrid: read ${fresh.length} new torrents (${added} video files)`);
+  // When each torrent was added to the account (Real-Debrid's own date): the change log's dates.
+  const stamp = db.prepare("UPDATE rd_torrents SET added_at = ? WHERE id = ? AND added_at IS NULL");
+  tx(() => { for (const t of done) if (t.added) stamp.run(t.added, t.id); });
 
   // Torrents removed from the account: their items stay in history, off the schedule.
   tx((d) => {

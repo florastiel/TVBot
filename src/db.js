@@ -172,6 +172,23 @@ const MIGRATIONS = [
   -- left out of the schedule; recomputed at every sync (catalog/dedupe.js).
   ALTER TABLE items ADD COLUMN oddball INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- Short shows (anime shorts and the like), found through AniList (tagging/anilist.js).
+  ALTER TABLE shows ADD COLUMN short INTEGER;
+  ALTER TABLE shows ADD COLUMN anilist_id INTEGER;
+  ALTER TABLE shows ADD COLUMN anilist_format TEXT;
+  ALTER TABLE shows ADD COLUMN anilist_checked_at TEXT;
+  `,
+  `
+  -- The change log (changelog.js): when a Real-Debrid torrent was added to the account (its
+  -- own date), and when the catalog first saw any other item.
+  ALTER TABLE rd_torrents ADD COLUMN added_at TEXT;
+  ALTER TABLE items ADD COLUMN added_at INTEGER;
+  CREATE TRIGGER items_added AFTER INSERT ON items
+  BEGIN
+    UPDATE items SET added_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000 WHERE id = NEW.id;
+  END;
+  `,
 ];
 
 let db;

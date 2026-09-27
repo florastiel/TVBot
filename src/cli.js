@@ -60,6 +60,24 @@ Object.assign(commands, {
     await tagOrder({ redo: flags.includes("--redo") });
     await tagEpisodeThemes({ redo: flags.includes("--redo") });
     await tagBreaks({ redo: flags.includes("--redo") });
+    const { detectShorts } = await import("./tagging/anilist.js");
+    await detectShorts().catch((e) => console.error("AniList short check failed:", e.message));
+  },
+
+  // Which anime are shorts (AniList), then the Shorts block takes them in. --redo: check them all again.
+  async shorts(...flags) {
+    const { detectShorts } = await import("./tagging/anilist.js");
+    const { refreshHolidayBuckets } = await import("./schedule/buckets.js");
+    const n = await detectShorts({ redo: flags.includes("--redo") });
+    refreshHolidayBuckets();
+    console.log(`${n} short shows found this time; the Shorts block is updated.`);
+  },
+
+  // What was added, by day: tv.cmd changelog [days]
+  async changelog(...args) {
+    const { formatChangelog, writeChangelogFile } = await import("./changelog.js");
+    console.log(formatChangelog(Number(args.find((a) => /^\d+$/.test(a))) || 7).replace(/\*\*/g, ""));
+    writeChangelogFile();
   },
 
   // Make a weather report right now (config weather.locations) and print where it is;

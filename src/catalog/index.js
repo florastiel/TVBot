@@ -7,6 +7,7 @@ import { scanLocal } from "./localScan.js";
 import { syncRealDebrid } from "./rdSync.js";
 import { importCsvTags } from "./csvTags.js";
 import { dedupeCatalog } from "./dedupe.js";
+import { writeChangelogFile } from "../changelog.js";
 
 // The full catalog sync: Plex, local folders, Real-Debrid, then the commercial/clip tag sheets.
 // quick: just what's new since the last sync (Plex items added lately, the local folders, Real-Debrid
@@ -34,6 +35,7 @@ export async function runSync({ plex = new Plex(), quick = false } = {}) {
   dedupeCatalog(); // Real-Debrid also runs it between its reads; this covers syncs without it
   importCsvTags();
   setMeta(quick ? "last_quick_sync" : "last_sync", new Date().toISOString());
+  try { writeChangelogFile(); } catch (e) { log.warn(`sync: couldn't write the change log: ${e.message}`); }
   log.info(`sync${quick ? " (quick)" : ""}: done in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
 }
 

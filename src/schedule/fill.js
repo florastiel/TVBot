@@ -119,9 +119,14 @@ function pickBlock(bucket, at, room, ctx) {
       const e = episodesOf(show, 1, at, ctx, bucket)[0];
       if (e) pool.push(e);
     }
-    for (const id of shuffle([...bucket.items]).slice(0, 40)) {
+    // One entry per show, however many of its episodes are listed as items (40 files of one
+    // show mustn't make it turn up in every block).
+    const inPool = new Set(pool.map((e) => e.show_title).filter(Boolean));
+    for (const id of shuffle([...bucket.items]).slice(0, 200)) {
       const e = ctx.item.get(id);
-      if (e?.duration_ms && !ctx.used.has(e.id) && ctx.seasonOk(e, at)) pool.push(e);
+      if (!e?.duration_ms || ctx.used.has(e.id) || !ctx.seasonOk(e, at)) continue;
+      if (e.show_title) { if (inPool.has(e.show_title)) continue; inPool.add(e.show_title); }
+      pool.push(e);
     }
     let best = null;
     for (let t = 0; t < TRIES; t++) {

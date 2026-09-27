@@ -12,6 +12,8 @@ import { log, tailLog, flagBadBot } from "../log.js";
 import { PLAYER_URL, callPlayer, localSecret } from "../local.js";
 import { runSync } from "../catalog/index.js";
 import { weatherTick, requestWeather } from "../weather/report.js";
+import { detectShorts } from "../tagging/anilist.js";
+import { formatChangelog } from "../changelog.js";
 import { setEntrance, clearEntrance } from "./entrance.js";
 import { generateSchedule } from "../schedule/generate.js";
 import { planSpecials } from "../schedule/specials.js";
@@ -55,6 +57,7 @@ async function upkeep() {
     await tagOrder().catch((e) => log.warn(`bot: order tagging failed: ${e.message}`));
     await tagEpisodeThemes().catch((e) => log.warn(`bot: episode theme tagging failed: ${e.message}`));
     await tagBreaks().catch((e) => log.warn(`bot: TV-break tagging failed: ${e.message}`));
+    await detectShorts().catch((e) => log.warn(`bot: AniList short check failed: ${e.message}`));
   }
   const until = scheduledUntil();
   if (until < Date.now() + 12 * 3600000) {
@@ -124,6 +127,7 @@ export function helpEmbeds() {
       "**What's on**",
       "• The **Today on TV** post in this channel has the day's lineup; it updates itself at midnight.",
       "• Weather reports air on their own morning and evening; `/weather` puts one in the next commercial break.",
+      "• `/changelog` shows what was added to the server lately (only you see it); `days` goes back further.",
       "• `/schedule` refreshes it (no new post, nobody gets pinged). `/schedule week: True` shows you the week's lineup privately.",
       "• Something broke or looked wrong? `/badbot` (add what happened if you like) flags that exact moment in the logs.",
       "• Weekday nights have themes (heists and spies Monday, sci-fi Tuesday, whodunits and classics Wednesday, prestige and musicals Thursday, blockbusters Friday); Saturday mornings are cartoons, 5:30 to 12:15.",
@@ -163,6 +167,8 @@ const COMMANDS = [
     .addIntegerOption((o) => o.setName("minutes").setDescription("How many minutes of commercials (1 to 20)").setRequired(true).setMinValue(1).setMaxValue(20)),
   new SlashCommandBuilder().setName("skipcommercials").setDescription("Skip the commercials that are on right now (same as the Skip commercials button)"),
   new SlashCommandBuilder().setName("weather").setDescription("Put the weather report in the next commercial break"),
+  new SlashCommandBuilder().setName("changelog").setDescription("What was added to the server lately (only you see it)")
+    .addIntegerOption((o) => o.setName("days").setDescription("How many days back (default 3)").setMinValue(1).setMaxValue(14)),
   new SlashCommandBuilder().setName("tvadmin").setDescription("TV admin controls")
     // admin_user_id "*": anyone may use it, so don't hide it from people without Manage Server.
     .setDefaultMemberPermissions(ANYONE_ADMIN ? null : PermissionFlagsBits.ManageGuild)
@@ -481,6 +487,17 @@ export async function startBot() {
       }
       // /weather: the report goes in the next commercial break (a fresh one is made first if the
       // last is older than 90 minutes, about 40 seconds). Anyone watching in the TV's voice channel.
+      // /changelog: what was added, by day, private to whoever asked. Long ones go out in pieces.
+      if (i.isChatInputCommand() && i.commandName === "changelog") {
+        const text = formatChangelog(i.options.getInteger("days") ?? 3);
+        const parts = [];
+        for (const line of text.split("\n")) {
+          if (!parts.length || (parts.at(-1) + "\n" + line).length > 1900) parts.push(line); else parts[parts.length - 1] += "\n" + line;
+        }
+        await i.reply({ content: parts[0] || "Nothing to show.", ...ephemeral });
+        for (const p of parts.slice(1, 6)) await i.followUp({ content: p, ...ephemeral });
+        return;
+      }
       if (i.isChatInputCommand() && i.commandName === "weather") {
         if (!(await inTvChannel(i))) return i.reply({ content: "Only people in the TV's voice channel can do that.", ...ephemeral });
         await i.deferReply(ephemeral);

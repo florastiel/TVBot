@@ -103,10 +103,15 @@ export function refreshHolidayBuckets() {
         want.push({ name, about: `${theme} episodes of regular shows`, format: "variety", dayparts: ["afternoon", "evening", "late"], items: eps, active_from: from, active_to: to });
       }
     }
-    // Everything in the shorts folder.
+    // Everything in the shorts folder, plus short shows from anywhere in the catalog: anime AniList
+    // calls shorts (tagging/anilist.js) and any show whose episodes average 8 minutes or less.
     const shorts = db.prepare(`SELECT i.id FROM items i WHERE i.kind = 'short' AND ${schedulableSql("i")}`).all().map((r) => r.id);
-    if (shorts.length >= MIN_MEMBERS.variety) {
-      want.push({ name: "Shorts", about: "short shows back to back", format: "variety", dayparts: ["morning", "afternoon", "evening", "late"], items: shorts });
+    const shortShows = db.prepare(`SELECT s.title FROM shows s JOIN items i ON i.show_title = s.title AND i.kind = 'episode' AND ${schedulableSql("i")}
+      GROUP BY s.title HAVING COUNT(*) >= 3 AND (MAX(s.short) = 1 OR AVG(i.duration_ms) <= 8 * 60000)`).all().map((r) => r.title);
+    // (the shorts folder's shows count once, so a show with 40 files isn't 40 members)
+    const folderShows = new Set(db.prepare(`SELECT DISTINCT i.show_title t FROM items i WHERE i.kind = 'short' AND i.show_title IS NOT NULL AND ${schedulableSql("i")}`).all().map((r) => r.t));
+    if (shorts.length + shortShows.length >= MIN_MEMBERS.variety || shorts.length + folderShows.size + shortShows.length >= MIN_MEMBERS.variety) {
+      want.push({ name: "Shorts", about: "short shows back to back", format: "variety", dayparts: ["morning", "afternoon", "evening", "late"], items: shorts, shows: shortShows });
     }
     for (const h of HOLIDAYS) {
       const eps = db.prepare(`SELECT i.id FROM items i JOIN tags t ON t.item_id = i.id
