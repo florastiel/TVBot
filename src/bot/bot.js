@@ -291,6 +291,8 @@ export async function startBot() {
       const old = nowPlayingMsg;
       nowPlayingMsg = await post(config.discord.now_playing_channel_id, lines.join("\n"), { components: [button("tv:pause", "Pause")] });
       await remove(old);
+      // Move the guide post's ▶ marker along with it (silent: an edit, not a new post).
+      await publishGuide().catch((err) => log.warn(`bot: couldn't move the guide's ▶ marker: ${err.message}`));
     } else if (e.type === "paused") {
       await clearBreakMsg();
       await remove(nowPlayingMsg);
@@ -340,7 +342,7 @@ export async function startBot() {
     if (!ch?.isTextBased()) return null;
     const guide = dayGuide();
     const parts = guide.entries.length ? guideMessages([guide]) : [[]];
-    const header = guide.entries.length ? "Today on TV (▶ marks what's on now; times shift a little as the day goes; /schedule refreshes this)" : "Nothing scheduled today.";
+    const header = guide.entries.length ? "Today on TV (▶ marks what's on now; times shift a little as the day goes; `/schedule` refreshes this)" : "Nothing scheduled today.";
     const saved = JSON.parse(getMeta("guide_post") || "null");
     let old = [];
     if (saved?.channelId === channelId) {
@@ -588,7 +590,7 @@ export async function startBot() {
           await i.deferReply(ephemeral);
           const replan = i.options.getBoolean("new_grid") ?? false;
           await maintenance.run(() => generateSchedule({ replace: true, replan, days: config.broadcast.plan_days }));
-          return i.editReply("New schedule is ready (from the next block on). /schedule to see it.");
+          return i.editReply("New schedule is ready (from the next block on). `/schedule` to see it.");
         }
       }
       if (i.isChatInputCommand() && i.commandName === "tvhelp") {
