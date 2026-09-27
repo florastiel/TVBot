@@ -48,7 +48,60 @@ function sceneGraph(place, dir, hasRadar) {
   return f.join(";");
 }
 
-function speak(dir, id, script) {
+// "google:fil" (the Google Translate voice, any language code) reads it; a Windows voice
+// name reads it with SAPI. If Google can't be reached the Windows voice steps in.
+async function speak(dir, id, script) {
+  const v = String(config.weather?.voice || "");
+  if (/^google:/i.test(v)) {
+    try { return await googleSpeak(dir, id, script, v.slice(7).trim() || "en"); }
+    catch (e) { log.warn(`weather: Google voice failed (${e.message}); using the Windows voice`); }
+  }
+  return sapiSpeak(dir, id, script);
+}
+
+// Sentences packed into pieces of at most `max` characters (Google's limit is about 200).
+function pieces(script, max = 180) {
+  const out = [];
+  for (const s of script.split(/(?<=[.!?])\s+/)) {
+    let rest = s;
+    while (rest.length > max) {
+      const cut = Math.max(rest.lastIndexOf(",", max), rest.lastIndexOf(" ", max));
+      out.push(rest.slice(0, cut > 40 ? cut : max));
+      rest = rest.slice(cut > 40 ? cut + 1 : max).trim();
+    }
+    if (out.length && rest && (out.at(-1) + " " + rest).length <= max) out[out.length - 1] += " " + rest;
+    else if (rest) out.push(rest);
+  }
+  return out;
+}
+
+async function googleSpeak(dir, id, script, lang) {
+  const files = [];
+  for (const [i, chunk] of pieces(script).entries()) {
+    let buf;
+    for (let attempt = 1; attempt <= 3 && !buf; attempt++) {
+      try {
+        const res = await fetch(`https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${encodeURIComponent(lang)}&q=${encodeURIComponent(chunk)}`,
+          { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }, signal: AbortSignal.timeout(20000) });
+        if (res.ok) buf = Buffer.from(await res.arrayBuffer());
+      } catch { /* try again */ }
+      if (!buf) await new Promise((r) => setTimeout(r, 1500 * attempt));
+    }
+    if (!buf?.length) throw new Error(`no audio for "${chunk.slice(0, 30)}..."`);
+    const f = join(dir, `${id}_${i}.mp3`);
+    writeFileSync(f, buf);
+    files.push(f);
+  }
+  const list = join(dir, `${id}_list.txt`);
+  writeFileSync(list, files.map((f) => `file '${f.replace(/\\/g, "/")}'`).join("\n"));
+  const wav = join(dir, `${id}.wav`);
+  const r = spawnSync(FFMPEG(), ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", list, "-ar", "48000", "-ac", "2", wav], { encoding: "utf8", timeout: 60000, windowsHide: true });
+  if (r.status !== 0) throw new Error(`joining the voice pieces: ${String(r.stderr).trim().split("\n").pop()}`);
+  const d = execFileSync(FFPROBE(), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", wav], { encoding: "utf8" });
+  return { wav, seconds: Number(d.trim()) };
+}
+
+function sapiSpeak(dir, id, script) {
   const textFile = join(dir, `${id}.txt`);
   const wav = join(dir, `${id}.wav`);
   writeFileSync(textFile, script, "utf8");
@@ -80,7 +133,7 @@ export async function renderReport(places, greeting, slotKey) {
   for (const [i, place] of places.entries()) {
     const lead = i === 0 ? `${greeting}. Here's your weather. ` : "";
     const tail = i === places.length - 1 ? " That's your weather." : "";
-    const { wav, seconds } = speak(work, `s${i}`, lead + spoken(place) + tail);
+    const { wav, seconds } = await speak(work, `s${i}`, lead + spoken(place) + tail);
     const gif = await radarGif(place.radar, work);
     const out = join(work, `scene${i}.mp4`);
     const dur = (seconds + 1.2).toFixed(2);
