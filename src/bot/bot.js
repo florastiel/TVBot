@@ -11,7 +11,7 @@ import { config, secrets } from "../config.js";
 import { log, tailLog, flagBadBot } from "../log.js";
 import { PLAYER_URL, callPlayer, localSecret } from "../local.js";
 import { runSync } from "../catalog/index.js";
-import { weatherTick } from "../weather/report.js";
+import { weatherTick, requestWeather } from "../weather/report.js";
 import { setEntrance, clearEntrance } from "./entrance.js";
 import { generateSchedule } from "../schedule/generate.js";
 import { planSpecials } from "../schedule/specials.js";
@@ -123,6 +123,7 @@ export function helpEmbeds() {
       "",
       "**What's on**",
       "• The **Today on TV** post in this channel has the day's lineup; it updates itself at midnight.",
+      "• Weather reports air on their own morning and evening; `/weather` puts one in the next commercial break.",
       "• `/schedule` refreshes it (no new post, nobody gets pinged). `/schedule week: True` shows you the week's lineup privately.",
       "• Something broke or looked wrong? `/badbot` (add what happened if you like) flags that exact moment in the logs.",
       "• Weekday nights have themes (heists and spies Monday, sci-fi Tuesday, whodunits and classics Wednesday, prestige and musicals Thursday, blockbusters Friday); Saturday mornings are cartoons, 5:30 to 12:15.",
@@ -161,6 +162,7 @@ const COMMANDS = [
   new SlashCommandBuilder().setName("commercials").setDescription("Cut to some commercials now; the show picks up where it left off")
     .addIntegerOption((o) => o.setName("minutes").setDescription("How many minutes of commercials (1 to 20)").setRequired(true).setMinValue(1).setMaxValue(20)),
   new SlashCommandBuilder().setName("skipcommercials").setDescription("Skip the commercials that are on right now (same as the Skip commercials button)"),
+  new SlashCommandBuilder().setName("weather").setDescription("Put the weather report in the next commercial break"),
   new SlashCommandBuilder().setName("tvadmin").setDescription("TV admin controls")
     // admin_user_id "*": anyone may use it, so don't hide it from people without Manage Server.
     .setDefaultMemberPermissions(ANYONE_ADMIN ? null : PermissionFlagsBits.ManageGuild)
@@ -475,6 +477,19 @@ export async function startBot() {
         flagBadBot(`BADBOT ${new Date().toLocaleString("sv-SE", { hour12: false })}  from ${by}\n  said: ${text || "(nothing)"}\n  on air: ${on}  |  player: ${st ? `${st.state}, ${st.viewers ?? "?"} watching` : "not answering"}`,
           [["player log, last 40 lines", tailLog("player", 40)], ["bot log, last 15 lines", tailLog("bot", 15)]]);
         return i.reply({ content: "Flagged in the logs at this moment. Thanks!", ...ephemeral });
+      }
+      // /weather: the report goes in the next commercial break (a fresh one is made first if the
+      // last is older than 90 minutes, about 40 seconds). Anyone watching in the TV's voice channel.
+      if (i.isChatInputCommand() && i.commandName === "weather") {
+        if (!(await inTvChannel(i))) return i.reply({ content: "Only people in the TV's voice channel can do that.", ...ephemeral });
+        await i.deferReply(ephemeral);
+        try {
+          const r = await requestWeather();
+          return i.editReply(r.already ? "The weather is already lined up for the next commercial break." : `The weather (${r.seconds} seconds) goes in the next commercial break.`);
+        } catch (e) {
+          log.warn(`bot: /weather failed: ${e.message}`);
+          return i.editReply("Couldn't make the weather report right now. Try again in a minute.");
+        }
       }
       // /skipcommercials: the button's job as a command (people in the TV's voice channel).
       if (i.isChatInputCommand() && i.commandName === "skipcommercials") {

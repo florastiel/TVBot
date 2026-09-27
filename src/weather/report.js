@@ -53,16 +53,46 @@ export async function weatherTick(now = Date.now()) {
   try { await makeReport(slot); } catch (e) { log.warn(`weather: couldn't make the report: ${e.message}`); } finally { busy = false; }
 }
 
-// For the player: the segment for the report that is due, once; null otherwise.
-export function takeWeather(now = Date.now()) {
+const segmentOf = (ready) => ({
+  rdLink: null, itemId: null, kind: "weather", title: "Weather", subtitle: ready.places.join(", "), input: ready.file, seekMs: 0,
+  durationMs: ready.durationMs, audioStream: 1, subs: { mode: "none" }, subsFile: null, breakId: null,
+});
+const readyReport = () => { const r = JSON.parse(getMeta("weather_ready") || "null"); return r && existsSync(r.file) ? r : null; };
+
+// /weather: have the next commercial break (any, even inside a show) carry the weather.
+// Uses the report made for the current time slot, or one made in the last 90 minutes;
+// otherwise makes a fresh one first (about 40 seconds). Returns { queued, already, seconds }.
+export async function requestWeather() {
+  if (getMeta("weather_force")) return { queued: true, already: true };
+  let ready = readyReport();
+  if (!ready || Date.now() - ready.at > 90 * 60000) {
+    while (busy) await new Promise((r) => setTimeout(r, 2000)); // one is being made already
+    ready = readyReport();
+    if (!ready || Date.now() - ready.at > 90 * 60000) {
+      busy = true;
+      try { ready = await makeReport({ key: `request ${new Date().toISOString()}`, start: Date.now() }); } finally { busy = false; }
+    }
+  }
+  setMeta("weather_force", "1");
+  return { queued: true, seconds: Math.round(ready.durationMs / 1000) };
+}
+
+// For the player, at each commercial break: the report that is due (once), or the one
+// /weather asked for; null otherwise. Scheduled reports go only in breaks between shows.
+export function takeWeather(now = Date.now(), { inside = false } = {}) {
   const slot = currentSlot(now);
-  if (!slot || now < slot.start) return null;
+  if (getMeta("weather_force")) {
+    const ready = readyReport();
+    setMeta("weather_force", "");
+    if (ready) {
+      if (slot && ready.slot === slot.key) setMeta("weather_aired", slot.key); // don't air the same one again right after
+      return segmentOf(ready);
+    }
+  }
+  if (inside || !slot || now < slot.start) return null;
   if (getMeta("weather_aired") === slot.key) return null;
-  const ready = JSON.parse(getMeta("weather_ready") || "null");
-  if (!ready || ready.slot !== slot.key || !existsSync(ready.file)) return null;
+  const ready = readyReport();
+  if (!ready || ready.slot !== slot.key) return null;
   setMeta("weather_aired", slot.key);
-  return {
-    rdLink: null, itemId: null, kind: "weather", title: "Weather", subtitle: ready.places.join(", "), input: ready.file, seekMs: 0,
-    durationMs: ready.durationMs, audioStream: 1, subs: { mode: "none" }, subsFile: null, breakId: null,
-  };
+  return segmentOf(ready);
 }

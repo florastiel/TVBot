@@ -211,8 +211,9 @@ export function makeBreak(plex, { theme = null, inside = false, show = null } = 
   remember(rows);
   const breakId = newBreakId();
   const segs = rows.map((r) => toSegment(r, plex, { breakId }));
-  // The weather report, when one is due (config weather.times), leads the first break between shows.
-  const wx = inside ? null : takeWeather();
+  // The weather report leads the first break between shows after a scheduled time
+  // (config weather.times), or the next break of any kind after /weather.
+  const wx = takeWeather(Date.now(), { inside });
   return timed(wx ? [{ ...wx, breakId }, ...segs] : segs);
 }
 
