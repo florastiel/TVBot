@@ -62,10 +62,11 @@ Object.assign(commands, {
 
   // Make a weather report right now (config weather.locations) and print where it is;
   // it doesn't go on air (that happens at weather.times).
-  async weather() {
+  // --fast: the plain voice (no character voices; about a minute instead of several).
+  async weather(...flags) {
     const { makeReport } = await import("./weather/report.js");
-    const r = await makeReport({ key: `manual ${new Date().toISOString()}`, start: Date.now() });
-    console.log(`${r.file}\n${(r.durationMs / 1000).toFixed(0)} seconds: ${r.places.join(", ")}`);
+    const r = await makeReport({ key: `manual ${new Date().toISOString()}`, start: Date.now() }, { fast: flags.includes("--fast") });
+    console.log(`${r.file}\n${(r.durationMs / 1000).toFixed(0)} seconds: ${r.places.join(", ")}${r.presenters?.length ? `\npresenters: ${r.presenters.join(", ")}` : ""}`);
   },
 
   // Fill the schedule from the week's grid (free). --replace: new random picks after

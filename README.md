@@ -388,3 +388,11 @@ built-in Windows voice (`weather.voice`, `Microsoft Zira Desktop` or `Microsoft 
 in from those numbers. Nothing is written by an AI. If no break comes within `weather.window_hours` (3) of the time,
 that report is skipped. `tv.cmd weather` makes one right now and prints where the mp4 is, without airing it.
 Places: `{ name, lat, lon, radar }`; the radar station is on radar.weather.gov.
+
+Character voices: `weather.voices` is a pool of voice models (Applio RVC, installed under `tools\rvc`, which git ignores:
+a Python 3.12 environment, Applio, and each voice as `tools\rvc\models\<name>\model.pth` + `model.index`). Each
+location gets a different presenter picked at random from the pool. The presenter speaks in a Google or Windows
+voice first, then `scripts\rvc-convert.py` converts it to the character on the CPU at low priority (about 7 minutes
+for a whole report), and the presenters hand off to each other ("I'll hand it off now to Deku for Long Island").
+`/weather` and `tv.cmd weather --fast` skip the character voices. Only download models you trust, and scan
+them first: `tools\rvc\venv312\Scripts\picklescan.exe --path model.pth`.
