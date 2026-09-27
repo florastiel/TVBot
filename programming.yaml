@@ -29,7 +29,7 @@ pools:
   WED_MOVIE: [Knives Out Nights, Whodunit Feature Films, Classic Hollywood, Date Night]
   THU_MOVIE: [Awards Season Cinema, Prestige Biopic Cinema, Broadway Musicals]
   FRI_MOVIE: [Nineties Movie Night, Camp Horror Night, Campy Halloween Classics, Action Blockbuster Night, Superheroes, Anime Action Movies, Big Screen Laughs, Halloween Horror Features, Christmas Movies]
-  SAT_EVE: [Men in Black Saga, Campy Halloween Classics, Camp Horror Night, Mission Impossible Marathon, John Wick Saga, Twilight Saga, Evangelion Rebuild, Naruto Movie Night, Broadway Musicals]
+  SAT_EVE: [Men in Black Saga, Campy Halloween Classics, Camp Horror Night, Gremlins Double Feature, Mission Impossible Marathon, John Wick Saga, Twilight Saga, Evangelion Rebuild, Naruto Movie Night, Broadway Musicals]
   SAT_LATE: [Midnight Fright Night, Camp Horror Night, Scream Marathon, Jason Voorhees Marathon, Slasher Night, Cult Weird Cinema, The Late Late Show, So Bad Its Good]
   SUN_EVE: [Nineties Movie Night, Halloweentown Saga, Campy Halloween Classics, Date Night, Broadway Musicals, Classic Hollywood, Awards Season Cinema, Studio Ghibli Melancholy, Christmas Movies]
   LATE_PRESTIGE: [Prestige Prime Time, Prestige Crime Drama, Tragedy, Mob and Mafia, Grown-Up Cartoons, Anime Tearjerkers, Twilight Mystery Zone]
