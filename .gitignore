@@ -4,9 +4,10 @@ tools/
 data/
 logs/
 *.log
-# generated / scratch lists of the buckets
+# generated / scratch lists of the buckets and catalog
 buckets.html
 buckets.txt
+catalog.html
 
 # your own settings and server/channel IDs (copy config.example.yaml)
 config.yaml

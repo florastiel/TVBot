@@ -127,6 +127,12 @@ Object.assign(commands, {
     }
   },
 
+  // tv.cmd catalog --html   write catalog.html: every show/movie, Netflix-style rows + search
+  async catalog() {
+    const { writeCatalogPage } = await import("./schedule/catalogpage.js");
+    return console.log(`wrote ${writeCatalogPage()} (open it in a browser)`);
+  },
+
   // tv.cmd plan [days]   print the grid (bucket slots) for the next days
   async plan(days = "2") {
     const { slotsBetween } = await import("./schedule/weekplan.js");
@@ -222,6 +228,7 @@ if (!commands[cmd]) {
   tag [--dry|--sample|--redo|--order|--episodes]  tag the catalog with Claude (only untagged items unless --redo; --order: serialized/episodic; --episodes: musical/beach episodes)
   schedule [days] [--replace|--replan]  fill the schedule from the week's grid (--replace: new picks, free; --replan: new grid from Claude)
   buckets [--html|--all|--build|--new ["ideas"]|--thin]  list the buckets (--build: Claude sorts the catalog; --new: a few new ones, or the ones asked for; --thin: new homes for titles with only one bucket)
+  catalog --html               write catalog.html: every show/movie, Netflix-style rows + search
   plan [days]                  print the grid of bucket slots
   guide                        print what's on today
   playlist --clear             drop the test playlist; the TV follows the schedule

@@ -256,6 +256,10 @@ Three layers; Claude never picks individual episodes or movies.
    a title to see every bucket it's in; bucket passes refresh it). `tv.cmd buckets` lists them; `--build` redoes the first pass, `--new` the weekly one
    (`--new "ideas"` for specific requests), `--thin [shows|movies]` makes new buckets for
    titles that only have one (often a loose fit).
+   `tv.cmd catalog --html` writes `catalog.html`, a Netflix-style browse of the whole
+   library (every show and movie, no streaming) - a row per bucket plus a search that
+   flattens everything into one grid; no artwork, so cards are color-tagged by genre
+   instead of a poster. The two pages link to each other.
 2. **The grid.** Claude lays out the days as bucket slots, a week at a time, staying
    `grid_weeks_ahead` (2) weeks ahead so there's always a buffer ("Sat 06:00 Saturday Morning
    Cartoons, 10:00 Shonen Slop, ..."), from the bucket list alone. Code

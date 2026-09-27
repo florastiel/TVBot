@@ -87,6 +87,8 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(-
 header.top { padding-block: 28px 12px; display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 24px; }
 h1 { font: 900 clamp(34px, 6vw, 56px)/0.95 var(--display); font-stretch: 68%; letter-spacing: 0.01em; text-transform: uppercase; margin: 0; }
 h1 small { display: block; font: 600 13px/1.4 var(--mono); letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; margin-top: 8px; font-stretch: 100%; }
+h1 small a.catalink { color: var(--accent); text-decoration: none; }
+h1 small a.catalink:hover { text-decoration: underline; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font: 500 12px var(--mono); color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 14px; height: 6px; border-radius: 2px; display: inline-block; }
@@ -120,7 +122,7 @@ button.more { justify-self: start; font: 700 12px var(--mono); background: none;
 </style>
 <div class="wrap">
   <header class="top">
-    <h1>Bucket Book<small>Every kind of block the TV can air · updated __STAMP__</small></h1>
+    <h1>Bucket Book<small>Every kind of block the TV can air · updated __STAMP__<br><a class="catalink" href="catalog.html">Browse the full catalog &rarr;</a></small></h1>
     <div class="legend" aria-label="When a bucket can air">
       <span><i style="background:var(--morning)"></i>morning 6–12</span>
       <span><i style="background:var(--afternoon)"></i>afternoon 12–5</span>
