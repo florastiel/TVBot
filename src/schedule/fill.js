@@ -14,6 +14,19 @@ import { blockLength, inOrder, nextInOrder } from "./generate.js";
 const DAY = 86400000;
 const TRIES = 12;
 const hourOf = (ms) => Number(new Intl.DateTimeFormat("en-US", { timeZone: config.broadcast.timezone, hourCycle: "h23", hour: "2-digit" }).format(new Date(ms)));
+const minuteOfDay = (ms) => {
+  const p = new Intl.DateTimeFormat("en-US", { timeZone: config.broadcast.timezone, hourCycle: "h23", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(ms));
+  return Number(p.find((x) => x.type === "hour").value) * 60 + Number(p.find((x) => x.type === "minute").value);
+};
+// broadcast.no_premiere_hours ["02:30", "07:00"]: no serialized show starts from its first
+// episode then (nobody's up to watch one begin); something else fills the slot.
+function quietHours(at) {
+  const w = config.broadcast.no_premiere_hours;
+  if (!Array.isArray(w) || w.length !== 2) return false;
+  const [from, to] = w.map((t) => { const [h, m] = String(t).split(":").map(Number); return h * 60 + (m || 0); });
+  const m = minuteOfDay(at);
+  return from <= to ? m >= from && m < to : m >= from || m < to;
+}
 const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
 // Shared state for one fill run.
@@ -86,8 +99,11 @@ function pickBlock(bucket, at, room, ctx) {
     let shows = stalest(bucket.shows.filter((s) => !today.has(s)), (s) => ctx.showLast.get(s));
     // The premiere bucket: only serialized shows that would start from episode one.
     if (bucket.premiere) shows = shows.filter((s) => inOrder(s) && !(ctx.showLast.get(s) > at - 30 * DAY));
+    const quiet = quietHours(at);
+    if (quiet && bucket.premiere) return null; // billed as a premiere whatever the episode
     for (const show of shows.slice(0, TRIES)) {
       const eps = episodesOf(show, 6, at, ctx, bucket);
+      if (quiet && isPremiere(eps)) continue; // (a show already under way carries on)
       for (let k = eps.length; k >= 1; k--) {
         const l = fits(eps.slice(0, k), Math.min(room, maxShow()));
         if (l) return { rows: eps.slice(0, k), lengthMs: l.lengthMs };

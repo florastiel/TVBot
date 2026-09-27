@@ -37,6 +37,7 @@ broadcast:
     - { day: saturday, from: "05:30", to: "12:15", bucket: "Saturday Morning Cartoons" }
   specials_per_week: 0         # extra Claude-picked specials each week (0 = only on request; the weekly grid has marathons already)
   idle_leave_minutes: 5        # leave voice after this long with nobody watching
+  no_premiere_hours: ["02:30", "07:00"]   # no serialized show starts from its first episode (and no "Series Premiere" block) in this window; [] = anytime
 
 plex:
   server_name: ""

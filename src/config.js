@@ -31,6 +31,7 @@ const DEFAULTS = {
     grid_weeks_ahead: 2,
     specials_per_week: 0,
     idle_leave_minutes: 5,
+    no_premiere_hours: ["02:30", "07:00"],
   },
   plex: { server_name: "", libraries: [], include_unmatched: false, include_show_only_matches: true },
   shows: { random: [], in_order: [], never: [], aliases: {}, rename: {}, prefer_source: {} },
