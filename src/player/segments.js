@@ -206,6 +206,10 @@ export function makeBreak(plex, { theme = null, inside = false, show = null } = 
       if (outOf) rows.push(outOf);
     }
   } else {
+    if (Math.random() < (b.eyecatch_chance ?? 0)) {
+      const e = pickEyecatch(null, []);
+      if (e) rows.push(e);
+    }
     for (let k = 0; k < b.between_spots; k++) add(k === 0 && Math.random() < b.clip_chance ? "clip" : "commercial", maxMs);
   }
   remember(rows);
