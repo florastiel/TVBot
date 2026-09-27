@@ -84,8 +84,10 @@ Object.assign(commands, {
   // it doesn't go on air (that happens at weather.times).
   async weather() {
     const { makeReport } = await import("./weather/report.js");
+    const { closeBrowser } = await import("./weather/board.js");
     const r = await makeReport({ key: `manual ${new Date().toISOString()}`, start: Date.now() });
     console.log(`${r.file}\n${(r.durationMs / 1000).toFixed(0)} seconds: ${r.places.join(", ")}${r.presenters?.length ? `\nvoices: ${r.presenters.join(", ")}` : ""}`);
+    await closeBrowser(); // a one-shot command should exit; the bot process keeps its browser warm instead
   },
 
   // Fill the schedule from the week's grid (free). --replace: new random picks after
