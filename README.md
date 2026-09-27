@@ -1,7 +1,7 @@
 # tvchannel
 
 A fake cable TV channel for the Discord server. A throwaway Discord account
-("the streamer account") Go Live streams a schedule of shows, movies and commercials into a voice
+(the "streamer" account) Go Live streams a schedule of shows, movies and commercials into a voice
 channel, on the wall clock like real TV; a normal bot (TVbot, coupbot's old token) is
 the remote control. Claude sorts the catalog into kinds of blocks and lays out a weekly
 grid of them; code fills the grid with random picks.
@@ -12,7 +12,7 @@ machine and restart if they crash (see *Running it*).
 ## How it fits together
 
 ```
-  TVbot (bot)    --HTTP on 127.0.0.1-->  player (the streamer account)  -->  Go Live in voice
+  TVbot (bot)    --HTTP on 127.0.0.1-->  player (streamer)  -->  Go Live in voice
   /tv /tvoff /tvpause /schedule          ffmpeg per item -> one continuous stream
   /entrance /tvadmin                     entrance sounds over its mic
        |                                        |

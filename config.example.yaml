@@ -1,11 +1,11 @@
-# tvchannel settings. Edit this file, then restart the TV (see README).
+# tvchannel settings. Copy this file to config.yaml (which git ignores) and fill in your own IDs, then restart the TV (see README).
 # Anything you delete falls back to the default built into src/config.js.
 # Secrets (tokens, API key) do NOT go here; they live in .env.
 
 discord:
   guild_id: ""   # your server (right-click server > Copy ID)
   now_playing_channel_id: ""   # channel for "now playing" posts
-  admin_user_id: "*"           # who can use /tvadmin (skip, sync, regen...): a user ID, or "*" for anyone. Yours: ""
+  admin_user_id: "*"           # who can use /tvadmin (skip, sync, regen...): a user ID, or "*" for anyone.
   daily_guide: true            # post the whole day's programming just after midnight
   guide_channel_id: ""         # where that goes (blank = the now-playing channel)
   drop_thread_id: ""   # "Commercials" thread: anyone posts links there, they become commercials
@@ -18,7 +18,7 @@ broadcast:
   between_spots: 2             # videos in the break between shows (the first is sometimes a clip, see clip_chance)
   inside_spots: 1              # commercials in a break inside a show (at a fade to black): 1, or 2 = add a second when both are short
   short_spot_seconds: 35       # with inside_spots 2: "short" means this long or less
-  eyecatches: tv               # an eyecatch before and after a break inside a show: tv (what Claude judged would air with TV breaks: sitcoms, cartoons, network dramas, rom-coms...), all, or none. Never in anime (it has its own)
+  eyecatches: tv               # an eyecatch before and after a break inside a show: tv (what Claude judged would air with TV breaks: sitcoms, cartoons, network dramas, rom-coms...), all, or none. Anime included, but never with the show's own eyecatches
   # A folder of commercials counts as one brand (so 88 Pop-Tarts ads don't take over);
   # folders named here are packs of many different ads, and each file counts on its own.
   variety_folders: ["commercialpack1", "Collectionof90sCommercials"]
@@ -39,7 +39,7 @@ broadcast:
   idle_leave_minutes: 5        # leave voice after this long with nobody watching
 
 plex:
-  server_name: 
+  server_name: ""
   libraries: ["Movies", "Anime/TV Shows", "Other Media"]
   include_unmatched: false     # items Plex couldn't identify at all (raw filenames) stay off the schedule
   include_show_only_matches: true  # episodes of a known show that Plex couldn't pin down (no episode title)
@@ -58,6 +58,9 @@ shows:
   # Case, punctuation, a "(2019)"/"(US)" tag and "S2"/"2nd Season" are matched by
   # themselves; these are the ones that need telling (other language, other wording).
   # A name mapped to itself is never merged. Applied at the next sync.
+  # A show Plex has filed under the wrong name (its files are really the other show); applies to Plex too.
+  rename:
+    Zero-one: Mr. Bean
   aliases:
     Boku no Hero Academia: My Hero Academia
     Vigilante - Boku no Hero Academia Illegals: "My Hero Academia: Vigilantes"

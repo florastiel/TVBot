@@ -7,3 +7,6 @@ logs/
 # generated / scratch lists of the buckets
 buckets.html
 buckets.txt
+
+# your own settings and server/channel IDs (copy config.example.yaml)
+config.yaml
