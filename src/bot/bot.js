@@ -135,10 +135,10 @@ export function helpEmbeds() {
       "• `/commercials minutes: 5`: want ads? Cuts to that many minutes (1 to 20) of commercials and clips right now; the show picks up at the same second after.",
       "",
       "**What's on**",
-      "• The **Today on TV** post in this channel has the day's lineup; it updates itself at midnight.",
+      "• The **Today on TV** post in this channel has the day's lineup, with ▶ on whatever's on now; it updates itself at midnight and as shows change.",
       "• Weather reports air on their own morning and evening; `/weather` puts one in the next commercial break.",
       "• `/changelog` shows what was added to the server lately (only you see it); `days` goes back further.",
-      "• `/schedule` refreshes it (no new post, nobody gets pinged). `/schedule week: True` shows you the week's lineup privately.",
+      "• `/schedule` refreshes that post and replies to just you with the next 24 hours (dismissable). `/schedule week: True` shows you the week's lineup privately instead.",
       "• Something broke or looked wrong? `/badbot` (add what happened if you like) flags that exact moment in the logs.",
       "• Weekday nights have themes (heists and spies Monday, sci-fi Tuesday, whodunits and classics Wednesday, prestige and musicals Thursday, blockbusters Friday); Saturday mornings are cartoons, 5:30 to 12:15.",
     ].join("\n")),
@@ -197,7 +197,7 @@ const COMMANDS = [
   new SlashCommandBuilder().setName("badbot").setDescription("Something bad or weird just happened: flag this moment in the logs")
     .addStringOption((o) => o.setName("what").setDescription("What went wrong (optional)").setMaxLength(300)),
   new SlashCommandBuilder().setName("tvhelp").setDescription("Post how to use the TV (replaces the last help post)"),
-  new SlashCommandBuilder().setName("schedule").setDescription("Refresh today's TV guide post in the TV channel")
+  new SlashCommandBuilder().setName("schedule").setDescription("Refresh the TV guide post, and see the next 24 hours (only you)")
     .addBooleanOption((o) => o.setName("week").setDescription("Show me the whole week's lineup of block types instead (only you see it)")),
   new SlashCommandBuilder().setName("entrance").setDescription("Your sound when you join the TV's voice channel")
     .addSubcommand((s) => s.setName("set").setDescription(`Upload a sound (only the first ${config.entrance.max_seconds} seconds play)`)
