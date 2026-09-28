@@ -94,7 +94,7 @@ Snoopy Come Home, The Peanuts Movie, Hallmark-style fall movies.
   Day, Fargo, The Shining, The Thing.
 - *Anime*: Sanda, To Your Eternity, Tokyo Godfathers, Toradora! (its Christmas stretch).
 
-**Rainbow Hour** (LGBTQ+ anime, not only BL/yuri): The Summer Hikaru Died (Hikaru ga Shinda Natsu) goes in Rainbow Hour when the owner
+**Gay** (LGBTQ+ anime, not only BL/yuri): The Summer Hikaru Died (Hikaru ga Shinda Natsu) goes in Gay when the owner
 adds it (with Junjo Romantica and Banana Fish). Junjo is BL, not shojo: keep it out of Shojo & Josei.
 
 **Year-round**: a girl-power cartoon block (Winx Club, W.I.T.C.H., Totally Spies!, My
