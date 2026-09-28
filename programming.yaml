@@ -11,31 +11,32 @@
 # to grid days planned after the change (the grid runs about two weeks ahead).
 
 pools:
-  LATE_A: [Adult Swim, Weird Cartoon Late Show, Anime Gross-Out Gags, Grappler Gauntlet, Cringe Comedy Hour, Grown-Up Cartoons]
+  LATE_A: [Adult Swim, Weird Cartoon Late Show, Seinen Gag Night, Grappler Gauntlet, Cringe Comedy Hour, Grown-Up Cartoons, Versus Mode]
   LATE_MOVIE: [Midnight Fright Night, Camp Horror Night, Cult Weird Cinema, Documentary Night, "So Bad It's Good", Big Screen Laughs, Comedy Specials, Found Footage Oddities,
-    David Lynch Nightmare, Fright Feature Vault, Halloween Horror Features, Slasher Night, Spooktober Anime, Western Showdown]
+    David Lynch Nightmare, Fright Feature Vault, Halloween Horror Features, Slasher Night, Spooktober Anime, Western Showdown, Insert Coin Cinema]
   LATE_B: [Dark Serial Night, Twilight Mystery Zone, Detective Noir, Dark Anime Thrillers, When They Cry Marathon, Anime Tearjerkers, Spooky Season Anime]
   MORN_TOON: [Retro Toon Vault, Cartoon Network, Goofy Kids Comedy, Marvel Animated Universe]
   MORN_TOKU: [Tokusatsu Theater, Digimon Digital World, Dragon Ball Marathon, Weekly Shonen Giants, Shonen Showdown]
-  MORN_COZY: [Peanuts Specials, Muppet Marathon, Cozy Halloween Cartoons, Anime Slice of Life, Cozy Camp Anime, Pixar Picture Show, Family Movie Night, Studio Ghibli Matinee]
+  MORN_COZY: [Peanuts Specials, Muppet Marathon, Cozy Halloween Cartoons, Anime Slice of Life, Iyashikei Hour, Pixar Picture Show, Family Movie Night, Studio Ghibli Matinee]
   AFT_MOVIE: [Campy Halloween Classics, Cozy Halloween Cartoons, Digimon Movie Vault, Family Movie Night, Studio Ghibli Matinee, Pixar Picture Show, Cozy Anime Autumn, Studio Ghibli Melancholy]
-  AFT_TV: [TGIF Block, Courage Hour, Anime Comedy Club, Anime Rom-Coms, Shojo Hour, Anime Fantasy Quests, Mecha and Monsters, X-Men Legacy, Detective Conan Case Files,
+  AFT_TV: [TGIF Block, Courage Hour, Gag Anime Hour, Anime Rom-Coms, "Shojo & Josei", "Isekai & Fantasy", "Mecha & Kaiju", X-Men Legacy, Detective Conan Case Files, Sports Anime,
     Sitcom Rerun Central, Reality Check, Shonen Showdown, Halloween Episodes, Thanksgiving Episodes, Christmas Episodes]
   AFT_SERIES: [Men in Black Saga, Muppet Marathon, Peanuts Specials, Halloweentown Saga, Toy Story Saga, Dragon Ball Movie Vault, Detective Conan Movie Vault, Mission Impossible Marathon,
     X-Men Movie Marathon, Spider-Man Saga, Hunger Games Saga, Digimon Movie Vault]
   EVE_TV: [TGIF Block, Courage Hour, Dark Serial Night, Prime Time Procedurals, Sitcoms, Nick at Nite, Whodunit Theater, Reality Check, British Comedy Classics, Superhero Prime Time,
-    Sci-Fi Signal, Sitcom Rerun Central, Halloween Episodes, Spooky Season Anime, Thanksgiving Episodes, Christmas Episodes, "*cheats nefariously*"]
+    Sci-Fi Signal, Sitcom Rerun Central, Halloween Episodes, Spooky Season Anime, Thanksgiving Episodes, Christmas Episodes, "*cheats nefariously*",
+    Press Start, Versus Mode, Fortnite Crossovers]
   MON_MOVIE: [Nineties Movie Night, Heist Night, Spy Games]
   TUE_MOVIE: [Sci-Fi Feature Presentation, Nolan Night, Planet of the Apes, Dark Knight Trilogy]
   WED_MOVIE: [Knives Out Nights, Whodunit Feature Films, Western Showdown, Date Night]
   THU_MOVIE: [Awards Season Cinema, Prestige Biopic Cinema, Broadway Musicals, Documentary Night]
   FRI_MOVIE: [Nineties Movie Night, Camp Horror Night, Campy Halloween Classics, Action Blockbuster Night, Superheroes, Anime Action Movies, Big Screen Laughs, Halloween Horror Features, Christmas Movies,
-    Comedy Specials, Die Hard Marathon]
+    Comedy Specials, Die Hard Marathon, Fortnite Movie Night, Insert Coin Cinema]
   SAT_EVE: [Men in Black Saga, Campy Halloween Classics, Camp Horror Night, Gremlins Double Feature, Mission Impossible Marathon, John Wick Saga, Twilight Saga, Evangelion Rebuild, Naruto Movie Night, Broadway Musicals,
-    X-Men Movie Marathon, Dark Knight Trilogy, Spider-Man Saga, Hunger Games Saga, Planet of the Apes, Die Hard Marathon]
+    X-Men Movie Marathon, Dark Knight Trilogy, Spider-Man Saga, Hunger Games Saga, Planet of the Apes, Die Hard Marathon, Fortnite Movie Night]
   SAT_LATE: [Midnight Fright Night, Camp Horror Night, Scream Marathon, Jason Voorhees Marathon, Slasher Night, Cult Weird Cinema, Comedy Specials, "So Bad It's Good"]
   SUN_EVE: [Nineties Movie Night, Halloweentown Saga, Campy Halloween Classics, Date Night, Broadway Musicals, Western Showdown, Awards Season Cinema, Studio Ghibli Melancholy, Christmas Movies]
-  LATE_PRESTIGE: [Prestige Prime Time, Prestige Crime Drama, Tragedy, Mob and Mafia, Grown-Up Cartoons, Anime Tearjerkers, Twilight Mystery Zone, "*cheats nefariously*"]
+  LATE_PRESTIGE: [Prestige Prime Time, Prestige Crime Drama, Tragedy, Mob and Mafia, Grown-Up Cartoons, Anime Tearjerkers, Twilight Mystery Zone, "*cheats nefariously*", Seinen After Dark]
 
 days:
   Monday:

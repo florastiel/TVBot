@@ -37,7 +37,10 @@ scripts/program/tv.mjs ...` from the project folder (that's the only command all
   (single episodes of different shows; 4+ shows), `movie` (one movie per block; 3+
   movies), `movie_series` (one franchise in order; 2+ movies, listed in play order).
   Shows only in one_show/variety, movies only in movie/movie_series.
-- Names: 1–4 plain words, what viewers see. `about`: one line on what belongs.
+- Names: 1–4 plain words, what viewers see. `about`: one line on what belongs. Anime blocks
+  use the anime words (shonen, shojo, seinen, josei, isekai, iyashikei, mecha, kaiju, gag):
+  go by the `AniList:` tags on each anime's line in review.txt (demographic and themes, most
+  relevant first), not by guesswork.
 - Dayparts: morning 6–12, afternoon 12–17, evening 17–22, late 22–6. Kids' stuff in the
   morning/afternoon; adult, gory or explicit only evening/late.
 - Seasonal buckets get `active_from`/`active_to` (MM-DD). Halloween, Thanksgiving and
