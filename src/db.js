@@ -195,6 +195,16 @@ const MIGRATIONS = [
   -- themes (Isekai, Iyashikei, Mecha...), for the programming pass.
   ALTER TABLE shows ADD COLUMN anilist_tags TEXT;
   `,
+  `
+  -- TMDB's genres and keywords (tagging/tmdb.js), JSON {"genres": [...], "keywords": [...]}:
+  -- "based on video game", "heist", "time travel"... for shows and movies.
+  ALTER TABLE shows ADD COLUMN tmdb_id INTEGER;
+  ALTER TABLE shows ADD COLUMN tmdb_tags TEXT;
+  ALTER TABLE shows ADD COLUMN tmdb_checked_at TEXT;
+  ALTER TABLE items ADD COLUMN tmdb_id INTEGER;
+  ALTER TABLE items ADD COLUMN tmdb_tags TEXT;
+  ALTER TABLE items ADD COLUMN tmdb_checked_at TEXT;
+  `,
 ];
 
 let db;

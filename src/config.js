@@ -63,4 +63,5 @@ export const secrets = {
   plexToken: process.env.PLEX_TOKEN,
   anthropicKey: process.env.ANTHROPIC_API_KEY,
   rdToken: process.env.RD_TOKEN,
+  tmdbKey: process.env.TMDB_API_KEY,
 };

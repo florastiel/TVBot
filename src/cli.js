@@ -62,6 +62,14 @@ Object.assign(commands, {
     await tagBreaks({ redo: flags.includes("--redo") });
     const { detectShorts } = await import("./tagging/anilist.js");
     await detectShorts().catch((e) => console.error("AniList short check failed:", e.message));
+    const { fetchTmdb } = await import("./tagging/tmdb.js");
+    await fetchTmdb().catch((e) => console.error("TMDB lookup failed:", e.message));
+  },
+
+  // TMDB genres + keywords for shows and movies not looked up yet (--redo: all of them).
+  async tmdb(...flags) {
+    const { fetchTmdb } = await import("./tagging/tmdb.js");
+    console.log(`${await fetchTmdb({ redo: flags.includes("--redo") })} shows/movies tagged from TMDB`);
   },
 
   // Which anime are shorts (AniList), then the Shorts block takes them in. --redo: check them all again.
@@ -227,6 +235,7 @@ if (!commands[cmd]) {
   bot                          run the remote-control bot
   playlist "<show>" [count]    set the test playlist to a few episodes of a show
   tag [--dry|--sample|--redo|--order|--episodes]  tag the catalog with Claude (only untagged items unless --redo; --order: serialized/episodic; --episodes: musical/beach episodes)
+  tmdb [--redo]                TMDB genres/keywords for shows and movies (needs TMDB_API_KEY in .env)
   schedule [days] [--replace|--replan]  fill the schedule from the week's grid (--replace: new picks, free; --replan: new grid from Claude)
   buckets [--html|--all|--build|--new ["ideas"]|--thin]  list the buckets (--build: Claude sorts the catalog; --new: a few new ones, or the ones asked for; --thin: new homes for titles with only one bucket)
   catalog --html               write catalog.html: every show/movie, Netflix-style rows + search

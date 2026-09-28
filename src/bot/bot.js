@@ -14,6 +14,7 @@ import { PLAYER_URL, callPlayer, localSecret } from "../local.js";
 import { runSync } from "../catalog/index.js";
 import { weatherTick, requestWeather } from "../weather/report.js";
 import { detectShorts } from "../tagging/anilist.js";
+import { fetchTmdb } from "../tagging/tmdb.js";
 import { formatChangelog } from "../changelog.js";
 import { setEntrance, clearEntrance } from "./entrance.js";
 import { generateSchedule } from "../schedule/generate.js";
@@ -59,6 +60,7 @@ async function upkeep() {
     await tagEpisodeThemes().catch((e) => log.warn(`bot: episode theme tagging failed: ${e.message}`));
     await tagBreaks().catch((e) => log.warn(`bot: TV-break tagging failed: ${e.message}`));
     await detectShorts().catch((e) => log.warn(`bot: AniList short check failed: ${e.message}`));
+    await fetchTmdb().catch((e) => log.warn(`bot: TMDB lookup failed: ${e.message}`));
   }
   const until = scheduledUntil();
   if (until < Date.now() + 12 * 3600000) {
