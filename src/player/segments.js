@@ -200,10 +200,12 @@ function pickEyecatch(show, avoid) {
 
 // A commercial break, always bookended by an eyecatch at each end. Between shows (inside:
 // false): between_spots videos, each with clip_chance of being a clip instead of a
-// commercial. Inside a show: one commercial
-// (with inside_spots 2, a second one when both are short_spot_seconds or less) - here the
-// bookends only happen where wantsEyecatches says so (broadcast.eyecatches). Each spot at
-// most max_spot_minutes, from different groups. show: the row of the show the break is inside.
+// commercial, sharing a length budget (max_spot_minutes x between_spots) - a spot much
+// longer than usual still plays, it just leaves less room for the rest of the pod rather
+// than being excluded. Inside a show: one commercial (with inside_spots 2, a second one
+// when both are short_spot_seconds or less) - here the bookends only happen where
+// wantsEyecatches says so (broadcast.eyecatches). From different groups. show: the row of
+// the show the break is inside.
 export function makeBreak(plex, { theme = null, inside = false, show = null } = {}) {
   const b = config.broadcast;
   const maxMs = b.max_spot_minutes * 60000;
@@ -232,7 +234,17 @@ export function makeBreak(plex, { theme = null, inside = false, show = null } = 
     // ones where the pool allows it.
     const into = pickEyecatch(null, []);
     if (into) rows.push(into);
-    for (let k = 0; k < b.between_spots; k++) add(Math.random() < b.clip_chance ? "clip" : "commercial", maxMs);
+    // A length budget for the pod as a whole (between_spots normal-length spots' worth).
+    // Only the last spot may reach into whatever's left of it - pick() doesn't favor
+    // shorter picks, so letting every spot see the full budget made a much-longer-than-
+    // usual pick the common case instead of the occasional one. The last spot going long
+    // still isn't piled onto by anything after it.
+    let budget = maxMs * b.between_spots;
+    for (let k = 0; k < b.between_spots && budget > 0; k++) {
+      const cap = k === b.between_spots - 1 ? budget : Math.min(maxMs, budget);
+      const r = add(Math.random() < b.clip_chance ? "clip" : "commercial", cap);
+      if (r) budget -= r.duration_ms;
+    }
     const outOf = pickEyecatch(null, [...rows, into].filter(Boolean).map((x) => x.id)) || into;
     if (outOf) rows.push(outOf);
   }
