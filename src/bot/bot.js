@@ -2,9 +2,10 @@
 // to do over local HTTP. Every message it posts is a fixed template filled with real
 // metadata (no AI-written text).
 //
-// It shares its login with coupbot. Coup uses only "!coup" text commands, so there's no
-// clash, but to stay safe: commands are added one at a time (never a bulk overwrite
-// that would wipe someone else's), and interactions that aren't ours are ignored.
+// Its slash commands are registered as one bulk overwrite, so this bot must be the only
+// thing on its Discord application that has slash commands (coupbot, which used to share
+// the login, only had "!coup" text commands and is being retired). Interactions that
+// aren't ours are ignored.
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, Client, EmbedBuilder, GatewayIntentBits, MessageFlags, REST, Routes,
   SlashCommandBuilder, PermissionFlagsBits } from "discord.js";
 import { config, secrets } from "../config.js";
@@ -230,13 +231,11 @@ export async function startBot() {
   const remove = (m) => m?.delete().catch(() => {});
   const removeLater = (m, ms) => m && setTimeout(() => remove(m), ms).unref();
 
+  // One bulk overwrite (about a second; one POST per command took ~40 s of rate limits).
+  // It also drops commands that no longer exist.
   async function registerCommands() {
     const rest = new REST().setToken(secrets.botToken);
-    for (const c of COMMANDS) {
-      // POST creates or updates this one command by name; other bots' commands on the
-      // same application are left alone.
-      await rest.post(Routes.applicationGuildCommands(client.application.id, guildId()), { body: c.toJSON() });
-    }
+    await rest.put(Routes.applicationGuildCommands(client.application.id, guildId()), { body: COMMANDS.map((c) => c.toJSON()) });
     log.info(`bot: registered /${COMMANDS.map((c) => c.name).join(", /")}`);
   }
 
@@ -656,7 +655,9 @@ export async function startBot() {
     if (!config.discord.now_playing_channel_id) log.warn("bot: discord.now_playing_channel_id not set; no now-playing posts");
     if (!config.discord.admin_user_id) log.warn("bot: discord.admin_user_id not set; /tvadmin is locked");
     if (ANYONE_ADMIN) log.warn("bot: discord.admin_user_id is \"*\"; anyone can use /tvadmin");
-    await registerCommands().catch((e) => log.error("bot: couldn't register commands:", e.message));
+    // Commands already registered keep working meanwhile; what they need first is the
+    // player's status (who's in the TV channel), so follow the player before anything slow.
+    registerCommands().catch((e) => log.error("bot: couldn't register commands:", e.message));
     try { writeFileSync(join(DATA_DIR, "app-id.txt"), client.application.id); } catch { /* presence just shows less */ }
     await cleanUpOldPosts().catch((e) => log.warn(`bot: cleanup failed: ${e.message}`));
     followPlayer();
