@@ -11,6 +11,7 @@ discord:
   drop_thread_id: ""   # "Commercials" thread: anyone posts links there, they become commercials
   clip_thread_id: ""   # "Clips" thread: same, as clips
   eyecatch_thread_id: ""   # "Eyecatchers" thread: same, as eyecatches
+  shorts_thread_id: ""   # "Shorts" thread: same, as shorts (a playlist is one show in order; a lone link/upload is its own one-episode show)
 
 broadcast:
   timezone: America/New_York

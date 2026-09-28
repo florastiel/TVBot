@@ -194,12 +194,15 @@ sources are left out completely, even ones the chosen source lacks. Episodes far
 than the rest of their show (clips or promos listed as episodes) are left out too.
 
 **Drop threads.** Anyone can post YouTube (etc.) links or video files in the TV
-channel's threads: Commercials, Clips, Eyecatchers (`discord.drop_thread_id`,
-`clip_thread_id`, `eyecatch_thread_id`). The bot reacts ⏳, downloads, checks each
-(a playable video; 10 minutes at most, eyecatches 1 minute), replies with what went in,
-and they air from the next break (no sync needed: each post is downloaded and scanned
-into the local folders within seconds). Spots play in any language; the "foreign audio
-needs English subtitles" rule is only for shows and movies.
+channel's threads: Commercials, Clips, Eyecatchers, Shorts (`discord.drop_thread_id`,
+`clip_thread_id`, `eyecatch_thread_id`, `shorts_thread_id`). The bot reacts ⏳, downloads,
+checks each (a playable video; 10 minutes at most, eyecatches 1 minute, shorts 15
+minutes), replies with what went in, and they air from the next break (no sync needed:
+each post is downloaded and scanned into the local folders within seconds). Spots play in
+any language; the "foreign audio needs English subtitles" rule is only for shows and
+movies. Shorts are episodic, not a flat spot: a YouTube playlist becomes one show, its
+videos numbered episodes in order; a lone link, or files dropped together in one message,
+become their own one- (or few-) episode show, named after the video/first file.
 
 **Timestamps** cut a video into pieces. After a link (or in the message with one
 uploaded file): cut points split it (`https://youtu.be/... 0:05` -> 0:00-0:05 and 0:05 to
