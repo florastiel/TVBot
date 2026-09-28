@@ -211,6 +211,13 @@ const MIGRATIONS = [
   ALTER TABLE items ADD COLUMN tmdb_ep TEXT;
   ALTER TABLE shows ADD COLUMN tmdb_eps_at TEXT;
   `,
+  `
+  -- Whether the file is HDR (PQ/HLG transfer characteristics): player/encode.js needs to
+  -- know to tone-map it down to SDR, or it plays back washed out. Clearing streams_checked
+  -- makes the next sync read it for everything already in the catalog.
+  ALTER TABLE items ADD COLUMN hdr INTEGER;
+  UPDATE items SET streams_checked = NULL;
+  `,
 ];
 
 let db;

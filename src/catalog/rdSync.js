@@ -8,7 +8,7 @@ import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
 import { RealDebrid } from "../realdebrid.js";
 import { probe } from "./localScan.js";
-import { chooseTracks, fromFfprobeStreams } from "./tracks.js";
+import { chooseTracks, fromFfprobeStreams, hdrFromFfprobeStreams } from "./tracks.js";
 import { dedupeCatalog } from "./dedupe.js";
 
 export const RD_LIBRARY = "Real-Debrid";
@@ -103,7 +103,7 @@ async function probeNew(client, { tried, dead }, quick = false) {
   todo.forEach((r) => tried.add(r.id));
   log.info(`realdebrid: reading durations/tracks for ${todo.length} files`);
   const save = db.prepare(`UPDATE items SET duration_ms = ?, video_height = ?, audio_stream = ?, audio_lang = ?, subs = ?,
-    playable = ?, unplayable_reason = ?, streams_checked = ?, cues = ? WHERE id = ?`);
+    playable = ?, unplayable_reason = ?, streams_checked = ?, cues = ?, hdr = ? WHERE id = ?`);
   let n = 0;
   const worker = async () => {
     for (let r; (r = todo.shift()); ) {
@@ -111,7 +111,7 @@ async function probeNew(client, { tried, dead }, quick = false) {
       if (dead.has(torrent)) {
         // Real-Debrid lost this torrent's files (they're gone from its cache); every other
         // file in it would fail the same way. Re-adding the torrent on Real-Debrid fixes it.
-        save.run(null, null, null, null, null, 0, "couldn't read from Real-Debrid: hoster_unavailable (whole torrent)", null, null, r.id);
+        save.run(null, null, null, null, null, 0, "couldn't read from Real-Debrid: hoster_unavailable (whole torrent)", null, null, null, r.id);
         continue;
       }
       try {
@@ -121,12 +121,12 @@ async function probeNew(client, { tried, dead }, quick = false) {
         const cues = (p.chapters || []).map((c) => Math.round(Number(c.start_time) * 1000)).filter((ms) => ms > 0);
         save.run(Math.round(Number(p.format.duration) * 1000) || null, video?.height ?? null, t.audioStream ?? null,
           t.audioLang ?? null, JSON.stringify(t.subs || { mode: "none" }), t.playable ? 1 : 0, t.reason || null, r.source_updated,
-          cues.length ? JSON.stringify(cues) : null, r.id);
+          cues.length ? JSON.stringify(cues) : null, hdrFromFfprobeStreams(p.streams), r.id);
       } catch (e) {
         // Not marked as checked: Real-Debrid hiccups are usually temporary, so the next sync tries again.
         const why = errorText(e);
         if (why.includes("hoster_unavailable")) dead.add(torrent);
-        save.run(null, null, null, null, null, 0, `couldn't read from Real-Debrid: ${why}`, null, null, r.id);
+        save.run(null, null, null, null, null, 0, `couldn't read from Real-Debrid: ${why}`, null, null, null, r.id);
         log.warn(`realdebrid: couldn't read item ${r.id}: ${why}`);
       }
       if (++n % 100 === 0) log.info(`realdebrid: tracks ${n} done`);

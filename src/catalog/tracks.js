@@ -101,3 +101,16 @@ export function fromFfprobeStreams(ffStreams = []) {
       external: false,
     }));
 }
+
+// PQ (HDR10, HDR10+) or HLG: the encode pipeline (player/encode.js) has to tone-map these
+// down to SDR itself, or they come out washed out - Discord's stream has no HDR metadata
+// path, so a viewer's player renders the raw values as if they were SDR gamma.
+const HDR_TRANSFER = /^(smpte2084|arib-std-b67)$/;
+export function hdrFromFfprobeStreams(ffStreams = []) {
+  const v = ffStreams.find((s) => s.codec_type === "video" && !s.disposition?.attached_pic);
+  return v ? (HDR_TRANSFER.test(v.color_transfer || "") ? 1 : 0) : null;
+}
+export function hdrFromPlexStreams(plexStreams = []) {
+  const v = (plexStreams || []).find((s) => s.streamType === 1);
+  return v ? (HDR_TRANSFER.test(v.colorTrc || "") ? 1 : 0) : null;
+}

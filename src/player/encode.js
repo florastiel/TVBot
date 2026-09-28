@@ -59,7 +59,11 @@ export function itemArgs(seg, offsetSec) {
   const silent = seg.audioStream === null || seg.audioStream === undefined;
   if (silent) args.push("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000");
 
-  const fit = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=${pixFmt()}`;
+  // HDR (PQ/HLG) source: Discord's stream carries no HDR metadata, so without this a
+  // viewer's player renders the raw PQ values as SDR gamma and it comes out washed out.
+  // Tone-map to SDR/bt709 before the usual scale/pad chain.
+  const hdrToSdr = seg.hdr ? "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv," : "";
+  const fit = `${hdrToSdr}scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=${pixFmt()}`;
   let graph;
   if (seg.subs?.mode === "image") {
     // Picture subtitles are drawn at the source resolution, bottom-centered, then scaled with the video.

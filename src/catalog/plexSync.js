@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { config, DATA_DIR } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
-import { chooseTracks, fromPlexStreams } from "./tracks.js";
+import { chooseTracks, fromPlexStreams, hdrFromPlexStreams } from "./tracks.js";
 
 export const SUBS_DIR = join(DATA_DIR, "subs");
 
@@ -125,7 +125,7 @@ async function refreshTracks(plex) {
   if (!todo.length) return;
   log.info(`plex: reading audio/subtitle tracks for ${todo.length} new or changed items`);
   const save = db.prepare(`UPDATE items SET audio_stream = ?, audio_lang = ?, subs = ?, playable = ?,
-                           unplayable_reason = ?, streams_checked = ?, cues = ? WHERE id = ?`);
+                           unplayable_reason = ?, streams_checked = ?, cues = ?, hdr = ? WHERE id = ?`);
   const byKey = new Map(todo.map((r) => [r.source_key, r]));
   const batches = [];
   for (let i = 0; i < todo.length; i += 100) batches.push(todo.slice(i, i + 100));
@@ -139,12 +139,14 @@ async function refreshTracks(plex) {
           const row = byKey.get(String(m.ratingKey));
           if (!row) continue;
           const media = (m.Media || []).find((x) => x.Part?.some((p) => p.key === row.media_path));
+          const streams = media?.Part?.[0]?.Stream;
           const t = row.media_path
-            ? chooseTracks(fromPlexStreams(media?.Part?.[0]?.Stream), { showTitle: row.show_title })
+            ? chooseTracks(fromPlexStreams(streams), { showTitle: row.show_title })
             : { playable: false, reason: "file is split into multiple parts" };
           const cues = (m.Chapter || []).map((c) => c.startTimeOffset).filter((ms) => ms > 0);
           save.run(t.audioStream ?? null, t.audioLang ?? null, JSON.stringify(t.subs || { mode: "none" }),
-            t.playable ? 1 : 0, t.reason || null, row.source_updated, cues.length ? JSON.stringify(cues) : null, row.id);
+            t.playable ? 1 : 0, t.reason || null, row.source_updated, cues.length ? JSON.stringify(cues) : null,
+            row.media_path ? hdrFromPlexStreams(streams) : null, row.id);
         }
       });
       done += b.length;

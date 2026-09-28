@@ -47,6 +47,7 @@ export function toSegment(row, plex, { seekMs = 0, breakId = null } = {}) {
     seekMs,
     durationMs: row.duration_ms,
     audioStream: row.audio_stream,
+    hdr: !!row.hdr,
     subs,
     subsFile,
     breakId,

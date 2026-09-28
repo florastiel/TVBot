@@ -6,7 +6,7 @@ import { config } from "../config.js";
 import { SUBS_DIR } from "./plexSync.js"; // where the player looks for sidecar subtitles
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
-import { chooseTracks, fromFfprobeStreams } from "./tracks.js";
+import { chooseTracks, fromFfprobeStreams, hdrFromFfprobeStreams } from "./tracks.js";
 import { parseRelease, showName, tidy as tidyName } from "./release.js";
 
 const run = promisify(execFile);
@@ -171,7 +171,7 @@ export async function scanLocal() {
       OR unplayable_reason LIKE '%subtitles%')`).all()
     .filter((r) => r.streams_checked == null || r.streams_checked !== r.source_updated || SPOTS.has(r.kind) || usableSidecar(r.source_key));
   const save = db.prepare(`UPDATE items SET duration_ms = ?, video_height = ?, audio_stream = ?, audio_lang = ?, subs = ?,
-    playable = ?, unplayable_reason = ?, streams_checked = ?, cues = ? WHERE id = ?`);
+    playable = ?, unplayable_reason = ?, streams_checked = ?, cues = ?, hdr = ? WHERE id = ?`);
   const worker = async () => {
     for (let r; (r = todo.shift()); ) {
       try {
@@ -189,7 +189,7 @@ export async function scanLocal() {
         const cues = (p.chapters || []).map((c) => Math.round(Number(c.start_time) * 1000)).filter((ms) => ms > 0);
         save.run(Math.round(Number(p.format.duration) * 1000) || null, video?.height ?? null, t.audioStream ?? null,
           t.audioLang ?? null, JSON.stringify(t.subs || { mode: "none" }), t.playable ? 1 : 0, t.reason || null, r.source_updated,
-          cues.length ? JSON.stringify(cues) : null, r.id);
+          cues.length ? JSON.stringify(cues) : null, hdrFromFfprobeStreams(p.streams), r.id);
       } catch (e) {
         if (e.code === "ENOENT") {
           // ffprobe itself couldn't be found/run (a PATH or FFPROBE_PATH problem, not this
@@ -198,7 +198,7 @@ export async function scanLocal() {
           log.warn(`local: ffprobe isn't runnable (${e.message.split("\n")[0]}); will retry ${r.source_key} next sync`);
           continue;
         }
-        save.run(null, null, null, null, null, 0, `ffprobe failed: ${e.message.split("\n")[0]}`, r.source_updated, null, r.id);
+        save.run(null, null, null, null, null, 0, `ffprobe failed: ${e.message.split("\n")[0]}`, r.source_updated, null, null, r.id);
         log.warn(`local: couldn't read ${r.source_key}`);
       }
     }
