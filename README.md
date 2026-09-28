@@ -341,9 +341,9 @@ picture goes black and the sound goes silent together; local files are scanned i
 instead gets a break at a chapter mark near its middle; long movies without either get
 one about every 30 minutes. Inside a show a break is one commercial (a minute at most),
 or two if both are `short_spot_seconds` or shorter. Between shows: `between_spots`
-videos (the first is a clip `clip_chance` of the time). Nothing longer than
-`max_spot_minutes` airs. `D:\data\tv\ad-lengths.csv` lists every commercial and clip
-with its length.
+videos, each a clip `clip_chance` of the time. Nothing longer than `max_spot_minutes`
+airs. Every break, inside or between shows, is bookended by an eyecatch.
+`D:\data\tv\ad-lengths.csv` lists every commercial and clip with its length.
 
 **Skipping**: `/tvadmin skip` drops the rest of the show or movie and takes it off the
 schedule; `/tvadmin skipblock` does that for everything left in the block. The next
