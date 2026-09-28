@@ -187,9 +187,53 @@ export function dedupeCatalog() {
     const renamed = lineUpShowNames(db);
     const r = markDuplicates(db);
     const odd = markOddballs(db);
-    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies/spots left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""}); ${odd} episodes left out (much shorter than the rest of their show, or from a source turned off for that show)`);
-    return { renamed, oddballs: odd, ...r };
+    const relinked = relinkMembers(db);
+    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies/spots left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""}); ${odd} episodes left out (much shorter than the rest of their show, or from a source turned off for that show)${relinked ? `; ${relinked} bucket picks moved to a live copy` : ""}`);
+    return { renamed, oddballs: odd, relinked, ...r };
   });
+}
+
+// Step 5: buckets hold single movies/episodes by item id, so a title that comes back under a
+// new id (a torrent re-added, a pack replaced, a local copy winning dedupe) would silently
+// drop out of its buckets. A member whose copy is gone or a duplicate moves to the live copy
+// of the same movie (title ignoring pack prefixes like "DK3 " / "X01 ", year within 1) or
+// episode (show + season + episode). Members with no live copy are left alone to wait.
+// Returns how many members moved.
+const PACK_PREFIX = /^[A-Z]{1,3}\d{1,2}\s+/;
+const movieKey = (t) => norm(String(t ?? "").replace(PACK_PREFIX, "").replace(TAG, ""));
+function relinkMembers(db) {
+  const members = db.prepare(`SELECT m.rowid rid, m.bucket_id, m.item_id, i.kind, i.title, i.year, i.show_title, i.season, i.episode,
+      i.present, i.duplicate_of
+    FROM bucket_members m JOIN items i ON i.id = m.item_id WHERE m.item_id IS NOT NULL`).all();
+  const stale = members.filter((m) => !m.present || m.duplicate_of != null);
+  if (!stale.length) return 0;
+  const live = db.prepare(`SELECT id, source, kind, title, year, show_title, season, episode, playable, excluded, streams_checked,
+      unplayable_reason, video_height, duplicate_of, match
+    FROM items WHERE present = 1 AND duplicate_of IS NULL AND NOT excluded AND kind IN ('movie', 'episode')`).all();
+  const movies = new Map(), episodes = new Map();
+  const push = (map, k, r) => (map.get(k) || map.set(k, []).get(k)).push(r);
+  for (const r of live) {
+    if (r.kind === "movie") { const k = movieKey(r.title); if (k) push(movies, k, r); }
+    else if (r.show_title && r.season != null && r.episode != null) push(episodes, `${norm(r.show_title)}|${r.season}|${r.episode}`, r);
+  }
+  const byId = new Map(live.map((r) => [r.id, r]));
+  const has = db.prepare("SELECT 1 FROM bucket_members WHERE bucket_id = ? AND item_id = ?");
+  const move = db.prepare("UPDATE bucket_members SET item_id = ? WHERE rowid = ?");
+  const drop = db.prepare("DELETE FROM bucket_members WHERE rowid = ?");
+  let moved = 0;
+  for (const m of stale) {
+    let to = m.present ? byId.get(m.duplicate_of) : null;
+    if (!to) {
+      const cands = m.kind === "movie"
+        ? (movies.get(movieKey(m.title)) || []).filter((c) => !m.year || !c.year || Math.abs(c.year - m.year) <= 1)
+        : m.show_title ? (episodes.get(`${norm(m.show_title)}|${m.season}|${m.episode}`) || []) : [];
+      to = [...cands].sort(better)[0];
+    }
+    if (!to || to.id === m.item_id) continue;
+    if (has.get(m.bucket_id, to.id)) drop.run(m.rid); else move.run(to.id, m.rid);
+    moved++;
+  }
+  return moved;
 }
 
 // Step 4: an episode under ODD_MAX_MIN minutes and under ODD_RATIO of its show's usual
