@@ -198,11 +198,11 @@ function pickEyecatch(show, avoid) {
   return fresh.length ? fresh[Math.floor(Math.random() * fresh.length)] : group.reduce((a, b) => (age(a) <= age(b) ? a : b));
 }
 
-// A commercial break. Between shows (inside: false): between_spots videos, the first
-// sometimes a clip. Inside a show: one commercial (with inside_spots 2, a second one when
-// both are short_spot_seconds or less), bookended by eyecatches where wantsEyecatches
-// says so (broadcast.eyecatches). Each at most max_spot_minutes, from
-// different groups. show: the row of the show the break is inside.
+// A commercial break, always bookended by an eyecatch at each end. Between shows (inside:
+// false): between_spots videos, the first sometimes a clip. Inside a show: one commercial
+// (with inside_spots 2, a second one when both are short_spot_seconds or less) - here the
+// bookends only happen where wantsEyecatches says so (broadcast.eyecatches). Each spot at
+// most max_spot_minutes, from different groups. show: the row of the show the break is inside.
 export function makeBreak(plex, { theme = null, inside = false, show = null } = {}) {
   const b = config.broadcast;
   const maxMs = b.max_spot_minutes * 60000;
@@ -227,11 +227,13 @@ export function makeBreak(plex, { theme = null, inside = false, show = null } = 
       if (outOf) rows.push(outOf);
     }
   } else {
-    if (Math.random() < (b.eyecatch_chance ?? 0)) {
-      const e = pickEyecatch(null, []);
-      if (e) rows.push(e);
-    }
+    // Always bookended, same as inside: an eyecatch to lead in and one to close, different
+    // ones where the pool allows it.
+    const into = pickEyecatch(null, []);
+    if (into) rows.push(into);
     for (let k = 0; k < b.between_spots; k++) add(k === 0 && Math.random() < b.clip_chance ? "clip" : "commercial", maxMs);
+    const outOf = pickEyecatch(null, [...rows, into].filter(Boolean).map((x) => x.id)) || into;
+    if (outOf) rows.push(outOf);
   }
   remember(rows);
   const breakId = newBreakId();
