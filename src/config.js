@@ -29,6 +29,7 @@ const DEFAULTS = {
     clip_chance: 0.3,
     no_repeat_days: 14,
     plan_days: 1,
+    plan_buffer_days: 7,
     grid_weeks_ahead: 2,
     specials_per_week: 0,
     idle_leave_minutes: 5,

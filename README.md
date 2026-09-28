@@ -266,8 +266,9 @@ Three layers; Claude never picks individual episodes or movies.
    checks it (times of day, seasons, every day covered from 00:00, slots at least an
    hour, a bucket at most twice a day) and sends problems back (3 tries), then falls back
    to a simple code-made grid. `tv.cmd plan` prints it.
-3. **Filling**, in code, `plan_days` ahead (the bot tops it up when less than 12 hours
-   are left): each slot gets blocks of random picks from its bucket, back to back until
+3. **Filling**, in code, kept `plan_buffer_days` (7) ahead at all times (the bot tops it
+   up, in one shot to `plan_buffer_days + plan_days` out, once less than the buffer is
+   left): each slot gets blocks of random picks from its bucket, back to back until
    the next slot. Picks favor what hasn't aired in the longest time (never-aired first),
    so the whole catalog gets turns. Rules: nothing repeats within `no_repeat_days`, a
    show at most once a day, episode blocks at most `max_show_block_minutes`, a movie

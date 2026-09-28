@@ -64,10 +64,16 @@ async function upkeep() {
     await tagBreaks().catch((e) => log.warn(`bot: TV-break tagging failed: ${e.message}`));
     await detectShorts().catch((e) => log.warn(`bot: AniList short check failed: ${e.message}`));
   }
+  // Real picks (not just the grid's bucket types) are kept plan_buffer_days ahead at all
+  // times; once that drops below the buffer, top up in one shot to buffer + plan_days out,
+  // rather than trickling in plan_days at a time.
   const until = scheduledUntil();
-  if (until < Date.now() + 12 * 3600000) {
-    log.info(`bot: programming the next ${config.broadcast.plan_days} day(s)`);
-    await generateSchedule({ fromMs: until, days: config.broadcast.plan_days });
+  const bufferMs = config.broadcast.plan_buffer_days * 86400000;
+  if (until < Date.now() + bufferMs) {
+    const targetMs = Date.now() + bufferMs + config.broadcast.plan_days * 86400000;
+    const days = Math.ceil((targetMs - until) / 86400000);
+    log.info(`bot: programming the next ${days} day(s)`);
+    await generateSchedule({ fromMs: until, days });
   }
   // The automatic weekly special(s), if none is coming up yet.
   const want = config.broadcast.specials_per_week;
