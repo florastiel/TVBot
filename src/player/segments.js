@@ -180,6 +180,13 @@ function wantsEyecatches(row, mode) {
 
 const normTitle = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
+// The last few eyecatches actually chosen, anywhere (any break, any show) - separate from
+// the shared `recent` array (commercials and clips crowd that out fast: a handful of
+// non-eyecatch spots between two breaks is enough to push an eyecatch out of the last 100
+// items played, so back-to-back breaks could land on the very same one by chance).
+const EYECATCH_MEMORY = 4;
+const lastEyecatches = [];
+
 // An eyecatch for a break inside `show`: any file in eyecatches\ except ones from the
 // show's own folder. A folder named after a show (eyecatches\Fullmetal Alchemist
 // Brotherhood\) holds that show's own eyecatches, saved for other shows to use; on the
@@ -187,7 +194,7 @@ const normTitle = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace
 // folder of 128 doesn't take over: a source is picked first (bigger ones a bit more
 // often, capped), then a file in it not played recently; loose files and the thread
 // folders (uploads, youtube) are each their own source. Prefers not to repeat one in
-// `avoid` (the other end of this break).
+// `avoid` (the other end of this break), or one of the last few played anywhere.
 const SHARED_DIRS = new Set(["", "uploads", "youtube"]);
 function pickEyecatch(show, avoid) {
   const root = config.local.eyecatches || "";
@@ -206,12 +213,18 @@ function pickEyecatch(show, avoid) {
   const all = candidates("eyecatch", null, [], 60000).filter((r) => !isOwn(r));
   if (!all.length) return null;
   const notHere = all.filter((r) => !avoid.includes(r.id));
-  const pool = notRecent(notHere.length ? notHere : all);
+  const base = notHere.length ? notHere : all;
+  // Never immediately repeat one just used, anywhere, unless it's genuinely the only option.
+  const notLast = base.filter((r) => !lastEyecatches.includes(r.id));
+  const pool = notRecent(notLast.length ? notLast : base);
   const sources = [...Map.groupBy(pool, (r) => (SHARED_DIRS.has(dirOf(r).toLowerCase()) ? r.source_key : dirOf(r)))];
   const weight = ([, g]) => Math.min(g.length, GROUP_WEIGHT_CAP);
   let n = Math.random() * sources.reduce((t, s) => t + weight(s), 0);
   const [, group] = sources.find((s) => (n -= weight(s)) < 0) || sources.at(-1);
-  return leastPlayed(group);
+  const picked = leastPlayed(group);
+  lastEyecatches.push(picked.id);
+  if (lastEyecatches.length > EYECATCH_MEMORY) lastEyecatches.shift();
+  return picked;
 }
 
 // A commercial break, always bookended by an eyecatch at each end. Between shows (inside:
