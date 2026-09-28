@@ -87,13 +87,17 @@ export async function syncRealDebrid(client = new RealDebrid(), { quick = false 
   const seen = { tried: new Set(), dead: new Set() };
   for (let round = 0; round < 4; round++) {
     dedupeCatalog();
-    if (!(await probeNew(client, seen, quick))) break;
+    if (!(await probeNew(client, seen, quick, ids))) break;
   }
 }
 
 // Durations and tracks for new files, read over the network (ffprobe only fetches the
-// start of the file). Returns how many files it tried.
-async function probeNew(client, { tried, dead }, quick = false) {
+// start of the file). Returns how many files it tried. liveTorrents: ids the account's own
+// listing (fetched once above, in syncRealDebrid) says are actually downloaded right now -
+// the source of truth for "the whole torrent is gone", since one file's unrestrict call
+// failing with hoster_unavailable doesn't reliably mean that (a busy Real-Debrid, or that
+// one file's hoster specifically, can return it for an otherwise-fine torrent).
+async function probeNew(client, { tried, dead }, quick = false, liveTorrents = new Set()) {
   const db = getDb();
   const todo = db.prepare(`SELECT id, source_key, media_path, show_title, source_updated FROM items
     WHERE source = 'realdebrid' AND present = 1 AND duplicate_of IS NULL
@@ -125,7 +129,7 @@ async function probeNew(client, { tried, dead }, quick = false) {
       } catch (e) {
         // Not marked as checked: Real-Debrid hiccups are usually temporary, so the next sync tries again.
         const why = errorText(e);
-        if (why.includes("hoster_unavailable")) dead.add(torrent);
+        if (why.includes("hoster_unavailable") && !liveTorrents.has(torrent)) dead.add(torrent);
         save.run(null, null, null, null, null, 0, `couldn't read from Real-Debrid: ${why}`, null, null, null, r.id);
         log.warn(`realdebrid: couldn't read item ${r.id}: ${why}`);
       }
