@@ -612,8 +612,9 @@ export async function startBot() {
         if (i.options.getBoolean("week")) {
           // Only block kinds: the actual shows are picked about a day ahead.
           const days = weekGrid().slice(0, 10);
-          if (!days.length) return i.reply({ content: "No week planned yet.", ...ephemeral });
+          if (!days.length) { log.warn(`bot: /schedule week: weekGrid() came back empty for ${i.user.username}`); return i.reply({ content: "No week planned yet.", ...ephemeral }); }
           const messages = guideMessages(days);
+          log.info(`bot: /schedule week: ${days.length} days, ${days.reduce((n, d) => n + d.lines.length, 0)} lines, ${messages.length} message(s) for ${i.user.username}`);
           await i.reply({ content: "This week's lineup (shows are picked a day ahead; times shift a little as the day goes).", embeds: messages[0], ...ephemeral });
           for (const embeds of messages.slice(1)) await i.followUp({ embeds, ...ephemeral });
           return;
