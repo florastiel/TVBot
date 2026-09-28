@@ -14,13 +14,16 @@ import { probe } from "./localScan.js";
 
 const run = promisify(execFile);
 const MAX_MINUTES = 10; // anything longer is probably a compilation, not one ad
+const MAX_SHORT_MINUTES = 15; // local.shorts: "short (2-15 min) shows"
 // Where each kind goes, and its longest single video (seconds).
-const FOLDER_OF = { commercial: "commercials", clip: "clips", eyecatch: "eyecatches" };
+const FOLDER_OF = { commercial: "commercials", clip: "clips", eyecatch: "eyecatches", short: "shorts" };
 const folderFor = (kind) => config.local[FOLDER_OF[kind] || "commercials"];
-const maxSeconds = (kind) => (kind === "eyecatch" ? 60 : MAX_MINUTES * 60);
+const maxSeconds = (kind) => (kind === "eyecatch" ? 60 : kind === "short" ? MAX_SHORT_MINUTES * 60 : MAX_MINUTES * 60);
 const tooLong = (kind, secs) => (kind === "eyecatch"
   ? `${Math.round(secs)} seconds long; an eyecatch is a few seconds (a minute at most)`
+  : kind === "short" ? `${Math.round(secs / 60)} minutes long; a short is ${MAX_SHORT_MINUTES} minutes at most`
   : `${Math.round(secs / 60)} minutes long; looks like a compilation, not a single ${kind}`);
+const slug = (s) => s.replace(/[<>:"/\\|?*]+/g, "_").trim().slice(0, 80) || "Untitled";
 const ytdlp = () => join(ROOT, "tools", "yt-dlp.exe");
 // yt-dlp needs a JavaScript runtime for YouTube's player challenge; without one it falls
 // back to clients that can't play some videos ("made for kids" ones say "not available").
@@ -144,16 +147,22 @@ export async function addFromUrls(kind, links) {
       }
       continue;
     }
-    for (const v of videos) {
+    for (const [k, v] of videos.entries()) {
       if (!(v.seconds > 0)) { added.push({ ...v, skipped: "unavailable (private, deleted or no length)" }); continue; }
       if (v.seconds > maxSeconds(kind)) {
         added.push({ ...v, skipped: tooLong(kind, v.seconds) });
         continue;
       }
+      // Shorts are episodic (localScan.js's parsePath wants <show folder>\file), unlike the
+      // flat single-file model the other kinds use: a playlist becomes one show, its videos
+      // episodes in order (this call's own index, not yt-dlp's - it downloads one URL at a
+      // time here, outside playlist context); a lone link becomes its own one-episode show.
+      const showDir = kind === "short" ? join(dest, v.folder || slug(v.title)) : v.folder ? join(dest, v.folder) : dest;
+      const name = kind === "short" ? `S01E${String(k + 1).padStart(2, "0")} - %(title).60s [%(id)s].%(ext)s` : "%(title).80s [%(id)s].%(ext)s";
       try {
         await run(ytdlp(), ["--no-warnings", ...JS, ...auth(), "--no-overwrites", "--ffmpeg-location", join(ROOT, "tools", "ffmpeg", "bin"),
           "-f", "bv*[height<=1080]+ba/b[height<=1080]/b", "--merge-output-format", "mp4", "--restrict-filenames",
-          "-o", join(v.folder ? join(dest, v.folder) : dest, "%(title).80s [%(id)s].%(ext)s"), v.url], { maxBuffer: 16 << 20 });
+          "-o", join(showDir, name), v.url], { maxBuffer: 16 << 20 });
         log.info(`add: downloaded ${kind} "${v.title}"`);
         added.push(v);
       } catch (e) {
@@ -178,10 +187,16 @@ export async function addFromFiles(kind, files, cuts = []) {
   if (!folder) throw new Error(`no ${kind}s folder set in config.yaml`);
   const dest = join(folder, "uploads");
   mkdirSync(dest, { recursive: true });
+  // Shorts are episodic (localScan.js's parsePath wants <show folder>\file): files dropped
+  // together in one message are one show's episodes in order; the show is named after the
+  // first file. A lone file is its own one-episode show.
+  const showDir = kind === "short" && files.length ? join(folder, slug(files[0].name.replace(/\.[^.]+$/, ""))) : null;
+  if (showDir) mkdirSync(showDir, { recursive: true });
   const added = [];
-  for (const f of files) {
+  for (const [k, f] of files.entries()) {
     const title = f.name.replace(/\.[^.]+$/, "");
-    const stem = `${title.replace(/[<>:"/\\|?*]+/g, "_").trim().slice(0, 80)} [${f.id}]`;
+    const stem = showDir ? `S01E${String(k + 1).padStart(2, "0")} - ${title.replace(/[<>:"/\\|?*]+/g, "_").trim().slice(0, 70)} [${f.id}]`
+      : `${title.replace(/[<>:"/\\|?*]+/g, "_").trim().slice(0, 80)} [${f.id}]`;
     if (cuts.length) {
       mkdirSync(TMP, { recursive: true });
       const whole = join(TMP, `${f.id}${f.name.match(/\.[^.]+$/)?.[0] || ".mp4"}`);
@@ -200,7 +215,7 @@ export async function addFromFiles(kind, files, cuts = []) {
       }
       continue;
     }
-    const path = join(dest, `${stem}${f.name.match(/\.[^.]+$/)?.[0] || ".mp4"}`);
+    const path = join(showDir || dest, `${stem}${f.name.match(/\.[^.]+$/)?.[0] || ".mp4"}`);
     try {
       const res = await fetch(f.url);
       if (!res.ok) throw new Error(`download failed (HTTP ${res.status})`);

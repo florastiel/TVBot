@@ -151,13 +151,14 @@ export function helpEmbeds() {
       "• Weather reports air on their own morning and evening; `/weather` puts one in the next commercial break.",
       "• `/changelog` shows what was added to the server lately (only you see it); `days` goes back further.",
       "• `/schedule` refreshes that post and replies to just you with the next 24 hours (dismissable). `/schedule week: True` shows you the week's lineup privately instead.",
-      "• Something broke or looked wrong? `/badbot` (add what happened if you like) flags that exact moment in the logs.",
+      "• Something broke or looked wrong? `/rocks` (add what happened if you like) flags that exact moment in the logs.",
       "• Weekday nights have themes (heists and spies Monday, sci-fi Tuesday, whodunits and classics Wednesday, prestige and musicals Thursday, blockbusters Friday); Saturday mornings are cartoons, 5:30 to 12:15.",
     ].join("\n")),
     new EmbedBuilder().setTitle("🎬 Add stuff").setDescription([
       `• ${thread(d.drop_thread_id, "Commercials")}: post YouTube links or video files and they become **commercials**.`,
       `• ${thread(d.clip_thread_id, "Clips")}: same, as **clips** (short bits between shows).`,
       `• ${thread(d.eyecatch_thread_id, "Eyecatchers")}: same, as **eyecatches** (the little bumpers around a mid-show break; a minute at most).`,
+      `• ${thread(d.shorts_thread_id, "Shorts")}: same, as **shorts** (2-15 minute shows that fill gaps after a skip); each drop becomes its own little show unless it's a YouTube playlist, which becomes one show with its videos as episodes in order.`,
       "The bot reacts ⏳, then ✅ or ⚠️ with a reply saying what went in or why not (too long, unavailable...). Commercials and clips can be up to 10 minutes. New ones can air at the next break.",
       "",
       "**Only part of a video?** Put timestamps after the link (or in the message with one uploaded file):",
@@ -209,7 +210,7 @@ const COMMANDS = [
       .addStringOption((o) => o.setName("urls").setDescription("One or more links, separated by spaces").setRequired(true)))
     .addSubcommand((s) => s.setName("special").setDescription("Plan a marathon or themed special")
       .addStringOption((o) => o.setName("request").setDescription('e.g. "Scream marathon Saturday 8pm" or "Ghibli afternoon Sunday"').setRequired(true))),
-  new SlashCommandBuilder().setName("badbot").setDescription("Something bad or weird just happened: flag this moment in the logs")
+  new SlashCommandBuilder().setName("rocks").setDescription("Something bad or weird just happened: flag this moment in the logs")
     .addStringOption((o) => o.setName("what").setDescription("What went wrong (optional)").setMaxLength(300)),
   new SlashCommandBuilder().setName("tvhelp").setDescription("Post how to use the TV (replaces the last help post)"),
   new SlashCommandBuilder().setName("schedule").setDescription("Refresh the TV guide post, and see the next 24 hours (only you)")
@@ -230,6 +231,7 @@ export async function startBot() {
     [String(config.discord.drop_thread_id || "").trim(), "commercial"],
     [String(config.discord.clip_thread_id || "").trim(), "clip"],
     [String(config.discord.eyecatch_thread_id || "").trim(), "eyecatch"],
+    [String(config.discord.shorts_thread_id || "").trim(), "short"],
   ].filter(([id]) => id));
   const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates];
   if (dropThreads.size) intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
@@ -496,9 +498,9 @@ export async function startBot() {
         const had = clearEntrance(target.id);
         return i.reply({ content: had ? "Entrance sound removed." : "No entrance sound to remove.", ...ephemeral });
       }
-      // /badbot: anyone, any time. A marker in both logs plus an entry in logs\badbot.log with
+      // /rocks: anyone, any time. A marker in both logs plus an entry in logs\badbot.log with
       // what was on and the last lines of each log, so the moment is easy to find.
-      if (i.isChatInputCommand() && i.commandName === "badbot") {
+      if (i.isChatInputCommand() && i.commandName === "rocks") {
         const text = (i.options.getString("what") ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
         const by = `${i.user.username} (${i.user.id})`;
         const st = await callPlayer("/status", undefined, 3000).catch(() => null);
