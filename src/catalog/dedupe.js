@@ -116,23 +116,26 @@ function lineUpShowNames(db) {
 
 // Which copy to keep, best first: a manual veto wins (so it keeps covering the episode),
 // then known playable, then not tried yet, then a failed network read (worth retrying),
-// then known unplayable; Plex over local over Real-Debrid; 1080p or less, the sharper the
-// better; the one already kept; the oldest.
+// then known unplayable; Plex over local over Real-Debrid; a copy Plex could actually
+// identify over one it only guessed at from the filename (same show/season/episode, but
+// "Episode 7" instead of the real title); 1080p or less, the sharper the better; the one
+// already kept; the oldest.
 const SOURCE_RANK = { plex: 0, local: 1, realdebrid: 2 };
+const MATCH_RANK = { full: 0, show: 1, none: 2 };
 function rank(r) {
   const state = r.playable ? 0
     : r.streams_checked == null && r.unplayable_reason == null ? 1
     : r.streams_checked == null ? 2 : 3;
   const h = r.video_height ?? 0;
-  return [r.excluded ? 0 : 1, state, SOURCE_RANK[r.source] ?? 3, h > 1080 ? h : 1080 - h, r.duplicate_of == null ? 0 : 1, r.id];
+  return [r.excluded ? 0 : 1, state, SOURCE_RANK[r.source] ?? 3, MATCH_RANK[r.match] ?? 3, h > 1080 ? h : 1080 - h, r.duplicate_of == null ? 0 : 1, r.id];
 }
 const better = (a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
 
 // Step 2. Returns { groups, duplicates, changed }.
 function markDuplicates(db) {
   const rows = db.prepare(`SELECT id, source, kind, show_title, season, episode, title, year, playable, excluded,
-      streams_checked, unplayable_reason, video_height, duplicate_of
-    FROM items WHERE present = 1 AND match = 'full' AND kind IN ('episode', 'movie')`).all();
+      streams_checked, unplayable_reason, video_height, duplicate_of, match
+    FROM items WHERE present = 1 AND kind IN ('episode', 'movie')`).all();
   const groups = new Map();
   for (const r of rows) {
     if (wrongSource(r)) continue; // left out by step 4, and not a candidate to be the kept copy
