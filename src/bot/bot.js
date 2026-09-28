@@ -47,12 +47,13 @@ const maintenance = {
   },
 };
 
-// Weekly catalog sync + tagging of anything new; keep at least 2 days scheduled.
+// Catalog sync + tagging of anything new, every catalog.sync_days (default daily); keep at
+// least 2 days scheduled.
 async function upkeep() {
-  const week = 7 * 86400000;
+  const period = config.catalog.sync_days * 86400000;
   const lastSync = Date.parse(getMeta("last_sync") || 0) || 0;
-  if (Date.now() - lastSync > week) {
-    log.info("bot: weekly catalog sync");
+  if (Date.now() - lastSync > period) {
+    log.info("bot: catalog sync");
     // A failed sync (a drive dropping out mid-scan) mustn't stop the schedule top-up below.
     await runSync().catch((e) => log.error("bot: catalog sync failed:", e.message));
     await runTagging().catch((e) => log.warn(`bot: tagging failed: ${e.message}`));

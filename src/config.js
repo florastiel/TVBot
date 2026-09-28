@@ -10,6 +10,7 @@ export const DATA_DIR = process.env.TV_DATA || join(ROOT, "data");
 export const ENTRANCE_DIR = join(DATA_DIR, "entrances");
 
 const DEFAULTS = {
+  catalog: { sync_days: 1 },   // how often the bot syncs Plex/local/Real-Debrid and re-tags by itself
   discord: { guild_id: "", now_playing_channel_id: "", admin_user_id: "", daily_guide: true, guide_channel_id: "", drop_thread_id: "", clip_thread_id: "", eyecatch_thread_id: "" },
   broadcast: {
     timezone: "America/New_York",

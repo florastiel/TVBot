@@ -191,6 +191,13 @@ export async function scanLocal() {
           t.audioLang ?? null, JSON.stringify(t.subs || { mode: "none" }), t.playable ? 1 : 0, t.reason || null, r.source_updated,
           cues.length ? JSON.stringify(cues) : null, r.id);
       } catch (e) {
+        if (e.code === "ENOENT") {
+          // ffprobe itself couldn't be found/run (a PATH or FFPROBE_PATH problem, not this
+          // file's fault): leave streams_checked alone so the next sync tries again, instead
+          // of marking the file permanently unplayable.
+          log.warn(`local: ffprobe isn't runnable (${e.message.split("\n")[0]}); will retry ${r.source_key} next sync`);
+          continue;
+        }
         save.run(null, null, null, null, null, 0, `ffprobe failed: ${e.message.split("\n")[0]}`, r.source_updated, null, r.id);
         log.warn(`local: couldn't read ${r.source_key}`);
       }
