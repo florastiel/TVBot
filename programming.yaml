@@ -20,12 +20,14 @@ pools:
   MORN_COZY: [Peanuts Specials, Muppet Marathon, Cozy Halloween Cartoons, Anime Slice of Life, Iyashikei Hour, Pixar Picture Show, Family Movie Night, Studio Ghibli Matinee]
   AFT_MOVIE: [Campy Halloween Classics, Cozy Halloween Cartoons, Digimon Movie Vault, Family Movie Night, Studio Ghibli Matinee, Pixar Picture Show, Cozy Anime Autumn, Studio Ghibli Melancholy]
   AFT_TV: [TGIF Block, Courage Hour, Gag Anime Hour, Anime Rom-Coms, "Shojo & Josei", "Isekai & Fantasy", "Mecha & Kaiju", X-Men Legacy, Detective Anime, Sports Anime,
-    Sitcom Rerun Central, Reality Check, Shonen Showdown, Halloween Episodes, Thanksgiving Episodes, Christmas Episodes]
+    Sitcom Rerun Central, Reality Check, Shonen Showdown, Halloween Episodes, Thanksgiving Episodes, Christmas Episodes,
+    Musical Episodes, Beach Episodes, Wedding Episodes, Valentine's Episodes]
   AFT_SERIES: [Men in Black Saga, Muppet Marathon, Peanuts Specials, Halloweentown Saga, Toy Story Saga, Dragon Ball Movie Vault, Detective Conan Movie Vault, Mission Impossible Marathon,
     X-Men Movie Marathon, Spider-Man Saga, Hunger Games Saga, Digimon Movie Vault]
   EVE_TV: [TGIF Block, Courage Hour, Dark Serial Night, Prime Time Procedurals, Sitcoms, Nick at Nite, Whodunit Theater, Reality Check, British Comedy Classics, Superhero Prime Time,
     Sci-Fi Signal, Sitcom Rerun Central, Halloween Episodes, Spooky Season Anime, Thanksgiving Episodes, Christmas Episodes, "*cheats nefariously*",
-    Press Start, Versus Mode, Fortnite Crossovers, "Why Are You Gay?", Time Warp, Food Network, Creatures of the Night]
+    Press Start, Versus Mode, Fortnite Crossovers, "Why Are You Gay?", Time Warp, Food Network, Creatures of the Night,
+    Alternate Universe Episodes, Time Loop Episodes, Body Swap Episodes, Wedding Episodes, New Year's Episodes]
   MON_MOVIE: [Nineties Movie Night, Heist Night, Spy Games, Buddy Cop Night]
   TUE_MOVIE: [Sci-Fi Feature Presentation, Nolan Night, Planet of the Apes, Dark Knight Trilogy, Time Travel Night, Machine Dreams]
   WED_MOVIE: [Buddy Cop Night, Whodunit Feature Films, Western Showdown, Date Night]
