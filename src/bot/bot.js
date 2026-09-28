@@ -28,6 +28,7 @@ import { tagOrder } from "../tagging/order.js";
 import { tagEpisodeThemes } from "../tagging/episodes.js";
 import { tagBreaks } from "../tagging/breaks.js";
 import { getMeta, setMeta, getDb } from "../db.js";
+import { pausePlex } from "../player/bandwidth.js";
 import { existsSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -188,6 +189,9 @@ const COMMANDS = [
     .addIntegerOption((o) => o.setName("minutes").setDescription("How many minutes of commercials (1 to 20)").setRequired(true).setMinValue(1).setMaxValue(20)),
   new SlashCommandBuilder().setName("skipcommercials").setDescription("Skip the commercials that are on right now (same as the Skip commercials button)"),
   new SlashCommandBuilder().setName("weather").setDescription("Put the weather report in the next commercial break"),
+  new SlashCommandBuilder().setName("bandwidth").setDescription("Stop pulling anything from the Plex server for a while (local/Real-Debrid only)")
+    .addIntegerOption((o) => o.setName("minutes").setDescription("How long (0 = back to normal now; default 30)").setMinValue(0).setMaxValue(1440))
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
   new SlashCommandBuilder().setName("changelog").setDescription("What was added to the server lately (only you see it)")
     .addIntegerOption((o) => o.setName("days").setDescription("How many days back (default 3)").setMinValue(1).setMaxValue(14)),
   new SlashCommandBuilder().setName("tvadmin").setDescription("TV admin controls")
@@ -528,6 +532,18 @@ export async function startBot() {
           log.warn(`bot: /weather failed: ${e.message}`);
           return i.editReply("Couldn't make the weather report right now. Try again in a minute.");
         }
+      }
+      // /bandwidth: whoever can time people out can also ask the TV to stop pulling from
+      // the Plex server for a while, instead of cutting the whole feed to do it.
+      if (i.isChatInputCommand() && i.commandName === "bandwidth") {
+        const minutes = i.options.getInteger("minutes") ?? 30;
+        const until = pausePlex(minutes);
+        return i.reply({
+          content: until
+            ? `Stopped pulling from the Plex server. Local/Real-Debrid only for ${minutes} minute${minutes === 1 ? "" : "s"}, back to normal at ${localTime(until)}.`
+            : "Back to pulling from the Plex server as normal.",
+          ...ephemeral,
+        });
       }
       // /skipcommercials: the button's job as a command (people in the TV's voice channel).
       if (i.isChatInputCommand() && i.commandName === "skipcommercials") {

@@ -12,12 +12,17 @@ import { config, DATA_DIR } from "../config.js";
 import { log } from "../log.js";
 import { detectAndSave } from "../catalog/breakdetect.js";
 import { rd } from "../realdebrid.js";
+import { isPlexPaused } from "./bandwidth.js";
 
 const DIR = join(DATA_DIR, "spool");
 const KEEP_MS = 12 * 3600000; // unused copies older than this are deleted
 const queue = [];
 const failed = new Set();
 let busy = null;
+
+// Thrown to bail out of a Plex download the moment a bandwidth pause starts - not added
+// to `failed`, so the next wantSpool() call (once resumed) picks it back up.
+class PlexPaused extends Error {}
 
 const gb = (n) => n * 1024 ** 3;
 const fileFor = (row) => join(DIR, `${row.id}${extname(row.media_path || "") || ".mkv"}`);
@@ -40,7 +45,7 @@ export function spooledPath(row) {
 export function wantSpool(rows, plex) {
   for (const row of rows) {
     if (!row || failed.has(row.id)) continue;
-    const download = needsSpool(row) && !existsSync(fileFor(row));
+    const download = needsSpool(row) && !existsSync(fileFor(row)) && !(row.source === "plex" && isPlexPaused());
     if (!download && !needsCheck(row)) continue;
     if (busy?.id === row.id || queue.some((q) => q.row.id === row.id)) continue;
     queue.push({ row, plex });
@@ -57,8 +62,12 @@ async function work() {
       const file = row.source === "local" ? row.source_key : existsSync(fileFor(row)) ? fileFor(row) : null;
       if (file && needsCheck(row)) await detectAndSave(row, file).catch((e) => log.warn(`breaks: ${row.show_title || row.title} (${row.id}): ${e.message}`));
     } catch (e) {
-      failed.add(row.id);
-      log.warn(`spool: ${row.show_title || row.title} (${row.id}) not downloaded: ${e.message}`);
+      if (e instanceof PlexPaused) {
+        log.info(`spool: bandwidth pause hit mid-download, ${row.show_title || row.title} (${row.id}) will retry once resumed`);
+      } else {
+        failed.add(row.id);
+        log.warn(`spool: ${row.show_title || row.title} (${row.id}) not downloaded: ${e.message}`);
+      }
     }
   }
   busy = null;
@@ -69,6 +78,7 @@ async function work() {
 const CHUNK = 32 * 1024 * 1024;
 
 async function download(row, plex) {
+  if (row.source === "plex" && isPlexPaused()) throw new PlexPaused();
   mkdirSync(DIR, { recursive: true });
   let url;
   if (row.source === "realdebrid") {
@@ -91,6 +101,7 @@ async function download(row, plex) {
   const t0 = Date.now();
   try {
     for (let pos = 0; pos < size; ) {
+      if (row.source === "plex" && isPlexPaused()) throw new PlexPaused();
       const end = Math.min(size, pos + CHUNK) - 1;
       for (let attempt = 1; ; attempt++) {
         try {

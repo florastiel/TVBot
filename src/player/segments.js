@@ -35,6 +35,11 @@ export function toSegment(row, plex, { seekMs = 0, breakId = null } = {}) {
   }
   return {
     rdLink: row.source === "realdebrid" && !local ? row.media_path : null,
+    // Not spooled yet, so playing it means pulling it live from the Plex server: the
+    // player checks this against a bandwidth pause fresh at play time and skips it there
+    // rather than baking the pause into `input` here (this segment may be built well
+    // ahead of when it actually plays).
+    plexPending: row.source === "plex" && !local,
     itemId: row.id,
     kind: row.kind,
     ...describe(row),

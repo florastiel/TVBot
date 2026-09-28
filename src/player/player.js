@@ -16,6 +16,7 @@ import { PLAYER_PORT, localSecret } from "../local.js";
 import { Feed } from "./feed.js";
 import { playMic } from "./mic.js";
 import { cleanSpool } from "./spool.js";
+import { isPlexPaused } from "./bandwidth.js";
 import { makeProgram } from "./program.js";
 import { removeFromBlock } from "../schedule/store.js";
 import { card, fillBreak } from "./segments.js";
@@ -241,6 +242,10 @@ export class Player extends EventEmitter {
         seg = next.value;
       }
       if (seg.breakId && session.skippedBreaks.has(seg.breakId)) continue;
+      if (seg.plexPending && isPlexPaused()) {
+        log.info(`player: ${seg.title} ${seg.subtitle || ""}: skipping (bandwidth pause, not downloaded ahead)`);
+        continue;
+      }
       if (!seg.input && seg.rdLink) {
         // Real-Debrid item that wasn't downloaded ahead: get a direct URL now.
         try {
