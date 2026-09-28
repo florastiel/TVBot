@@ -57,10 +57,11 @@ async function upkeep() {
     await runSync().catch((e) => log.error("bot: catalog sync failed:", e.message));
     await runTagging().catch((e) => log.warn(`bot: tagging failed: ${e.message}`));
     await tagOrder().catch((e) => log.warn(`bot: order tagging failed: ${e.message}`));
+    // TMDB first: the episode theme pass reads its episode names and synopses.
+    await fetchTmdb().catch((e) => log.warn(`bot: TMDB lookup failed: ${e.message}`));
     await tagEpisodeThemes().catch((e) => log.warn(`bot: episode theme tagging failed: ${e.message}`));
     await tagBreaks().catch((e) => log.warn(`bot: TV-break tagging failed: ${e.message}`));
     await detectShorts().catch((e) => log.warn(`bot: AniList short check failed: ${e.message}`));
-    await fetchTmdb().catch((e) => log.warn(`bot: TMDB lookup failed: ${e.message}`));
   }
   const until = scheduledUntil();
   if (until < Date.now() + 12 * 3600000) {

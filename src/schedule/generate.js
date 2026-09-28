@@ -4,7 +4,7 @@
 import { config } from "../config.js";
 import { getDb } from "../db.js";
 import { log } from "../log.js";
-import { schedulableSql } from "../catalog/schedulable.js";
+import { schedulableSql, themeHolidaySql } from "../catalog/schedulable.js";
 import { localDay, gridMs } from "./time.js";
 import { deleteBlocksFrom, blocksBetween } from "./store.js";
 import { withScheduleLock } from "./lock.js";
@@ -49,11 +49,11 @@ const RESTART_MS = 30 * DAY;
 export function nextInOrder(title, count, used, beforeMs) {
   const db = getDb();
   const eps = db.prepare(`SELECT i.* FROM items i LEFT JOIN tags t ON t.item_id = i.id
-    WHERE i.kind = 'episode' AND i.show_title = ? AND ${schedulableSql("i")} AND COALESCE(t.holiday, 'none') = 'none'
+    WHERE i.kind = 'episode' AND i.show_title = ? AND ${schedulableSql("i")} AND COALESCE(t.holiday, 'none') = 'none' AND ${themeHolidaySql("i")} IS NULL
     ORDER BY i.season IS NULL OR i.season = 0, i.season, i.episode IS NULL, i.episode, i.id`).all(title);
   const last = db.prepare(`SELECT i.id, i.season, i.episode, b.start_at FROM block_items bi JOIN blocks b ON b.id = bi.block_id JOIN items i ON i.id = bi.item_id
     LEFT JOIN tags t ON t.item_id = i.id
-    WHERE i.show_title = ? AND b.start_at < ? AND COALESCE(t.holiday, 'none') = 'none'
+    WHERE i.show_title = ? AND b.start_at < ? AND COALESCE(t.holiday, 'none') = 'none' AND ${themeHolidaySql("i")} IS NULL
     ORDER BY b.start_at DESC, bi.position DESC LIMIT 1`).get(title, beforeMs);
   let start = 0;
   if (last && beforeMs - last.start_at < RESTART_MS) {

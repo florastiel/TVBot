@@ -70,7 +70,7 @@ export async function fetchTmdb({ redo = false } = {}) {
   const shows = db.prepare(`SELECT s.title, s.year FROM shows s WHERE ${redo ? "1" : "s.tmdb_checked_at IS NULL"}
     AND EXISTS (SELECT 1 FROM items i WHERE i.show_title = s.title AND i.kind = 'episode' AND ${S}) ORDER BY s.title`).all();
   const movies = db.prepare(`SELECT i.id, i.title, i.year FROM items i WHERE i.kind = 'movie' AND ${S} ${redo ? "" : "AND i.tmdb_checked_at IS NULL"} ORDER BY i.title`).all();
-  if (!shows.length && !movies.length) return 0;
+  if (!shows.length && !movies.length) { await fetchEpisodeInfo({ redo }); return 0; }
   log.info(`tmdb: looking up ${shows.length} shows and ${movies.length} movies`);
   const now = () => new Date().toISOString();
   const saveShow = db.prepare("UPDATE shows SET tmdb_id = ?, tmdb_tags = ?, tmdb_checked_at = ? WHERE title = ?");
@@ -91,7 +91,40 @@ export async function fetchTmdb({ redo = false } = {}) {
     } catch (e) { log.warn(`tmdb: ${m.title}: ${e.message}`); }
   }
   log.info(`tmdb: ${tagged} tagged, ${missed} not matched`);
+  await fetchEpisodeInfo({ redo });
   return tagged;
+}
+
+// Every episode's TMDB name and synopsis, one request per season of each matched show
+// (shows not read yet; all with redo), matched by season + episode number. Anime numbered
+// differently from TMDB just gets nothing (or a wrong synopsis the theme pass is told to
+// distrust when it disagrees with the title).
+export async function fetchEpisodeInfo({ redo = false } = {}) {
+  if (!secrets.tmdbKey) return 0;
+  const db = getDb();
+  const S = schedulableSql("i");
+  const shows = db.prepare(`SELECT s.title, s.tmdb_id FROM shows s WHERE s.tmdb_id IS NOT NULL ${redo ? "" : "AND s.tmdb_eps_at IS NULL"}
+    AND EXISTS (SELECT 1 FROM items i WHERE i.show_title = s.title AND i.kind = 'episode' AND ${S}) ORDER BY s.title`).all();
+  if (!shows.length) return 0;
+  const seasons = db.prepare(`SELECT DISTINCT i.season FROM items i WHERE i.show_title = ? AND i.kind = 'episode' AND i.season IS NOT NULL AND ${S}`);
+  const save = db.prepare("UPDATE items SET tmdb_ep = ? WHERE show_title = ? AND kind = 'episode' AND season = ? AND episode = ?");
+  const done = db.prepare("UPDATE shows SET tmdb_eps_at = ? WHERE title = ?");
+  log.info(`tmdb: reading episode names/synopses for ${shows.length} shows`);
+  let n = 0;
+  for (const s of shows) {
+    try {
+      for (const { season } of seasons.all(s.title)) {
+        const d = await get(`/tv/${s.tmdb_id}/season/${season}`);
+        for (const e of d?.episodes || []) {
+          if (!e.name && !e.overview) continue;
+          n += Number(save.run(JSON.stringify({ name: e.name || null, overview: e.overview || null }), s.title, season, e.episode_number).changes);
+        }
+      }
+      done.run(new Date().toISOString(), s.title);
+    } catch (e) { log.warn(`tmdb: ${s.title} episodes: ${e.message}`); } // tried again next time
+  }
+  log.info(`tmdb: names/synopses for ${n} episodes`);
+  return n;
 }
 
 // "based on video game, heist, time travel" (first keywords) for a tmdb_tags value, or "".

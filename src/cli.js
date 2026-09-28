@@ -58,12 +58,12 @@ Object.assign(commands, {
     if (flags.includes("--breaks")) return tagBreaks({ redo: flags.includes("--redo") });
     await t.runTagging({ redo: flags.includes("--redo") });
     await tagOrder({ redo: flags.includes("--redo") });
+    const { fetchTmdb } = await import("./tagging/tmdb.js");
+    await fetchTmdb().catch((e) => console.error("TMDB lookup failed:", e.message)); // before the episode pass, which reads it
     await tagEpisodeThemes({ redo: flags.includes("--redo") });
     await tagBreaks({ redo: flags.includes("--redo") });
     const { detectShorts } = await import("./tagging/anilist.js");
     await detectShorts().catch((e) => console.error("AniList short check failed:", e.message));
-    const { fetchTmdb } = await import("./tagging/tmdb.js");
-    await fetchTmdb().catch((e) => console.error("TMDB lookup failed:", e.message));
   },
 
   // TMDB genres + keywords for shows and movies not looked up yet (--redo: all of them).

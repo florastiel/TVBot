@@ -5,7 +5,7 @@
 import { config } from "../config.js";
 import { getDb } from "../db.js";
 import { log } from "../log.js";
-import { schedulableSql } from "../catalog/schedulable.js";
+import { schedulableSql, themeHolidaySql } from "../catalog/schedulable.js";
 import { localDay, gridMs, season } from "./time.js";
 import { saveBlocks, usedIds, copyIndex, blockAt, nextBlockAfter } from "./store.js";
 import { listBuckets, inSeason, daypart, isMovieFormat } from "./buckets.js";
@@ -42,11 +42,12 @@ function makeCtx(fromMs) {
     itemLast: new Map(db.prepare(`SELECT bi.item_id i, MAX(b.start_at) at FROM block_items bi JOIN blocks b ON b.id = bi.block_id
       JOIN items it ON it.id = bi.item_id WHERE it.kind = 'movie' GROUP BY bi.item_id`).all().map((r) => [r.i, r.at])),
     showsOnDay: new Map(), // "YYYY-MM-DD" -> Set of show titles
-    tagOf: db.prepare("SELECT holiday FROM tags WHERE item_id = ?"),
+    tagOf: db.prepare(`SELECT COALESCE(NULLIF((SELECT holiday FROM tags WHERE item_id = i.id), 'none'), ${themeHolidaySql("i")}) holiday
+      FROM items i WHERE i.id = ?`),
     markAired(id, at) { for (const c of copies(id)) if ((this.itemLast.get(c) || 0) < at) this.itemLast.set(c, at); },
     item: db.prepare(`SELECT * FROM items i WHERE i.id = ? AND ${schedulableSql("i")}`),
     randomEps: db.prepare(`SELECT i.* FROM items i LEFT JOIN tags t ON t.item_id = i.id WHERE i.kind = 'episode' AND i.show_title = ?
-      AND ${schedulableSql("i")} AND COALESCE(t.holiday, 'none') = 'none' ORDER BY random() LIMIT 30`),
+      AND ${schedulableSql("i")} AND COALESCE(t.holiday, 'none') = 'none' AND ${themeHolidaySql("i")} IS NULL ORDER BY random() LIMIT 30`),
   };
   for (const [id, at] of [...ctx.itemLast]) ctx.markAired(id, at);
   ctx.dayShows = (ms) => {

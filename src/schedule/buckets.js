@@ -96,8 +96,11 @@ export function refreshHolidayBuckets() {
     if (serial.length >= MIN_MEMBERS.one_show) {
       want.push({ name: PREMIERE, about: "a serialized show from its first episode", format: "one_show", dayparts: ["afternoon", "evening", "late"], shows: serial });
     }
-    // Special episodes found from their titles (tagging/episodes.js).
-    for (const [theme, name, from, to] of [["musical", "Musical Episodes", null, null], ["beach", "Beach Episodes", "05-15", "09-15"]]) {
+    // Special episodes found from their titles/synopses (tagging/episodes.js). Holidays are below.
+    for (const [theme, name, from, to] of [["musical", "Musical Episodes", null, null], ["beach", "Beach Episodes", "05-15", "09-15"],
+      ["valentines", "Valentine's Episodes", "02-01", "02-14"], ["newyear", "New Year's Episodes", "12-26", "01-01"],
+      ["timeloop", "Time Loop Episodes", null, null], ["bodyswap", "Body Swap Episodes", null, null], ["wedding", "Wedding Episodes", null, null],
+      ["au", "Alternate Universe Episodes", null, null]]) {
       const eps = db.prepare(`SELECT i.id FROM item_themes t JOIN items i ON i.id = t.item_id WHERE t.theme = ? AND ${schedulableSql("i")}`).all(theme).map((r) => r.id);
       if (eps.length >= MIN_MEMBERS.variety) {
         want.push({ name, about: `${theme} episodes of regular shows`, format: "variety", dayparts: ["afternoon", "evening", "late"], items: eps, active_from: from, active_to: to });
@@ -114,8 +117,10 @@ export function refreshHolidayBuckets() {
       want.push({ name: "Shorts", about: "short shows back to back", format: "variety", dayparts: ["morning", "afternoon", "evening", "late"], items: shorts, shows: shortShows });
     }
     for (const h of HOLIDAYS) {
-      const eps = db.prepare(`SELECT i.id FROM items i JOIN tags t ON t.item_id = i.id
-        WHERE t.holiday = ? AND i.kind = 'episode' AND ${schedulableSql("i")}`).all(h.theme).map((r) => r.id);
+      // Holiday episodes: the general tagger's call (tags) or the episode theme pass's.
+      const eps = db.prepare(`SELECT i.id FROM items i WHERE i.kind = 'episode' AND ${schedulableSql("i")}
+        AND (EXISTS (SELECT 1 FROM tags t WHERE t.item_id = i.id AND t.holiday = ?)
+          OR EXISTS (SELECT 1 FROM item_themes x WHERE x.item_id = i.id AND x.theme = ?))`).all(h.theme, h.theme).map((r) => r.id);
       const movies = db.prepare(`SELECT i.id FROM items i JOIN tags t ON t.item_id = i.id
         WHERE t.holiday = ? AND i.kind = 'movie' AND ${schedulableSql("i")}`).all(h.theme).map((r) => r.id);
       const base = { active_from: h.from, active_to: h.to };

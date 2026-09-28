@@ -205,6 +205,12 @@ const MIGRATIONS = [
   ALTER TABLE items ADD COLUMN tmdb_tags TEXT;
   ALTER TABLE items ADD COLUMN tmdb_checked_at TEXT;
   `,
+  `
+  -- TMDB's name and synopsis for an episode, JSON {"name", "overview"}, by show + season +
+  -- episode number (tagging/tmdb.js); shows.tmdb_eps_at: when its seasons were last read.
+  ALTER TABLE items ADD COLUMN tmdb_ep TEXT;
+  ALTER TABLE shows ADD COLUMN tmdb_eps_at TEXT;
+  `,
 ];
 
 let db;
