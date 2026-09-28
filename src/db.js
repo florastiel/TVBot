@@ -189,6 +189,12 @@ const MIGRATIONS = [
     UPDATE items SET added_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000 WHERE id = NEW.id;
   END;
   `,
+  `
+  -- AniList's genres and tags for an anime show (tagging/anilist.js), JSON
+  -- {"genres": [...], "tags": [[name, rank], ...]}: demographic (Shounen, Seinen...) and
+  -- themes (Isekai, Iyashikei, Mecha...), for the programming pass.
+  ALTER TABLE shows ADD COLUMN anilist_tags TEXT;
+  `,
 ];
 
 let db;

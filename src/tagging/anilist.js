@@ -64,5 +64,48 @@ export async function detectShorts({ redo = false } = {}) {
     await sleep(1200); // stay well under the rate limit
   }
   log.info(`anilist: ${todo.length} checked, ${shorts} shorts, ${unmatched} not matched`);
+  await fetchTags().catch((e) => log.warn(`anilist: tags: ${e.message}`));
   return shorts;
+}
+
+// Genres and tags (demographic: Shounen/Shoujo/Seinen/Josei; themes: Isekai, Iyashikei,
+// Mecha...) for matched shows that don't have them yet, 50 shows a request. Tags AniList
+// rates under MIN_RANK% relevant, and spoiler tags, are left out.
+const MIN_RANK = 50;
+const TAGS_QUERY = `query ($ids: [Int]) { Page(perPage: 50) { media(id_in: $ids, type: ANIME) {
+  id genres tags { name rank isMediaSpoiler isGeneralSpoiler } } } }`;
+export async function fetchTags({ redo = false } = {}) {
+  const db = getDb();
+  const todo = db.prepare(`SELECT title, anilist_id id FROM shows WHERE anilist_id IS NOT NULL ${redo ? "" : "AND anilist_tags IS NULL"}`).all();
+  if (!todo.length) return 0;
+  const save = db.prepare("UPDATE shows SET anilist_tags = ? WHERE anilist_id = ?");
+  let n = 0;
+  for (let i = 0; i < todo.length; i += 50) {
+    const ids = [...new Set(todo.slice(i, i + 50).map((r) => r.id))];
+    let media = null;
+    for (let attempt = 1; attempt <= 4 && !media; attempt++) {
+      const res = await fetch(URL, {
+        method: "POST", headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ query: TAGS_QUERY, variables: { ids } }), signal: AbortSignal.timeout(20000),
+      });
+      if (res.status === 429) { await sleep((Number(res.headers.get("retry-after")) || 30) * 1000); continue; }
+      if (!res.ok) throw new Error(`AniList HTTP ${res.status}`);
+      media = (await res.json())?.data?.Page?.media || [];
+    }
+    for (const m of media || []) {
+      const tags = (m.tags || []).filter((t) => t.rank >= MIN_RANK && !t.isMediaSpoiler && !t.isGeneralSpoiler).map((t) => [t.name, t.rank]);
+      n += Number(save.run(JSON.stringify({ genres: m.genres || [], tags }), m.id).changes);
+    }
+    await sleep(1200);
+  }
+  log.info(`anilist: genres/tags saved for ${n} shows`);
+  return n;
+}
+
+// "Shounen, Isekai, Action, Fantasy" for a show's anilist_tags, or "".
+export function anilistSummary(json, max = 8) {
+  try {
+    const { genres = [], tags = [] } = JSON.parse(json || "{}");
+    return [...tags.slice(0, max).map(([name]) => name), ...genres].filter((x, i, a) => a.indexOf(x) === i).join(", ");
+  } catch { return ""; }
 }

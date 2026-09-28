@@ -13,6 +13,7 @@ import { schedulableSql } from "../../src/catalog/schedulable.js";
 import { listBuckets, FORMATS, DAYPARTS, isMovieFormat } from "../../src/schedule/buckets.js";
 import { loadTemplate, checkTemplate } from "../../src/schedule/templategrid.js";
 import { localDay } from "../../src/schedule/time.js";
+import { anilistSummary } from "../../src/tagging/anilist.js";
 
 const OUT = join(DATA_DIR, "program");
 mkdirSync(OUT, { recursive: true });
@@ -34,11 +35,11 @@ function review() {
   for (const b of buckets) out.push(`${b.name} | ${b.source} | ${b.format} | ${b.dayparts.join("/")} | ${b.active_from ? `${b.active_from}..${b.active_to}` : "-"} | ${b.shows.length + b.items.length} | ${b.about || ""}`);
 
   const lastId = Number(getMeta("program_reviewed_id") || 0);
-  const shows = db.prepare(`SELECT s.title, s.year, s.audience, s.animated, s.anime, s.origin, s.decade, s.vibes, s.genres, COUNT(i.id) n, MAX(i.id) newest
+  const shows = db.prepare(`SELECT s.title, s.year, s.audience, s.animated, s.anime, s.origin, s.decade, s.vibes, s.genres, s.anilist_tags, COUNT(i.id) n, MAX(i.id) newest
     FROM shows s JOIN items i ON i.show_title = s.title AND i.kind = 'episode' AND ${S} GROUP BY s.title ORDER BY s.title`).all();
   const movies = db.prepare(`SELECT i.id, i.title, i.year, i.duration_ms, t.audience, t.animated, t.anime, t.origin, t.mood, t.holiday, i.genres
     FROM items i LEFT JOIN tags t ON t.item_id = i.id WHERE i.kind = 'movie' AND ${S} ORDER BY i.title`).all();
-  const showLine = (s) => `show "${s.title}"${s.year ? ` (${s.year})` : ""} | ${s.n} eps | ${[s.audience, s.anime ? "anime" : s.animated ? "animated" : "live", s.origin, s.decade ? `${s.decade}s` : null, vibes(s.vibes)].filter(Boolean).join(", ")} | ${vibes(s.genres)} | in: ${(homes.get(s.title) || ["-"]).join(", ")}`;
+  const showLine = (s) => `show "${s.title}"${s.year ? ` (${s.year})` : ""} | ${s.n} eps | ${[s.audience, s.anime ? "anime" : s.animated ? "animated" : "live", s.origin, s.decade ? `${s.decade}s` : null, vibes(s.vibes)].filter(Boolean).join(", ")} | ${vibes(s.genres)}${s.anilist_tags ? ` | AniList: ${anilistSummary(s.anilist_tags)}` : ""} | in: ${(homes.get(s.title) || ["-"]).join(", ")}`;
   const movieLine = (m) => `movie ${m.id} "${m.title}" (${m.year ?? "?"}) ${Math.round((m.duration_ms || 0) / 60000)}m | ${[m.audience, m.anime ? "anime" : m.animated ? "animated" : "live", m.origin, vibes(m.mood), m.holiday && m.holiday !== "none" ? m.holiday : null].filter(Boolean).join(", ")} | ${vibes(m.genres)} | in: ${(homes.get(m.id) || ["-"]).join(", ")}`;
 
   out.push(`\nNEW SINCE THE LAST PASS (catalog ids > ${lastId}):`);
