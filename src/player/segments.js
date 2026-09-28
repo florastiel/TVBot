@@ -1,6 +1,6 @@
 // Turning catalog rows into playable segments, and picking commercial breaks.
 import { existsSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative, sep, basename } from "node:path";
 import { config } from "../config.js";
 import { getDb } from "../db.js";
 import { SUBS_DIR } from "../catalog/plexSync.js";
@@ -55,6 +55,22 @@ export function getItem(id) {
 const RECENT_MAX = 100;
 const recent = []; // item ids of the last commercials/clips/eyecatches played, oldest first
 
+// broadcast.ordered_folders: a clip/commercial folder (e.g. a numbered saga) that plays
+// its files in filename order and loops, instead of a random pick each time. Resets to the
+// start on a player restart (the order itself, like `recent`, isn't saved to disk).
+const orderState = new Map(); // group key -> source_key of the last one played
+const leadingNumber = (r) => { const m = basename(r.source_key).replace(/\.[^.]+$/, "").match(/\d+/); return m ? Number(m[0]) : null; };
+function orderedNext(key, group) {
+  const sorted = [...group].sort((a, b) => {
+    const na = leadingNumber(a), nb = leadingNumber(b);
+    return na != null && nb != null ? na - nb : basename(a.source_key).localeCompare(basename(b.source_key));
+  });
+  const i = sorted.findIndex((r) => r.source_key === orderState.get(key));
+  const next = sorted[(i + 1) % sorted.length];
+  orderState.set(key, next.source_key);
+  return next;
+}
+
 // Everything of this kind that fits in maxMs and isn't already in this break, preferring
 // the block's holiday theme (and non-holiday ones otherwise, so no Christmas ads in July).
 function candidates(kind, theme, exclude, maxMs) {
@@ -108,11 +124,16 @@ function pick(kind, theme, exclude, maxMs = Infinity, usedGroups = null, noRepea
   const weight = ([, g]) => Math.min(g.length, GROUP_WEIGHT_CAP);
   let n = Math.random() * groups.reduce((t, g) => t + weight(g), 0);
   const [key, group] = groups.find((g) => (n -= weight(g)) < 0) || groups.at(-1);
+  usedGroups?.add(key);
+  const ordered = (config.broadcast.ordered_folders || []).map((f) => String(f).toLowerCase());
+  if (ordered.includes(String(key).split("/").at(-1).toLowerCase())) {
+    // The full folder, not just its not-recently-played members: order and looping matter
+    // more than avoiding a repeat for these, and recent play history shouldn't skip a file.
+    return orderedNext(key, all.filter((x) => groupOf(x, kind) === key));
+  }
   const age = (r) => recent.lastIndexOf(r.id); // -1: not played recently
   const fresh = group.filter((r) => age(r) === -1);
-  const r = fresh.length ? fresh[Math.floor(Math.random() * fresh.length)] : group.reduce((a, b) => (age(a) <= age(b) ? a : b));
-  usedGroups?.add(key);
-  return r;
+  return fresh.length ? fresh[Math.floor(Math.random() * fresh.length)] : group.reduce((a, b) => (age(a) <= age(b) ? a : b));
 }
 
 function remember(rows) {
