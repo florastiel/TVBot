@@ -83,6 +83,19 @@ export class Player extends EventEmitter {
     });
     this.presence = new RichPresence(this.streamer.client);
     setInterval(() => this.checkIdle(), 30000).unref();
+    // Event-loop lag watchdog: a "frozen stream" report could be this whole process
+    // blocked (a slow synchronous call, GC, a DB lock from another process sharing tv.db)
+    // or just the Discord-facing pipe stalling while this process is fine - the bot's own
+    // watchdog only sees the local /status endpoint, which stays responsive either way if
+    // the block is under its 2-minute/4-miss threshold. This logs the difference so the
+    // next report says which one it was, instead of it being a guess from other log lines.
+    let lastTick = Date.now();
+    setInterval(() => {
+      const now = Date.now();
+      const lag = now - lastTick - 5000;
+      if (lag > 3000) log.warn(`player: event loop stalled for ~${(lag / 1000).toFixed(1)}s`);
+      lastTick = now;
+    }, 5000).unref();
     cleanSpool();
     this.serve();
     await this.resumeAfterRestart();
