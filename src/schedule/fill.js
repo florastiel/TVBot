@@ -7,7 +7,7 @@ import { getDb } from "../db.js";
 import { log } from "../log.js";
 import { schedulableSql } from "../catalog/schedulable.js";
 import { localDay, gridMs, season } from "./time.js";
-import { saveBlocks, usedIds, blockAt, nextBlockAfter } from "./store.js";
+import { saveBlocks, usedIds, copyIndex, blockAt, nextBlockAfter } from "./store.js";
 import { listBuckets, inSeason, daypart, isMovieFormat } from "./buckets.js";
 import { blockLength, inOrder, nextInOrder } from "./generate.js";
 
@@ -33,18 +33,22 @@ const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math
 function makeCtx(fromMs) {
   const db = getDb();
   const N = config.broadcast.no_repeat_days * DAY;
+  const copies = copyIndex();
   const ctx = {
-    used: usedIds(fromMs - N, fromMs + 60 * DAY),
+    copies,
+    used: usedIds(fromMs - N, fromMs + 60 * DAY, copies),
     showLast: new Map(db.prepare(`SELECT i.show_title t, MAX(b.start_at) at FROM block_items bi JOIN blocks b ON b.id = bi.block_id
       JOIN items i ON i.id = bi.item_id WHERE i.show_title IS NOT NULL GROUP BY i.show_title`).all().map((r) => [r.t, r.at])),
     itemLast: new Map(db.prepare(`SELECT bi.item_id i, MAX(b.start_at) at FROM block_items bi JOIN blocks b ON b.id = bi.block_id
       JOIN items it ON it.id = bi.item_id WHERE it.kind = 'movie' GROUP BY bi.item_id`).all().map((r) => [r.i, r.at])),
     showsOnDay: new Map(), // "YYYY-MM-DD" -> Set of show titles
     tagOf: db.prepare("SELECT holiday FROM tags WHERE item_id = ?"),
+    markAired(id, at) { for (const c of copies(id)) if ((this.itemLast.get(c) || 0) < at) this.itemLast.set(c, at); },
     item: db.prepare(`SELECT * FROM items i WHERE i.id = ? AND ${schedulableSql("i")}`),
     randomEps: db.prepare(`SELECT i.* FROM items i LEFT JOIN tags t ON t.item_id = i.id WHERE i.kind = 'episode' AND i.show_title = ?
       AND ${schedulableSql("i")} AND COALESCE(t.holiday, 'none') = 'none' ORDER BY random() LIMIT 30`),
   };
+  for (const [id, at] of [...ctx.itemLast]) ctx.markAired(id, at);
   ctx.dayShows = (ms) => {
     const day = localDay(ms);
     if (!ctx.showsOnDay.has(day.date)) {
@@ -167,9 +171,9 @@ function place(bucket, at, pick, ctx) {
   const label = bucket.format === "one_show" && isPremiere(pick.rows) ? "Series Premiere" : bucket.name;
   saveBlocks([{ start: at, end: at + pick.lengthMs, label, ids: pick.rows.map((r) => r.id), theme: theme && theme !== "none" ? theme : null, bucketId: bucket.id }], "bucket");
   for (const r of pick.rows) {
-    ctx.used.add(r.id);
+    for (const c of ctx.copies(r.id)) ctx.used.add(c);
     if (r.show_title) { ctx.showLast.set(r.show_title, at); ctx.dayShows(at).add(r.show_title); }
-    if (r.kind === "movie") ctx.itemLast.set(r.id, at);
+    if (r.kind === "movie") ctx.markAired(r.id, at);
   }
   return at + pick.lengthMs;
 }

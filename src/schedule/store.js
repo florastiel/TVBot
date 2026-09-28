@@ -1,6 +1,7 @@
 // Saved schedule. Past blocks are kept as history (the no-repeat rule reads them);
 // regenerating only replaces blocks from a given time onward.
 import { getDb, tx } from "../db.js";
+import { titleKey } from "../catalog/dedupe.js";
 
 export function saveBlocks(blocks, source) {
   const now = new Date().toISOString();
@@ -79,8 +80,23 @@ export function scheduledUntil(fromMs = Date.now()) {
   return t;
 }
 
-// Item ids aired or scheduled in [from, to).
-export function usedIds(from, to) {
-  return new Set(getDb().prepare(`SELECT bi.item_id FROM block_items bi JOIN blocks b ON b.id = bi.block_id
-    WHERE b.start_at >= ? AND b.start_at < ?`).all(from, to).map((r) => r.item_id));
+// Every catalog id of the same movie/episode: a title that aired under an old id (torrent
+// re-added, pack replaced) must still count as aired under its new one.
+export function copyIndex() {
+  const byKey = new Map(), keyOf = new Map();
+  for (const r of getDb().prepare("SELECT id, kind, title, year, show_title, season, episode FROM items WHERE kind IN ('movie', 'episode')").all()) {
+    const k = titleKey(r);
+    if (!k) continue;
+    keyOf.set(r.id, k);
+    (byKey.get(k) || byKey.set(k, []).get(k)).push(r.id);
+  }
+  return (id) => byKey.get(keyOf.get(id)) || [id];
+}
+
+// Item ids aired or scheduled in [from, to), with every other copy of the same title.
+export function usedIds(from, to, copies = copyIndex()) {
+  const out = new Set();
+  for (const r of getDb().prepare(`SELECT bi.item_id FROM block_items bi JOIN blocks b ON b.id = bi.block_id
+    WHERE b.start_at >= ? AND b.start_at < ?`).all(from, to)) for (const id of copies(r.item_id)) out.add(id);
+  return out;
 }
