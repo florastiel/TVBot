@@ -24,7 +24,7 @@ pools:
   AFT_SERIES: [Men in Black Saga, Muppet Marathon, Peanuts Specials, Halloweentown Saga, Toy Story Saga, Dragon Ball Movie Vault, Detective Conan Movie Vault, Mission Impossible Marathon,
     X-Men Movie Marathon, Spider-Man Saga, Hunger Games Saga, Digimon Movie Vault]
   EVE_TV: [TGIF Block, Courage Hour, Dark Serial Night, Prime Time Procedurals, Sitcoms, Nick at Nite, Whodunit Theater, Reality Check, British Comedy Classics, Superhero Prime Time,
-    Sci-Fi Signal, Sitcom Rerun Central, Halloween Episodes, Spooky Season Anime, Thanksgiving Episodes, Christmas Episodes]
+    Sci-Fi Signal, Sitcom Rerun Central, Halloween Episodes, Spooky Season Anime, Thanksgiving Episodes, Christmas Episodes, "*cheats nefariously*"]
   MON_MOVIE: [Nineties Movie Night, Heist Night, Spy Games]
   TUE_MOVIE: [Sci-Fi Feature Presentation, Nolan Night, Planet of the Apes, Dark Knight Trilogy]
   WED_MOVIE: [Knives Out Nights, Whodunit Feature Films, Western Showdown, Date Night]
@@ -35,7 +35,7 @@ pools:
     X-Men Movie Marathon, Dark Knight Trilogy, Spider-Man Saga, Hunger Games Saga, Planet of the Apes, Die Hard Marathon]
   SAT_LATE: [Midnight Fright Night, Camp Horror Night, Scream Marathon, Jason Voorhees Marathon, Slasher Night, Cult Weird Cinema, Comedy Specials, So Bad Its Good]
   SUN_EVE: [Nineties Movie Night, Halloweentown Saga, Campy Halloween Classics, Date Night, Broadway Musicals, Western Showdown, Awards Season Cinema, Studio Ghibli Melancholy, Christmas Movies]
-  LATE_PRESTIGE: [Prestige Prime Time, Prestige Crime Drama, Tragedy, Mob and Mafia, Grown-Up Cartoons, Anime Tearjerkers, Twilight Mystery Zone]
+  LATE_PRESTIGE: [Prestige Prime Time, Prestige Crime Drama, Tragedy, Mob and Mafia, Grown-Up Cartoons, Anime Tearjerkers, Twilight Mystery Zone, "*cheats nefariously*"]
 
 days:
   Monday:
