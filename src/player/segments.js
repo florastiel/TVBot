@@ -137,15 +137,27 @@ function pick(kind, theme, exclude, maxMs = Infinity, usedGroups = null, noRepea
     // more than avoiding a repeat for these, and recent play history shouldn't skip a file.
     return orderedNext(key, all.filter((x) => groupOf(x, kind) === key));
   }
-  const age = (r) => recent.lastIndexOf(r.id); // -1: not played recently
-  const fresh = group.filter((r) => age(r) === -1);
-  return fresh.length ? fresh[Math.floor(Math.random() * fresh.length)] : group.reduce((a, b) => (age(a) <= age(b) ? a : b));
+  return leastPlayed(group);
+}
+
+const bumpPlayCount = getDb().prepare("UPDATE items SET play_count = play_count + 1, last_played_at = ? WHERE id = ?");
+// Everyone in a group gets a turn before anyone gets a second: the least-played (ties
+// broken at random, so it's not the same file every time counts happen to match).
+// play_count is persisted (items.play_count), so this holds up across player restarts -
+// the old rule (avoid whatever's in the last RECENT_MAX plays, else pick randomly) reset
+// to nothing on every restart and let a big folder's rarely-seen files sit unplayed.
+function leastPlayed(group) {
+  const min = Math.min(...group.map((r) => r.play_count ?? 0));
+  const least = group.filter((r) => (r.play_count ?? 0) === min);
+  return least[Math.floor(Math.random() * least.length)];
 }
 
 function remember(rows) {
+  const now = Date.now();
   for (const r of rows) {
     recent.push(r.id);
     if (recent.length > RECENT_MAX) recent.shift();
+    bumpPlayCount.run(now, r.id);
   }
 }
 
@@ -199,9 +211,7 @@ function pickEyecatch(show, avoid) {
   const weight = ([, g]) => Math.min(g.length, GROUP_WEIGHT_CAP);
   let n = Math.random() * sources.reduce((t, s) => t + weight(s), 0);
   const [, group] = sources.find((s) => (n -= weight(s)) < 0) || sources.at(-1);
-  const age = (r) => recent.lastIndexOf(r.id);
-  const fresh = group.filter((r) => age(r) === -1);
-  return fresh.length ? fresh[Math.floor(Math.random() * fresh.length)] : group.reduce((a, b) => (age(a) <= age(b) ? a : b));
+  return leastPlayed(group);
 }
 
 // A commercial break, always bookended by an eyecatch at each end. Between shows (inside:

@@ -218,6 +218,14 @@ const MIGRATIONS = [
   ALTER TABLE items ADD COLUMN hdr INTEGER;
   UPDATE items SET streams_checked = NULL;
   `,
+  `
+  -- How often a commercial/clip/eyecatch has actually aired, and when last: player/segments.js
+  -- picks the least-played of a group instead of a random one, so a big folder's rarely-seen
+  -- files (and everything else) actually get a turn - persisted so a player restart doesn't
+  -- forget. tv.cmd spots reads these.
+  ALTER TABLE items ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE items ADD COLUMN last_played_at INTEGER;
+  `,
 ];
 
 let db;

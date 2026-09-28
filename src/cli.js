@@ -32,6 +32,25 @@ const commands = {
     console.table(db.prepare(`SELECT json_extract(subs, '$.mode') mode, COUNT(*) n FROM items
       WHERE ${schedulableSql()} GROUP BY mode ORDER BY n DESC`).all());
   },
+
+  // How often each commercial/clip/eyecatch has actually aired (player/segments.js picks
+  // the least-played of a group each time, so this is what that rotation looks like).
+  // tv.cmd spots [commercial|clip|eyecatch]   least-played first (default: commercial)
+  // tv.cmd spots [kind] --desc                most-played first
+  async spots(...args) {
+    const kind = ["commercial", "clip", "eyecatch"].find((k) => args.includes(k)) || "commercial";
+    const desc = args.includes("--desc");
+    const rows = getDb().prepare(`SELECT title, play_count, last_played_at FROM items
+      WHERE kind = ? AND present = 1 AND playable = 1 AND NOT excluded AND duplicate_of IS NULL
+      ORDER BY play_count ${desc ? "DESC" : "ASC"}, id`).all(kind);
+    console.log(`\n${rows.length} schedulable ${kind}s, ${desc ? "most" : "least"}-played first\n`);
+    console.table(rows.map((r) => ({
+      title: r.title,
+      plays: r.play_count,
+      "last played": r.last_played_at ? new Date(r.last_played_at).toLocaleString("en-US") : "never",
+    })));
+    console.log(`${rows.filter((r) => r.play_count === 0).length} never played yet`);
+  },
 };
 
 Object.assign(commands, {
@@ -231,6 +250,7 @@ if (!commands[cmd]) {
   console.log(`commands:
   sync                         pull the catalog from Plex + local folders + Real-Debrid, import tags.csv files
   stats                        show what's in the catalog
+  spots [commercial|clip|eyecatch] [--desc]  how often each has aired (least-played first; --desc: most first)
   player                       run the streamer (the throwaway account)
   bot                          run the remote-control bot
   playlist "<show>" [count]    set the test playlist to a few episodes of a show
