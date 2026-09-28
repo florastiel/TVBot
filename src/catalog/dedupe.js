@@ -30,6 +30,9 @@ const preferred = (show) => {
 const wrongSource = (r) => r.kind === "episode" && r.show_title && (preferred(r.show_title) ?? r.source) !== r.source;
 const TAG = /\s*\((?:(?:19|20)\d{2}|US|UK|AU|NZ|CA)\)\s*$/i;
 const loose = (s) => norm(String(s ?? "").replace(TAG, ""));
+// Movie titles as packs name them: "DK3 The Dark Knight Rises", "X01 X Men", "No Way Home 4K".
+const PACK_PREFIX = /^[A-Z]{1,3}\d{1,2}\s+/;
+const movieKey = (t) => norm(String(t ?? "").replace(PACK_PREFIX, "").replace(/[\s-]+(?:4K|UHD)$/i, "").replace(TAG, ""));
 const ORDINAL = { second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6 };
 // "Haikyuu!! S2", "Bungou Stray Dogs 2nd Season", "Haikyuu!! Second Season", "Show Season 3"
 const SEASON_IN_NAME = /[\s._-]+(?:S(\d{1,2})|(\d{1,2})(?:st|nd|rd|th)[\s._-]*Season|(Second|Third|Fourth|Fifth|Sixth)[\s._-]*Season|Season[\s._-]*(\d{1,2}))$/i;
@@ -141,7 +144,7 @@ function markDuplicates(db) {
     if (wrongSource(r)) continue; // left out by step 4, and not a candidate to be the kept copy
     const key = r.kind === "episode"
       ? (r.show_title && r.season != null && r.episode != null ? `e|${norm(r.show_title)}|${r.season}|${r.episode}` : null)
-      : (r.year ? `m|${norm(r.title)}|${r.year}` : null);
+      : (r.year ? `m|${movieKey(r.title)}|${r.year}` : null);
     if (!key) continue;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
@@ -199,8 +202,6 @@ export function dedupeCatalog() {
 // of the same movie (title ignoring pack prefixes like "DK3 " / "X01 ", year within 1) or
 // episode (show + season + episode). Members with no live copy are left alone to wait.
 // Returns how many members moved.
-const PACK_PREFIX = /^[A-Z]{1,3}\d{1,2}\s+/;
-const movieKey = (t) => norm(String(t ?? "").replace(PACK_PREFIX, "").replace(TAG, ""));
 function relinkMembers(db) {
   const members = db.prepare(`SELECT m.rowid rid, m.bucket_id, m.item_id, i.kind, i.title, i.year, i.show_title, i.season, i.episode,
       i.present, i.duplicate_of
