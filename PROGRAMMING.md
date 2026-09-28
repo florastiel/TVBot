@@ -94,6 +94,9 @@ Snoopy Come Home, The Peanuts Movie, Hallmark-style fall movies.
   Day, Fargo, The Shining, The Thing.
 - *Anime*: Sanda, To Your Eternity, Tokyo Godfathers, Toradora! (its Christmas stretch).
 
+**BL Hour**: The Summer Hikaru Died (Hikaru ga Shinda Natsu) goes in BL Hour when the owner
+adds it (with Junjo Romantica and Banana Fish). Junjo is BL, not shojo: keep it out of Shojo & Josei.
+
 **Year-round**: a girl-power cartoon block (Winx Club, W.I.T.C.H., Totally Spies!, My
 Life as a Teenage Robot) for mornings/afternoons; Danny Phantom there too.
 
