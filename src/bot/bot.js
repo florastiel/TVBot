@@ -302,6 +302,7 @@ export async function startBot() {
       nowPlayingMsg = pausedMsg = null;
     } else if (e.type === "show") {
       const lines = [`Now playing: ${label(e.show)}`];
+      if (e.endsAt > Date.now() + 5000) lines.push(`Ends <t:${Math.round(e.endsAt / 1000)}:R>`);
       if (e.upNext) lines.push(`Up next: ${label(e.upNext)}`);
       const old = nowPlayingMsg;
       nowPlayingMsg = await post(config.discord.now_playing_channel_id, lines.join("\n"), { components: [button("tv:pause", "Pause")] });

@@ -287,7 +287,10 @@ export class Player extends EventEmitter {
       this.now = seg;
       const isShow = seg.kind === "episode" || seg.kind === "movie" || seg.kind === "short";
       if (isShow) lastShow = seg;
-      if (isShow) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext) });
+      // Same approximation the rich presence progress bar makes (presence.js): content time
+      // only, not counting whatever real-world break time falls before it ends.
+      const endsAt = isShow ? Date.now() - (seg.seekMs || 0) + (seg.fullDurationMs || seg.durationMs) : null;
+      if (isShow) this.emitEvent("show", { show: publicSeg(seg), upNext: publicSeg(seg.upNext), endsAt });
       if (isShow) this.presence.show(seg);
       log.info(`player: ${seg.breakId ? "break" : "now"}: ${seg.title} ${seg.subtitle || ""}`.trim());
 
