@@ -142,6 +142,7 @@ export function helpEmbeds() {
       "",
       "**Pause and catch up** (people in the TV's voice channel)",
       "• `/tvpause` or the **Pause** button: freezes it on a \"Paused\" card. `/tvresume` picks up at the same second, and the TV catches up by cutting ads.",
+      "• `/rewind minutes: 5`: missed something? Goes back that many minutes (1 to 60) in the show that's on, then the TV catches up by cutting ads.",
       "• `/tvlive`: skip the catch-up and jump to what's on now.",
       "• **Skip commercials** button (on the break message) or `/skipcommercials`: ends the current break.",
       "• `/commercials minutes: 5`: want ads? Cuts to that many minutes (1 to 20) of commercials and clips right now; the show picks up at the same second after.",
@@ -186,6 +187,8 @@ const COMMANDS = [
   new SlashCommandBuilder().setName("tvpause").setDescription("Emergency pause: stop the picture and sound right now"),
   new SlashCommandBuilder().setName("tvresume").setDescription("Pick up where it was paused"),
   new SlashCommandBuilder().setName("tvlive").setDescription("Jump back to what the schedule says is on right now"),
+  new SlashCommandBuilder().setName("rewind").setDescription("Go back a few minutes in the show that's on (the TV then catches up by cutting ads)")
+    .addIntegerOption((o) => o.setName("minutes").setDescription("How far back (1 to 60; default 5)").setMinValue(1).setMaxValue(60)),
   new SlashCommandBuilder().setName("commercials").setDescription("Cut to some commercials now; the show picks up where it left off")
     .addIntegerOption((o) => o.setName("minutes").setDescription("How many minutes of commercials (1 to 20)").setRequired(true).setMinValue(1).setMaxValue(20)),
   new SlashCommandBuilder().setName("skipcommercials").setDescription("Skip the commercials that are on right now (same as the Skip commercials button)"),
@@ -561,6 +564,11 @@ export async function startBot() {
         const minutes = Math.min(20, Math.max(1, i.options.getInteger("minutes") ?? 5));
         const r = await callPlayer("/commercials", { minutes });
         return i.reply({ content: r?.ok ? `Commercials for ${r.minutes} minute${r.minutes === 1 ? "" : "s"}, starting now. The show picks up where it left off.` : `Couldn't: ${r?.why ?? "the TV isn't playing"}.`, ...ephemeral });
+      }
+      if (i.isChatInputCommand() && i.commandName === "rewind") {
+        if (!(await inTvChannel(i))) return i.reply({ content: "Only people in the TV's voice channel can do that.", ...ephemeral });
+        const r = await callPlayer("/rewind", { minutes: i.options.getInteger("minutes") ?? 5 });
+        return i.reply({ content: r?.ok ? `Rewinding ${r.minutes} minute${r.minutes === 1 ? "" : "s"}.` : `Couldn't: ${r?.why ?? "the TV isn't playing"}.`, ...ephemeral });
       }
       // Pause / resume: anyone watching in the TV's voice channel.
       const pauseCmd = (i.isChatInputCommand() && i.commandName === "tvpause") || (i.isButton() && i.customId === "tv:pause");

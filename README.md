@@ -86,6 +86,7 @@ the bot notices after 2 minutes and kills it, and the service starts a fresh one
 | `/tvoff` | anyone | TV leaves |
 | `/tvpause`, Pause button | people in the TV's voice channel | emergency pause: the show cuts to a silent "Paused" card at once |
 | `/tvresume`, Resume button | people in the TV's voice channel | picks up at the second it was paused; the channel then catches up by cutting ads |
+| `/rewind [minutes]` | people in the TV's voice channel | go back 1-60 minutes (default 5) in the show that's on; the channel then catches up by cutting ads |
 | `/tvlive` | people in the TV's voice channel | forget the delay, jump to what the schedule says is on now |
 | `/tvhelp` | anyone | posts how to use the TV in the channel (for everyone; replaces the previous help post) |
 | `/schedule` | anyone | refreshes today's TV guide post in the TV channel by editing it (no new copy, no notifications) and tells only you, with a link (a private reply you can dismiss); `week: True` shows you the week instead (only you see it) |

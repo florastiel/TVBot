@@ -201,6 +201,35 @@ export class Player extends EventEmitter {
     return { ok: true, minutes: n };
   }
 
+  // /rewind: the current show (or the one that just went to a break, or the one waiting
+  // behind a pause or /commercials) restarts `minutes` earlier; the channel then runs late
+  // and catches up the same way it does after a pause.
+  rewind(minutes) {
+    const s = this.session;
+    const n = Math.min(60, Math.max(1, Math.round(Number(minutes) || 0)));
+    if (this.state === "off" || !s) return { ok: false, why: "the TV isn't playing" };
+    const isShow = (g) => g && (g.kind === "episode" || g.kind === "movie" || g.kind === "short");
+    const back = n * 60000;
+    if (s.replay) {
+      s.replay = { ...s.replay, seekMs: Math.max(0, (s.replay.seekMs || 0) - back) };
+      s.adQueue = [];
+      s.adRequests = [];
+    } else if (isShow(this.now)) {
+      s.rewindMs = back;
+      s.pausing = true;
+    } else if (s.lastShow) {
+      s.replay = { ...s.lastShow, seekMs: Math.max(0, s.lastShow.durationMs - back) };
+    } else {
+      return { ok: false, why: "nothing to rewind yet" };
+    }
+    if (this.state === "on") {
+      s.pausing = true;
+      s.feed.skip();
+    }
+    log.info(`player: rewound ${n} minute${n === 1 ? "" : "s"}`);
+    return { ok: true, minutes: n };
+  }
+
   // Picks up exactly where it was paused. The channel is now running late; the
   // schedule catches up by cutting commercial breaks (see ScheduleProgram).
   resume() {
@@ -286,7 +315,7 @@ export class Player extends EventEmitter {
       }
       this.now = seg;
       const isShow = seg.kind === "episode" || seg.kind === "movie" || seg.kind === "short";
-      if (isShow) lastShow = seg;
+      if (isShow) lastShow = session.lastShow = seg;
       // Same approximation the rich presence progress bar makes (presence.js): content time
       // only, not counting whatever real-world break time falls before it ends.
       const endsAt = isShow ? Date.now() - (seg.seekMs || 0) + (seg.fullDurationMs || seg.durationMs) : null;
@@ -299,7 +328,9 @@ export class Player extends EventEmitter {
       if (session.pausing) {
         // Cut off by a pause: a show is picked up again at the same second on resume.
         session.pausing = false;
-        if (isShow) session.replay = { ...seg, seekMs: (seg.seekMs || 0) + Math.max(0, Date.now() - startedAt) };
+        const back = session.rewindMs || 0;
+        session.rewindMs = 0;
+        if (isShow) session.replay = { ...seg, seekMs: Math.max(0, (seg.seekMs || 0) + Math.max(0, Date.now() - startedAt) - back) };
         continue;
       }
       if (r.result === "error" && r.playedSec < 1) {
@@ -456,6 +487,7 @@ export class Player extends EventEmitter {
       "POST /pause": () => this.pause(),
       "POST /resume": () => this.resume(),
       "POST /commercials": (b) => this.commercials(b.minutes),
+      "POST /rewind": (b) => this.rewind(b.minutes),
       "POST /live": () => this.goLive(),
       "POST /skip-break": (b) => ({ skipped: this.skipBreak(b.breakId) }),
       "POST /skip-item": () => ({ skipped: this.skipItem() }),
