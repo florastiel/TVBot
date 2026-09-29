@@ -3,6 +3,7 @@
 // title / year) come from the release names, and tracks are read with ffprobe over a
 // freshly unrestricted URL, the same way as local files.
 import { extname } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { config } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
@@ -97,6 +98,21 @@ export async function syncRealDebrid(client = new RealDebrid(), { quick = false 
 // the source of truth for "the whole torrent is gone", since one file's unrestrict call
 // failing with hoster_unavailable doesn't reliably mean that (a busy Real-Debrid, or that
 // one file's hoster specifically, can return it for an otherwise-fine torrent).
+// The unrestrict API call is already paced (RealDebrid.call's own rate limit), but the
+// ffprobe read that follows goes straight to Real-Debrid's download CDN with no pacing of
+// its own - 3 workers doing that at once, across thousands of files, looks like what got
+// the account's download traffic throttled twice in one day (2026-09-28/29 handshake
+// failures across a huge share of files at once, while a single isolated probe off on its
+// own always came back clean and fast). Pace those too, and use fewer workers, so a big
+// reprobe reads as ordinary traffic instead of a burst.
+const PROBE_GAP_MS = 400;
+let lastProbeAt = 0;
+async function paceProbe() {
+  const wait = lastProbeAt + PROBE_GAP_MS - Date.now();
+  lastProbeAt = Date.now() + Math.max(0, wait);
+  if (wait > 0) await sleep(wait);
+}
+
 async function probeNew(client, { tried, dead }, quick = false, liveTorrents = new Set()) {
   const db = getDb();
   const todo = db.prepare(`SELECT id, source_key, media_path, show_title, source_updated FROM items
@@ -119,6 +135,7 @@ async function probeNew(client, { tried, dead }, quick = false, liveTorrents = n
         continue;
       }
       try {
+        await paceProbe();
         const p = await probeWithRetry(client, r.media_path);
         const video = p.streams.find((s) => s.codec_type === "video" && !s.disposition?.attached_pic);
         const t = video ? chooseTracks(fromFfprobeStreams(p.streams), { showTitle: r.show_title }) : { playable: false, reason: "no video track" };
@@ -136,7 +153,7 @@ async function probeNew(client, { tried, dead }, quick = false, liveTorrents = n
       if (++n % 100 === 0) log.info(`realdebrid: tracks ${n} done`);
     }
   };
-  await Promise.all(Array.from({ length: 3 }, worker));
+  await Promise.all(Array.from({ length: 2 }, worker));
   if (dead.size) log.warn(`realdebrid: ${dead.size} torrents have lost their files on Real-Debrid (hoster_unavailable); re-add them there to get them back`);
   return n;
 }
