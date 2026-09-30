@@ -165,11 +165,15 @@ function markDuplicates(db) {
   }
 
   // Step 3: one local file in several formats (same folder, same name).
-  const files = db.prepare(`SELECT id, source_key, playable, excluded FROM items
+  // A YouTube download carries its video id in the filename ("Ad [oxopPDMq7rs].mp4"): the
+  // same video saved into two folders (loose in youtube\ and again inside a playlist folder)
+  // is the same ad, so those are keyed by id + kind and not by folder.
+  const files = db.prepare(`SELECT id, kind, source_key, playable, excluded FROM items
     WHERE source = 'local' AND present = 1 AND kind IN ('commercial', 'clip', 'short', 'eyecatch')`).all();
   const same = new Map();
   for (const r of files) {
-    const key = `${dirname(r.source_key).toLowerCase()}|${basename(r.source_key, extname(r.source_key)).toLowerCase()}`;
+    const yt = basename(r.source_key).match(/\[([\w-]{11})\]\.[^.]+$/)?.[1];
+    const key = yt ? `yt|${r.kind}|${yt}` : `${dirname(r.source_key).toLowerCase()}|${basename(r.source_key, extname(r.source_key)).toLowerCase()}`;
     if (!same.has(key)) same.set(key, []);
     same.get(key).push(r);
   }
@@ -197,8 +201,9 @@ export function dedupeCatalog() {
     const r = markDuplicates(db);
     const odd = markOddballs(db);
     const relinked = relinkMembers(db);
-    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies/spots left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""}); ${odd} episodes left out (much shorter than the rest of their show, or from a source turned off for that show)${relinked ? `; ${relinked} bucket picks moved to a live copy` : ""}`);
-    return { renamed, oddballs: odd, relinked, ...r };
+    const replanned = relinkPlanned(db);
+    log.info(`dedupe: ${r.duplicates} duplicate copies of ${r.groups} episodes/movies/spots left out (${r.changed} changed${renamed ? `, ${renamed} show names lined up` : ""}); ${odd} episodes left out (much shorter than the rest of their show, or from a source turned off for that show)${relinked ? `; ${relinked} bucket picks moved to a live copy` : ""}${replanned ? `; ${replanned} scheduled items moved to a live copy` : ""}`);
+    return { renamed, oddballs: odd, relinked, replanned, ...r };
   });
 }
 
@@ -214,6 +219,23 @@ function relinkMembers(db) {
     FROM bucket_members m JOIN items i ON i.id = m.item_id WHERE m.item_id IS NOT NULL`).all();
   const stale = members.filter((m) => !m.present || m.duplicate_of != null);
   if (!stale.length) return 0;
+  const { liveCopy } = liveIndex(db);
+  const has = db.prepare("SELECT 1 FROM bucket_members WHERE bucket_id = ? AND item_id = ?");
+  const move = db.prepare("UPDATE bucket_members SET item_id = ? WHERE rowid = ?");
+  const drop = db.prepare("DELETE FROM bucket_members WHERE rowid = ?");
+  let moved = 0;
+  for (const m of stale) {
+    const to = liveCopy(m);
+    if (!to || to.id === m.item_id) continue;
+    if (has.get(m.bucket_id, to.id)) drop.run(m.rid); else move.run(to.id, m.rid);
+    moved++;
+  }
+  return moved;
+}
+
+// Every movie/episode that's on the air (present, not a duplicate, not excluded), indexed
+// for finding the live copy of one that isn't.
+function liveIndex(db) {
   const live = db.prepare(`SELECT id, source, kind, title, year, show_title, season, episode, playable, excluded, streams_checked,
       unplayable_reason, video_height, duplicate_of, match
     FROM items WHERE present = 1 AND duplicate_of IS NULL AND NOT excluded AND kind IN ('movie', 'episode')`).all();
@@ -224,11 +246,8 @@ function relinkMembers(db) {
     else if (r.show_title && r.season != null && r.episode != null) push(episodes, `${norm(r.show_title)}|${r.season}|${r.episode}`, r);
   }
   const byId = new Map(live.map((r) => [r.id, r]));
-  const has = db.prepare("SELECT 1 FROM bucket_members WHERE bucket_id = ? AND item_id = ?");
-  const move = db.prepare("UPDATE bucket_members SET item_id = ? WHERE rowid = ?");
-  const drop = db.prepare("DELETE FROM bucket_members WHERE rowid = ?");
-  let moved = 0;
-  for (const m of stale) {
+  // m: a row with kind/title/year/show_title/season/episode/present/duplicate_of.
+  const liveCopy = (m) => {
     let to = m.present ? byId.get(m.duplicate_of) : null;
     if (!to) {
       const cands = m.kind === "movie"
@@ -236,8 +255,32 @@ function relinkMembers(db) {
         : m.show_title ? (episodes.get(`${norm(m.show_title)}|${m.season}|${m.episode}`) || []) : [];
       to = [...cands].sort(better)[0];
     }
-    if (!to || to.id === m.item_id) continue;
-    if (has.get(m.bucket_id, to.id)) drop.run(m.rid); else move.run(to.id, m.rid);
+    return to;
+  };
+  return { liveCopy };
+}
+
+// Step 6: the same for the schedule. A block is planned days ahead, and if the copy it
+// picked is gone by the time it airs (a torrent deleted, a duplicate that lost dedupe, a
+// read that failed) the player just drops that item - the show silently never airs even
+// though another copy of the very episode is sitting in the catalog. Blocks that haven't
+// finished yet get the playable live copy swapped in. An item with no playable live copy is
+// left alone (nothing better to put there), as is one whose replacement is already in the
+// same block. Returns how many scheduled items moved.
+function relinkPlanned(db) {
+  const rows = db.prepare(`SELECT bi.block_id, bi.position, bi.item_id, i.kind, i.title, i.year, i.show_title, i.season, i.episode,
+      i.present, i.duplicate_of
+    FROM block_items bi JOIN blocks b ON b.id = bi.block_id JOIN items i ON i.id = bi.item_id
+    WHERE b.end_at > ? AND (i.present = 0 OR i.duplicate_of IS NOT NULL OR i.playable = 0)`).all(Date.now());
+  if (!rows.length) return 0;
+  const { liveCopy } = liveIndex(db);
+  const inBlock = db.prepare("SELECT 1 FROM block_items WHERE block_id = ? AND item_id = ?");
+  const move = db.prepare("UPDATE block_items SET item_id = ? WHERE block_id = ? AND position = ?");
+  let moved = 0;
+  for (const r of rows) {
+    const to = liveCopy(r);
+    if (!to || to.id === r.item_id || !to.playable || inBlock.get(r.block_id, to.id)) continue;
+    move.run(to.id, r.block_id, r.position);
     moved++;
   }
   return moved;

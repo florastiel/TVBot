@@ -62,19 +62,23 @@ const RECENT_MAX = 100;
 const recent = []; // item ids of the last commercials/clips/eyecatches played, oldest first
 
 // broadcast.ordered_folders: a clip/commercial folder (e.g. a numbered saga) that plays
-// its files in filename order and loops, instead of a random pick each time. Resets to the
-// start on a player restart (the order itself, like `recent`, isn't saved to disk).
-const orderState = new Map(); // group key -> source_key of the last one played
+// its files in filename order and loops, instead of a random pick each time.
 const leadingNumber = (r) => { const m = basename(r.source_key).replace(/\.[^.]+$/, "").match(/\d+/); return m ? Number(m[0]) : null; };
-function orderedNext(key, group) {
-  const sorted = [...group].sort((a, b) => {
+const isOrdered = (key) => (config.broadcast.ordered_folders || []).some((f) => String(f).toLowerCase() === String(key).split("/").at(-1).toLowerCase());
+// The file due next: the one after whichever of the folder aired last, over the WHOLE
+// folder (not just what fits this slot, or the order would skip the long chapters and
+// cycle through the short ones). "Aired last" is items.last_played_at, so the place in the
+// saga survives a player restart; nothing played yet starts at the first file.
+function orderedDue(key, kind) {
+  const folder = candidates(kind, null, [], Infinity).filter((r) => groupOf(r, kind) === key);
+  if (!folder.length) return null;
+  const sorted = folder.sort((a, b) => {
     const na = leadingNumber(a), nb = leadingNumber(b);
     return na != null && nb != null ? na - nb : basename(a.source_key).localeCompare(basename(b.source_key));
   });
-  const i = sorted.findIndex((r) => r.source_key === orderState.get(key));
-  const next = sorted[(i + 1) % sorted.length];
-  orderState.set(key, next.source_key);
-  return next;
+  let last = -1;
+  sorted.forEach((r, i) => { if (r.last_played_at && (last < 0 || r.last_played_at > sorted[last].last_played_at)) last = i; });
+  return sorted[(last + 1) % sorted.length];
 }
 
 // Everything of this kind that fits in maxMs and isn't already in this break, preferring
@@ -118,25 +122,52 @@ function groupOf(row, kind) {
 // noRepeat: return nothing rather than a second pick from a group already used.
 // minPool: return nothing when fewer files than that fit (a break's last seconds: only
 // the same few short bumpers fit, over and over).
-function pick(kind, theme, exclude, maxMs = Infinity, usedGroups = null, noRepeat = false, minPool = 1) {
-  const all = candidates(kind, theme, exclude, maxMs);
+// stretch: maxMs is a preference, not a wall, for a pod that can run long (between shows;
+// a fill has to end on the block boundary, so it never stretches). Rather than repeat, a
+// longer file that has aired less than anything that fits gets the slot (the pod runs long
+// or its later spots are dropped), and an ordered_folders folder's next file always
+// qualifies however long it runs.
+function pick(kind, theme, exclude, maxMs = Infinity, usedGroups = null, noRepeat = false, minPool = 1, stretch = false) {
+  let all = candidates(kind, theme, exclude, maxMs);
+  const full = stretch && Number.isFinite(maxMs) ? candidates(kind, theme, exclude, Infinity) : all;
+  if (full !== all && full.length) {
+    const fewest = (rs) => Math.min(...rs.map((r) => r.play_count ?? 0));
+    if (!all.length || fewest(full) < fewest(all)) all = full;
+  }
   if (all.length < minPool) return null;
   const rows = notRecent(all);
   if (!rows.length) return null;
-  let groups = [...Map.groupBy(rows, (r) => groupOf(r, kind))];
+  const fullGroups = Map.groupBy(full, (r) => groupOf(r, kind));
+  let groups = [...Map.groupBy(rows, (r) => groupOf(r, kind))].filter(([k]) => !isOrdered(k));
+  // An ordered folder only offers the file that is due, and only when that one is free to
+  // air now (fits, and isn't already in this break); otherwise it sits this slot out.
+  for (const [k, members] of fullGroups) {
+    if (!isOrdered(k)) continue;
+    const due = orderedDue(k, kind);
+    const hit = members.find((r) => r.id === due?.id);
+    if (hit) groups.push([k, [hit]]);
+  }
+  if (!groups.length) return null;
   const unused = usedGroups ? groups.filter(([k]) => !usedGroups.has(k)) : groups;
   if (unused.length) groups = unused;
   else if (noRepeat) return null;
-  const weight = ([, g]) => Math.min(g.length, GROUP_WEIGHT_CAP);
+  const weight = ([k, g]) => Math.min(isOrdered(k) ? fullGroups.get(k).length : g.length, GROUP_WEIGHT_CAP);
   let n = Math.random() * groups.reduce((t, g) => t + weight(g), 0);
-  const [key, group] = groups.find((g) => (n -= weight(g)) < 0) || groups.at(-1);
-  usedGroups?.add(key);
-  const ordered = (config.broadcast.ordered_folders || []).map((f) => String(f).toLowerCase());
-  if (ordered.includes(String(key).split("/").at(-1).toLowerCase())) {
-    // The full folder, not just its not-recently-played members: order and looping matter
-    // more than avoiding a repeat for these, and recent play history shouldn't skip a file.
-    return orderedNext(key, all.filter((x) => groupOf(x, kind) === key));
+  let [key, group] = groups.find((g) => (n -= weight(g)) < 0) || groups.at(-1);
+  // leastPlayed() only evens things out inside a folder, and a single-file group (a file
+  // of a variety pack, a loose file) is a folder of one: without this the same file could
+  // come up again while hundreds of its neighbours had never aired, so the draw above only
+  // decides that a single file is due (keeping the pack-vs-brand mix) and the least-played
+  // of them gets the turn.
+  const single = ([k, g]) => g.length === 1 && k === g[0].source_key;
+  if (single([key, group])) {
+    const singles = groups.filter(single);
+    const min = Math.min(...singles.map(([, g]) => g[0].play_count ?? 0));
+    const due = singles.filter(([, g]) => (g[0].play_count ?? 0) === min);
+    [key, group] = due[Math.floor(Math.random() * due.length)];
   }
+  usedGroups?.add(key);
+  if (isOrdered(key)) return group[0]; // the due file: order matters more than recent-play history
   return leastPlayed(group);
 }
 
@@ -217,7 +248,11 @@ function pickEyecatch(show, avoid) {
   // Never immediately repeat one just used, anywhere, unless it's genuinely the only option.
   const notLast = base.filter((r) => !lastEyecatches.includes(r.id));
   const pool = notRecent(notLast.length ? notLast : base);
-  const sources = [...Map.groupBy(pool, (r) => (SHARED_DIRS.has(dirOf(r).toLowerCase()) ? r.source_key : dirOf(r)))];
+  // The thread folders and loose files together are ONE source, like any folder, not one
+  // source per file: 19 files each carrying a full folder's weight took about half of all
+  // eyecatches, so a few uploads aired constantly. leastPlayed() below still gives each of
+  // them its turn.
+  const sources = [...Map.groupBy(pool, (r) => (SHARED_DIRS.has(dirOf(r).toLowerCase()) ? "(shared)" : dirOf(r)))];
   const weight = ([, g]) => Math.min(g.length, GROUP_WEIGHT_CAP);
   let n = Math.random() * sources.reduce((t, s) => t + weight(s), 0);
   const [, group] = sources.find((s) => (n -= weight(s)) < 0) || sources.at(-1);
@@ -244,7 +279,9 @@ export function makeBreak(plex, { theme = null, inside = false, show = null } = 
   const add = (kind, max) => {
     const other = kind === "clip" ? "commercial" : "clip";
     const avoid = rows.map((x) => x.id);
-    const r = pick(kind, theme, avoid, max, groups) || (inside ? null : pick(other, theme, avoid, max, groups));
+    // Between shows the length budget is a preference: rather than repeat what already
+    // aired, a longer spot may take the slot (see pick's `stretch`).
+    const r = pick(kind, theme, avoid, max, groups, false, 1, !inside) || (inside ? null : pick(other, theme, avoid, max, groups, false, 1, true));
     if (r) rows.push(r);
     return r;
   };
@@ -303,7 +340,11 @@ export function fillBreak(plex, ms, { theme = null, upNextTitle = null } = {}) {
   let left = ms;
   for (;;) {
     const kind = rows.length % 4 === 3 ? "clip" : "commercial";
-    const avoid = rows.slice(-2).map((x) => x.id); // small libraries may repeat, never back-to-back
+    // Nothing twice in one fill: `recent` and play_count only learn about these picks in
+    // remember() below, so a long fill's tail (where only a few short bumpers still fit)
+    // would otherwise hand back one it already played. A pool that runs dry (under
+    // FILL_MIN_POOL) ends the fill with the "Up next" card instead.
+    const avoid = rows.map((x) => x.id);
     const r = pick(kind, theme, avoid, left, groups, false, FILL_MIN_POOL) || pick(kind === "clip" ? "commercial" : "clip", theme, avoid, left, groups, false, FILL_MIN_POOL);
     if (!r) break;
     rows.push(r);
