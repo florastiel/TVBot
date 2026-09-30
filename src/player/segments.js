@@ -106,11 +106,15 @@ function notRecent(rows) {
 // A big batch (a playlist of 88 Pop-Tarts ads) shouldn't take over every break. Files
 // in the same subfolder form one group; loose files (and files straight in "youtube")
 // are each their own group, and so are files in a broadcast.variety_folders folder (a
-// pack of many different ads, like an archive.org collection). First a group is picked
-// (bigger groups a bit more often: weight = size, capped at GROUP_WEIGHT_CAP), avoiding
-// groups already in this break; then, within the group, something not played recently
-// (or the least recent one).
-const GROUP_WEIGHT_CAP = 3;
+// pack of many different ads, like an archive.org collection). The one-file groups are the
+// "mixed" pool and the folders are "brands": a brand folder is picked broadcast.brand_share
+// of the time (all brand folders together, bigger ones more often: weight = the square root
+// of the folder's size, so 5 files don't come up as often per file as 128 do, nor 128 as
+// 5 times as often overall), the mixed pool the rest of the time, then within the group
+// something not played recently (or the least played one). Groups already in this break
+// are avoided.
+const folderWeight = (n) => Math.sqrt(n);
+const brandShare = () => Math.min(1, Math.max(0, Number(config.broadcast.brand_share ?? 0.25)));
 function groupOf(row, kind) {
   const root = kind === "clip" ? config.local.clips : config.local.commercials;
   const dir = relative(root || "", row.source_key).split(sep).slice(0, -1).join("/");
@@ -151,17 +155,18 @@ function pick(kind, theme, exclude, maxMs = Infinity, usedGroups = null, noRepea
   const unused = usedGroups ? groups.filter(([k]) => !usedGroups.has(k)) : groups;
   if (unused.length) groups = unused;
   else if (noRepeat) return null;
-  const weight = ([k, g]) => Math.min(isOrdered(k) ? fullGroups.get(k).length : g.length, GROUP_WEIGHT_CAP);
-  let n = Math.random() * groups.reduce((t, g) => t + weight(g), 0);
-  let [key, group] = groups.find((g) => (n -= weight(g)) < 0) || groups.at(-1);
-  // leastPlayed() only evens things out inside a folder, and a single-file group (a file
-  // of a variety pack, a loose file) is a folder of one: without this the same file could
-  // come up again while hundreds of its neighbours had never aired, so the draw above only
-  // decides that a single file is due (keeping the pack-vs-brand mix) and the least-played
-  // of them gets the turn.
   const single = ([k, g]) => g.length === 1 && k === g[0].source_key;
-  if (single([key, group])) {
-    const singles = groups.filter(single);
+  const singles = groups.filter(single), brands = groups.filter((g) => !single(g));
+  let key, group;
+  if (brands.length && (!singles.length || Math.random() < brandShare())) {
+    const weight = ([k, g]) => folderWeight(fullGroups.get(k)?.length ?? g.length);
+    let n = Math.random() * brands.reduce((t, b) => t + weight(b), 0);
+    [key, group] = brands.find((b) => (n -= weight(b)) < 0) || brands.at(-1);
+  } else {
+    // The mixed pool. leastPlayed() only evens things out inside a folder, and each of
+    // these is a folder of one, so it's done here: whichever has aired least goes (ties at
+    // random), or the same file could come up again while hundreds of its neighbours had
+    // never aired.
     const min = Math.min(...singles.map(([, g]) => g[0].play_count ?? 0));
     const due = singles.filter(([, g]) => (g[0].play_count ?? 0) === min);
     [key, group] = due[Math.floor(Math.random() * due.length)];
@@ -253,7 +258,7 @@ function pickEyecatch(show, avoid) {
   // eyecatches, so a few uploads aired constantly. leastPlayed() below still gives each of
   // them its turn.
   const sources = [...Map.groupBy(pool, (r) => (SHARED_DIRS.has(dirOf(r).toLowerCase()) ? "(shared)" : dirOf(r)))];
-  const weight = ([, g]) => Math.min(g.length, GROUP_WEIGHT_CAP);
+  const weight = ([, g]) => folderWeight(g.length); // a 5-file show folder mustn't repeat like a 128-file one
   let n = Math.random() * sources.reduce((t, s) => t + weight(s), 0);
   const [, group] = sources.find((s) => (n -= weight(s)) < 0) || sources.at(-1);
   const picked = leastPlayed(group);

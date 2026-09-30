@@ -23,7 +23,10 @@ broadcast:
   # A folder of commercials counts as one brand (so 88 Pop-Tarts ads don't take over);
   # folders named here are packs of many different ads, and each file counts on its own.
   variety_folders: ["commercialpack1", "Collectionof90sCommercials"]
-  episode_breaks: 1            # most breaks inside one episode (the one nearest the middle); 0 = none. Movies still get one about every 30 min
+  # How often a pick comes from a brand folder (all brand folders together) instead of the
+  # mixed pool (variety-folder files, loose files, the youtube/uploads thread folders).
+  brand_share: 0.25
+  episode_breaks: 1           # most breaks inside one episode (the one nearest the middle); 0 = none. Movies still get one about every 30 min
   break_every_minutes: 8       # no break between shows after less than this much show (back-to-back shorts)
   max_spot_minutes: 3          # longest commercial/clip that plays in a break
   max_show_block_minutes: 75   # regular blocks of episodes are at most this long (movies and specials can run longer)
