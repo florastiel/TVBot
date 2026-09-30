@@ -8,6 +8,7 @@ const TEXT_SUBS = new Set(["srt", "subrip", "ass", "ssa", "webvtt", "vtt", "mov_
 const UNKNOWN = new Set([undefined, null, "", "und", "unk", "?"]);
 
 const isCommentary = (s) => /commentary/i.test(s.title || "");
+const isPartial = (s) => /\b(signs?|songs?|karaoke|lyrics)\b/i.test(s.title || "") && !/\b(full|dialog(ue)?)\b/i.test(s.title || "");
 
 export function chooseTracks(streams, { showTitle } = {}) {
   const want = config.language.audio;
@@ -48,9 +49,11 @@ export function chooseTracks(streams, { showTitle } = {}) {
 function chooseSubs(streams, subLang) {
   const isSdh = (s) => /sdh|\bcc\b|hearing/i.test(s.title || "");
   const rank = (s) => (s.forced ? 2 : isSdh(s) ? 1 : 0);
-  const subs = streams
-    .filter((s) => s.type === "subtitle" && (s.lang === subLang || (s.external && UNKNOWN.has(s.lang))))
-    .sort((a, b) => rank(a) - rank(b));
+  const candidates = streams.filter((s) => s.type === "subtitle" && (s.lang === subLang || (s.external && UNKNOWN.has(s.lang))));
+  // Fansub batches ship "Signs and Songs" / "Karaoke Only" tracks next to the full one:
+  // no dialogue in them, so only fall back to one if nothing else exists.
+  const full = candidates.filter((s) => !isPartial(s));
+  const subs = (full.length ? full : candidates).sort((a, b) => rank(a) - rank(b));
   const labeled = subs.filter((s) => s.lang === subLang);
   const unlabeled = subs.filter((s) => s.lang !== subLang);
   const find = (list, ext, codecs) => list.find((s) => s.external === ext && codecs.has(s.codec));
