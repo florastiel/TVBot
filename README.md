@@ -342,11 +342,19 @@ every Plex show and movie airing in the next 3 hours (same total transfer from t
 server, just earlier; played from the local copy) and scans it for moments where the
 picture goes black and the sound goes silent together; local files are scanned in place
 (about 1-5 minutes per episode, at low priority). Anime that uses a mid-episode eyecatch
-instead gets a break at a chapter mark near its middle; long movies without either get
-one about every 30 minutes. Inside a show a break is one commercial (a minute at most),
-or two if both are `short_spot_seconds` or shorter. Between shows: `between_spots`
-videos, each a clip `clip_chance` of the time. Nothing longer than `max_spot_minutes`
-airs. Every break, inside or between shows, is bookended by an eyecatch.
+instead gets a break at a chapter mark near its middle. Movies and hour-long shows (40+
+minutes) get a break about every `piece_minutes` (12), at a chapter mark or right at the
+point when there aren't any, and a movie's found break points are subdivided to that pace
+too. Inside a short show a break is one commercial (a minute at most), or two if both are
+`short_spot_seconds` or shorter; inside a movie or hour-long show it's as many as it
+takes to hit `ad_minutes_per_hour` (14) over the whole item, and its block is planned
+to match. Between shows: `between_spots` videos, each a clip `clip_chance` of the time.
+Nothing longer than `max_spot_minutes` airs, except that a between-shows break runs long
+rather than repeat a spot that has aired more than a longer one. Every break, inside or
+between shows, is bookended by an eyecatch. Picks: files in a `variety_folders` folder or
+loose in the thread folders are the mixed pool, every other commercial/clip folder is a
+brand, and all brand folders together get `brand_share` (0.25) of the picks; within a
+group the least-played file goes first.
 `D:\data\tv\ad-lengths.csv` lists every commercial and clip with its length.
 
 **Skipping**: `/tvadmin skip` drops the rest of the show or movie and takes it off the

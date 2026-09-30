@@ -221,6 +221,7 @@ const normTitle = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace
 // non-eyecatch spots between two breaks is enough to push an eyecatch out of the last 100
 // items played, so back-to-back breaks could land on the very same one by chance).
 const EYECATCH_MEMORY = 4;
+const EYECATCH_ALLOWANCE_MS = 20000; // the two bumpers around a mid-show break, roughly
 const lastEyecatches = [];
 
 // An eyecatch for a break inside `show`: any file in eyecatches\ except ones from the
@@ -275,7 +276,7 @@ function pickEyecatch(show, avoid) {
 // when both are short_spot_seconds or less) - here the bookends only happen where
 // wantsEyecatches says so (broadcast.eyecatches). From different groups. show: the row of
 // the show the break is inside.
-export function makeBreak(plex, { theme = null, inside = false, show = null } = {}) {
+export function makeBreak(plex, { theme = null, inside = false, show = null, targetMs = null } = {}) {
   const b = config.broadcast;
   const maxMs = b.max_spot_minutes * 60000;
   const shortMs = b.short_spot_seconds * 1000;
@@ -292,7 +293,16 @@ export function makeBreak(plex, { theme = null, inside = false, show = null } = 
   };
   if (inside) {
     const first = add("commercial", Math.min(maxMs, 60000)); // mid-show: a minute at most
-    if (b.inside_spots > 1 && first && first.duration_ms <= shortMs) add("commercial", shortMs);
+    if (targetMs) {
+      // A long-form break (movie, hour-long show): spots until about targetMs of ads, less
+      // what the two eyecatches will take.
+      let sum = first?.duration_ms || 0;
+      for (let k = 1; first && k < 14 && sum < targetMs - EYECATCH_ALLOWANCE_MS; k++) {
+        const r = add("commercial", Math.min(maxMs, 60000));
+        if (!r) break;
+        sum += r.duration_ms;
+      }
+    } else if (b.inside_spots > 1 && first && first.duration_ms <= shortMs) add("commercial", shortMs);
     const mode = String(b.eyecatches || "none").toLowerCase();
     if (rows.length && wantsEyecatches(show, mode)) {
       const into = pickEyecatch(show, rows.map((x) => x.id));

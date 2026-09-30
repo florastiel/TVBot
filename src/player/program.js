@@ -13,6 +13,7 @@ import { inOrder, nextInOrder } from "../schedule/generate.js";
 import { getDb } from "../db.js";
 import { schedulableSql } from "../catalog/schedulable.js";
 import { localTime } from "../schedule/time.js";
+import { LONG_MS, breakTargetMs } from "../adload.js";
 
 export const PLAYLIST_FILE = join(DATA_DIR, "playlist.json");
 
@@ -51,19 +52,42 @@ export class PlaylistProgram {
 const LOOKAHEAD_MS = 3 * 3600000; // how far ahead to download files that need it for subtitles
 const MIN_LEFT = 20000; // don't join the last 20 seconds of a show; go to the next thing
 const EDGE = 5 * 60000;  // never break within 5 minutes of the start/end of a show
-const PIECE_MS = 30 * 60000; // long shows and movies get a break about this often
+const pieceMs = () => (Number(config.broadcast.piece_minutes) || 12) * 60000; // long shows and movies get a break about this often
+
+// A movie's found break points can leave a long stretch with no break (a film with two
+// fade-outs): split any stretch over 1.6 pieces into even pieces, at the chapter mark
+// nearest each split (within a third of a piece) or right at it.
+function subdivide(found, durationMs, cues) {
+  const P = pieceMs(), gap = 4 * 60000;
+  const edges = [0, ...found, durationMs], out = [...found];
+  for (let i = 0; i + 1 < edges.length; i++) {
+    const a = edges[i], b = edges[i + 1];
+    if (b - a <= P * 1.6) continue;
+    const k = Math.round((b - a) / P);
+    for (let j = 1; j < k; j++) {
+      const target = a + ((b - a) * j) / k;
+      const near = cues.filter((c) => c > a + gap && c < b - gap && Math.abs(c - target) <= P / 3)
+        .sort((x, y) => Math.abs(x - target) - Math.abs(y - target))[0];
+      if (near != null) out.push(near);
+      else if (config.broadcast.split_without_chapters) out.push(Math.round(target));
+    }
+  }
+  return [...new Set(out)].sort((x, y) => x - y);
+}
 
 // Cut items into pieces at their original commercial-break points (black + silence,
 // found in download-ahead). Items without any: long ones (40+ minutes) in pieces of about
-// PIECE_MS, at the chapter point nearest each cut (within 10 minutes), or right at it
-// if the file has no chapters and split_without_chapters is on. Episodes get at most
-// broadcast.episode_breaks breaks inside them (movies aren't limited).
+// broadcast.piece_minutes, at the chapter point nearest each cut (within a third of a
+// piece), or right at it if the file has no chapters and split_without_chapters is on.
+// Episodes get at most broadcast.episode_breaks breaks inside them (movies aren't limited,
+// and get long stretches between their found break points cut up too).
 export function planPieces(items) {
   const out = [];
   const cap = config.broadcast.episode_breaks;
   for (const r of items) {
     const limit = r.kind === "episode" ? cap : Infinity;
     if (limit <= 0) { out.push({ row: r, from: 0, to: r.duration_ms }); continue; }
+    const cues = r.cues ? JSON.parse(r.cues) : [];
     let found = [];
     for (const c of (r.ad_cues ? JSON.parse(r.ad_cues) : []).filter((c) => c > 3 * 60000 && c < r.duration_ms - 3 * 60000)) {
       if (c - (found.at(-1) ?? 0) >= 3 * 60000) found.push(c);
@@ -78,12 +102,12 @@ export function planPieces(items) {
       found = found.filter((c) => keep.has(c));
     }
     if (found.length) {
+      if (r.kind !== "episode" && r.duration_ms >= LONG_MS) found = subdivide(found, r.duration_ms, cues);
       let from = 0;
       for (const c of found) { out.push({ row: r, from, to: c }); from = c; }
       out.push({ row: r, from, to: r.duration_ms });
       continue;
     }
-    const cues = r.cues ? JSON.parse(r.cues) : [];
     // A regular-length episode with a chapter mark near its middle (anime's Part A/B
     // eyecatch, which doesn't fade to black): one break there.
     if (r.duration_ms >= 18 * 60000 && r.duration_ms < 40 * 60000) {
@@ -91,11 +115,11 @@ export function planPieces(items) {
         .sort((x, y) => Math.abs(x - r.duration_ms / 2) - Math.abs(y - r.duration_ms / 2))[0];
       if (mid) { out.push({ row: r, from: 0, to: mid }, { row: r, from: mid, to: r.duration_ms }); continue; }
     }
-    const n = r.duration_ms >= 40 * 60000 ? Math.min(limit + 1, Math.max(1, Math.round(r.duration_ms / PIECE_MS))) : 1;
+    const n = r.duration_ms >= LONG_MS ? Math.min(limit + 1, Math.max(1, Math.round(r.duration_ms / pieceMs()))) : 1;
     let from = 0;
     for (let k = 1; k < n; k++) {
       const target = (r.duration_ms * k) / n;
-      const ok = cues.filter((c) => c > from + EDGE && c < r.duration_ms - EDGE && Math.abs(c - target) <= 10 * 60000);
+      const ok = cues.filter((c) => c > from + EDGE && c < r.duration_ms - EDGE && Math.abs(c - target) <= Math.min(10 * 60000, pieceMs() / 3));
       let cut = ok.length ? ok.reduce((x, c) => (Math.abs(c - target) < Math.abs(x - target) ? c : x)) : null;
       if (cut === null && config.broadcast.split_without_chapters && target > from + EDGE) cut = Math.round(target);
       if (cut === null) continue;
@@ -241,7 +265,10 @@ export class ScheduleProgram {
       // between_spots videos, unless the shows are very short.
       const inside = remaining[0].row.id === p.row.id;
       if (inside || sinceBreak >= breakEvery) {
-        yield* before(makeBreak(this.plex, { theme: block.theme, inside, show: p.row }), remaining[0].row);
+        // In a movie or an hour-long show the break is as long as the ads that go with the
+        // piece just aired (broadcast.ad_minutes_per_hour), not a spot or two.
+        const targetMs = inside && p.row.duration_ms >= LONG_MS ? breakTargetMs(p.to - p.from, p.row.duration_ms) : null;
+        yield* before(makeBreak(this.plex, { theme: block.theme, inside, show: p.row, targetMs }), remaining[0].row);
         sinceBreak = 0;
         if (this.live) return null;
       }

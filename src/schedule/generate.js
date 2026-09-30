@@ -11,6 +11,7 @@ import { withScheduleLock } from "./lock.js";
 import { ensureBuckets } from "./buckets.js";
 import { planWeek, lastPlannedSlot } from "./weekplan.js";
 import { fillSchedule } from "./fill.js";
+import { LONG_MS, adAfter } from "../adload.js";
 
 const DAY = 86400000;
 
@@ -26,7 +27,12 @@ export function blockLength(contentMs, items = 1) {
       AND duplicate_of IS NULL AND duration_ms <= ?`).get(config.broadcast.max_spot_minutes * 60000);
     avgSpot = r?.a || 30000;
   }
-  const ads = (items * config.broadcast.between_spots + (contentMs / 600000) * 1.3) * avgSpot;
+  // Movies and hour-long shows (items averaging 40+ minutes) are planned at
+  // broadcast.ad_minutes_per_hour, the same figure their breaks are sized to; anything
+  // shorter gets between_spots per item plus a spot or so per 8 minutes.
+  const ads = contentMs / items >= LONG_MS
+    ? adAfter(contentMs)
+    : (items * config.broadcast.between_spots + (contentMs / 600000) * 1.3) * avgSpot;
   const g = gridMs();
   const lengthMs = Math.max(Math.round((contentMs + ads) / g) * g, Math.ceil((contentMs + 30000) / g) * g);
   return { lengthMs, adMs: lengthMs - contentMs };
