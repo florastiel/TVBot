@@ -72,7 +72,10 @@ export function itemArgs(seg, offsetSec) {
     // After an input seek the video restarts at 0 but the subtitle file doesn't, so
     // shift the clock forward for the subtitle renderer and back again afterwards.
     const si = seg.subs.mode === "embedded_text" ? `:si=${seg.subs.pos ?? 0}` : "";
-    const sub = `subtitles=filename='${filterPath(seg.subsFile)}'${si}:fontsdir='C\\:/Windows/Fonts'`;
+    // MP4 (mov_text) subtitles carry a pixel font size meant for the video's own height,
+    // but ffmpeg reads it against a ~288-line reference: 54 comes out ~19% of the frame.
+    const style = seg.subs.codec === "mov_text" ? ":force_style='Fontsize=18'" : "";
+    const sub = `subtitles=filename='${filterPath(seg.subsFile)}'${si}${style}:fontsdir='C\\:/Windows/Fonts'`;
     graph = seek
       ? `[0:V:0]setpts=PTS+${seek.toFixed(3)}/TB,${sub},setpts=PTS-STARTPTS,${fit}[v]`
       : `[0:V:0]${sub},${fit}[v]`;
