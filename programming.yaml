@@ -13,7 +13,8 @@
 pools:
   LATE_A: [Adult Swim, Toonami, Seinen Gag Night, Grappler Gauntlet, Cringe Comedy Hour, Grown-Up Cartoons, Versus Mode]
   LATE_MOVIE: [Midnight Fright Night, Camp Horror Night, Cult Weird Cinema, Documentary Night, "So Bad It's Good", Big Screen Laughs, Comedy Specials, Found Footage Oddities,
-    David Lynch Nightmare, Fright Feature Vault, Halloween Horror Features, Slasher Night, Spooktober Anime, Western Showdown, Insert Coin Cinema, Bloodsucker Cinema, End of the World]
+    David Lynch Nightmare, Fright Feature Vault, Halloween Horror Features, Slasher Night, Spooktober Anime, Western Showdown, Insert Coin Cinema, Bloodsucker Cinema, End of the World,
+    Alien Saga, Matrix Marathon, Tarantino Night, Dark Comedy Night, Mind Benders, Queer Cinema]
   LATE_B: [Dark Serial Night, Twilight Mystery Zone, Creatures of the Night, Dark Anime Thrillers, When They Cry Marathon, Anime Tearjerkers, Spooky Season Anime, Docuseries]
   MORN_TOON: [Retro Toon Vault, Cartoon Network, Nicktoons, Goofy Kids Comedy, Marvel Animated Universe, Shorts]
   MORN_TOKU: [Tokusatsu Theater, Digimon Digital World, Dragon Ball Marathon, Weekly Shonen Giants, Shonen Showdown]
@@ -23,22 +24,23 @@ pools:
     Sitcom Rerun Central, Reality Check, Shonen Showdown, Halloween Episodes, Thanksgiving Episodes, Christmas Episodes,
     Musical Episodes, Beach Episodes, Wedding Episodes, Valentine's Episodes, Shorts]
   AFT_SERIES: [Men in Black Saga, Muppet Marathon, Peanuts Specials, Halloweentown Saga, Toy Story Saga, Dragon Ball Movie Vault, Detective Conan Movie Vault, Mission Impossible Marathon,
-    X-Men Movie Marathon, Spider-Man Saga, Hunger Games Saga, Digimon Movie Vault]
+    X-Men Movie Marathon, Spider-Man Saga, Hunger Games Saga, Digimon Movie Vault, Star Wars Saga, Middle-earth Saga, Dune Double Feature]
   EVE_TV: [TGIF Block, Courage Hour, Dark Serial Night, Prime Time Procedurals, Sitcoms, Nick at Nite, Whodunit Theater, Reality Check, British Comedy Classics, Superhero Prime Time,
     Sci-Fi Signal, Sitcom Rerun Central, Halloween Episodes, Spooky Season Anime, Thanksgiving Episodes, Christmas Episodes, "*cheats nefariously*",
     Press Start, Versus Mode, Fortnite Crossovers, "Why Are You Gay?", Time Warp, Food Network, Creatures of the Night,
-    Alternate Universe Episodes, Time Loop Episodes, Body Swap Episodes, Wedding Episodes, New Year's Episodes]
-  MON_MOVIE: [Nineties Movie Night, Heist Night, Spy Games, Buddy Cop Night]
-  TUE_MOVIE: [Sci-Fi Feature Presentation, Nolan Night, Planet of the Apes, Dark Knight Trilogy, Time Travel Night, Machine Dreams]
-  WED_MOVIE: [Buddy Cop Night, Whodunit Feature Films, Western Showdown, Date Night]
-  THU_MOVIE: [Awards Season Cinema, Prestige Biopic Cinema, Broadway Musicals, Documentary Night, World Cinema]
+    Alternate Universe Episodes, Time Loop Episodes, Body Swap Episodes, Wedding Episodes, New Year's Episodes, Backstage Pass]
+  MON_MOVIE: [Nineties Movie Night, Heist Night, Spy Games, Buddy Cop Night, Taken Trilogy, Tarantino Night]
+  TUE_MOVIE: [Sci-Fi Feature Presentation, Nolan Night, Planet of the Apes, Dark Knight Trilogy, Time Travel Night, Machine Dreams, Mind Benders, Matrix Marathon]
+  WED_MOVIE: [Buddy Cop Night, Whodunit Feature Films, Western Showdown, Date Night, Dark Comedy Night, Dune Double Feature]
+  THU_MOVIE: [Awards Season Cinema, Prestige Biopic Cinema, Broadway Musicals, Documentary Night, World Cinema, Coming of Age Cinema, Queer Cinema, Music Movie Night]
   FRI_MOVIE: [Nineties Movie Night, Camp Horror Night, Campy Halloween Classics, Action Blockbuster Night, Superheroes, Anime Action Movies, Big Screen Laughs, Halloween Horror Features, Christmas Movies,
-    Comedy Specials, Die Hard Marathon, Fortnite Movie Night, Insert Coin Cinema, End of the World, Full Throttle]
+    Comedy Specials, Die Hard Marathon, Fortnite Movie Night, Insert Coin Cinema, End of the World, Full Throttle, Tarantino Night]
   SAT_EVE: [Men in Black Saga, Campy Halloween Classics, Camp Horror Night, Gremlins Double Feature, Mission Impossible Marathon, John Wick Saga, Twilight Saga, Evangelion Rebuild, Naruto Movie Night, Broadway Musicals,
-    X-Men Movie Marathon, Dark Knight Trilogy, Spider-Man Saga, Hunger Games Saga, Planet of the Apes, Die Hard Marathon, Fortnite Movie Night, Full Throttle]
+    X-Men Movie Marathon, Dark Knight Trilogy, Spider-Man Saga, Hunger Games Saga, Planet of the Apes, Die Hard Marathon, Fortnite Movie Night, Full Throttle,
+    Star Wars Saga, Matrix Marathon, Middle-earth Saga, Alien Saga, Taken Trilogy, Dune Double Feature, Tarantino Night]
   SAT_LATE: [Midnight Fright Night, Camp Horror Night, Scream Marathon, Jason Voorhees Marathon, Slasher Night, Cult Weird Cinema, Comedy Specials, "So Bad It's Good"]
-  SUN_EVE: [Nineties Movie Night, Halloweentown Saga, Campy Halloween Classics, Date Night, Broadway Musicals, Western Showdown, Awards Season Cinema, Studio Ghibli Melancholy, Christmas Movies, World Cinema]
-  LATE_PRESTIGE: [Prestige Prime Time, Prestige Crime Drama, Docuseries, Mob and Mafia, Grown-Up Cartoons, Anime Tearjerkers, Twilight Mystery Zone, "*cheats nefariously*", Seinen After Dark, "Why Are You Gay?"]
+  SUN_EVE: [Nineties Movie Night, Halloweentown Saga, Campy Halloween Classics, Date Night, Broadway Musicals, Western Showdown, Awards Season Cinema, Studio Ghibli Melancholy, Christmas Movies, World Cinema, Music Movie Night, Queer Cinema, Coming of Age Cinema]
+  LATE_PRESTIGE: [Prestige Prime Time, Prestige Crime Drama, Docuseries, Mob and Mafia, Grown-Up Cartoons, Anime Tearjerkers, Twilight Mystery Zone, "*cheats nefariously*", Seinen After Dark, "Why Are You Gay?", Backstage Pass]
 
 days:
   Monday:
