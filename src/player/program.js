@@ -81,6 +81,8 @@ function subdivide(found, durationMs, cues) {
 // piece), or right at it if the file has no chapters and split_without_chapters is on.
 // Episodes get at most broadcast.episode_breaks breaks inside them (movies aren't limited,
 // and get long stretches between their found break points cut up too).
+const hiddenTitles = (block) => (config.broadcast.hidden_title_blocks || []).includes(block.label);
+
 export function planPieces(items) {
   const out = [];
   const cap = config.broadcast.episode_breaks;
@@ -198,7 +200,10 @@ export class ScheduleProgram {
     const items = block.items.filter((r) => r.present && r.playable);
     const nextBlock = nextBlockAfter(block.end_at);
     const pieces = planPieces(items);
-    const upNextOf = (i) => pieces.slice(i + 1).find((p) => p.row.id !== pieces[i].row.id)?.row || nextBlock?.items[0] || null;
+    // The first item of the next block, as "up next" shows it: a block in broadcast.hidden_title_blocks
+    // goes by its name only, not the title.
+    const nextHead = nextBlock?.items[0] ? (hiddenTitles(nextBlock) ? { ...nextBlock.items[0], title: nextBlock.label, year: null } : nextBlock.items[0]) : null;
+    const upNextOf = (i) => pieces.slice(i + 1).find((p) => p.row.id !== pieces[i].row.id)?.row || nextHead;
     const len = (p) => p.to - p.from;
 
     // Where "now" falls on the block's planned timeline: pieces with the planned
@@ -289,8 +294,8 @@ export class ScheduleProgram {
     if (this.live) return null;
     const left = block.end_at - this.clock();
     if (left > 1000) {
-      const nextTitle = nextBlock?.items[0] ? toSegment(nextBlock.items[0], this.plex).title : null;
-      yield* before(fillBreak(this.plex, left, { theme: block.theme, upNextTitle: nextTitle }), nextBlock?.items[0]);
+      const nextTitle = nextHead ? toSegment(nextHead, this.plex).title : null;
+      yield* before(fillBreak(this.plex, left, { theme: block.theme, upNextTitle: nextTitle }), nextHead);
     }
     return this.clock() > block.end_at + 30000 && nextBlock?.start_at === block.end_at ? nextBlock : null;
   }

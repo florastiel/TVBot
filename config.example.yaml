@@ -41,7 +41,11 @@ broadcast:
   # name; tv.cmd buckets). What the grid had at "to" carries on after it.
   standing_slots:
     - { day: saturday, from: "05:30", to: "12:15", bucket: "Saturday Morning Cartoons" }
-  specials_per_week: 0         # extra Claude-picked specials each week (0 = only on request; the weekly grid has marathons already)
+  # Blocks (by block name) whose titles stay a surprise: the TV guide, the daily post and the
+  # "Up next" cards show only the block's name. A movie in a standing slot runs its full length
+  # (the slot after it starts when it ends).
+  hidden_title_blocks: []      # e.g. ["Wigby Wednesday"]
+  specials_per_week: 0        # extra Claude-picked specials each week (0 = only on request; the weekly grid has marathons already)
   idle_leave_minutes: 5        # leave voice after this long with nobody watching
   no_premiere_hours: ["02:30", "07:00"]   # no serialized show starts from its first episode (and no "Series Premiere" block) in this window; [] = anytime
 

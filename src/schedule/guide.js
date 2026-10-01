@@ -23,6 +23,12 @@ function titles(items, maxLen = Infinity) {
   return k < parts.length ? `${text} +${parts.length - k} more` : text;
 }
 
+// Blocks whose titles stay secret in every guide (broadcast.hidden_title_blocks, by block name):
+// the guide shows just the block's name.
+const hidden = (b) => (config.broadcast.hidden_title_blocks || []).includes(b.label);
+const shownTitles = (b, maxLen) => (hidden(b) ? "" : titles(b.items, maxLen));
+const lineOf = (b, text) => (text ? `**${b.label}**: ${text}` : `**${b.label}**`);
+
 export function guideText(now = Date.now(), minBlocks = 6) {
   const endOfToday = localDay(now).endMs;
   const blocks = blocksBetween(now, now + 2 * 86400000);
@@ -30,7 +36,7 @@ export function guideText(now = Date.now(), minBlocks = 6) {
   let len = 0;
   for (const [i, b] of blocks.entries()) {
     if (i >= minBlocks && b.start_at >= endOfToday) break;
-    const line = `<t:${Math.floor(b.start_at / 1000)}:t> **${b.label}**: ${titles(b.items)}`;
+    const line = `<t:${Math.floor(b.start_at / 1000)}:t> ${lineOf(b, shownTitles(b))}`;
     if (len + line.length + 1 > 1850) break;
     lines.push(line);
     len += line.length + 1;
@@ -43,7 +49,7 @@ const dayTitle = (ms) => new Date(ms).toLocaleDateString("en-US", { timeZone: co
 
 // One block, as a guide entry: { time, label, text, current }. `current` marks the
 // block actually on air at `now`, so /schedule and the daily post can point at it.
-const entryOf = (b, now, maxLen) => ({ time: b.start_at, label: b.label, text: titles(b.items, maxLen), current: now >= b.start_at && now < b.end_at });
+const entryOf = (b, now, maxLen) => ({ time: b.start_at, label: b.label, text: shownTitles(b, maxLen), current: now >= b.start_at && now < b.end_at });
 
 // One whole day's programming (every block on air that day, including one still
 // running from last night), with its shows, for the post at midnight:
@@ -70,7 +76,7 @@ export function weekGrid(now = Date.now(), days = 7) {
   const blocks = blocksBetween(now, end);
   const filledUntil = blocks.reduce((t, b) => (b.start_at <= t + 60000 ? Math.max(t, b.end_at) : t), now);
   const rows = blocks.filter((b) => b.start_at < filledUntil)
-    .map((b) => ({ at: b.start_at, text: `**${b.label}**: ${titles(b.items, 150)}` }));
+    .map((b) => ({ at: b.start_at, text: lineOf(b, shownTitles(b, 150)) }));
   const slots = slotsBetween(today.startMs, end);
   const current = slots.filter((s) => s.at <= filledUntil).at(-1);
   if (current && current.at < filledUntil && slots.some((s) => s.at > filledUntil)) rows.push({ at: filledUntil, text: current.name });

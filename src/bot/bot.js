@@ -94,7 +94,7 @@ const ephemeral = { flags: MessageFlags.Ephemeral };
 // length; a line per block is what fits on a screen.
 function entryLine(en) {
   const time = `<t:${Math.floor(en.time / 1000)}:t>`;
-  return `${en.current ? "▶ " : ""}${time}  **${en.label}**: ${en.text}`;
+  return `${en.current ? "▶ " : ""}${time}  **${en.label}**${en.text ? `: ${en.text}` : ""}`;
 }
 
 // Days of guide entries ([{title, entries}], from dayGuide/nextHoursGuide) or plain
