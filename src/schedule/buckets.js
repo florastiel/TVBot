@@ -64,8 +64,8 @@ function addMembers(db, id, shows, items) {
 // ---------- automatic holiday buckets (from the holiday tags) ----------
 
 const HOLIDAYS = [
-  { theme: "halloween", name: "Halloween", from: "10-01", to: "10-31" },
-  { theme: "thanksgiving", name: "Thanksgiving", from: "11-01", to: "11-28" },
+  { theme: "halloween", name: "Halloween", from: "10-08", to: "10-31" },
+  { theme: "thanksgiving", name: "Thanksgiving", from: "11-08", to: "11-28" },
   { theme: "christmas", name: "Christmas", from: "11-24", to: "12-25" },
 ];
 
