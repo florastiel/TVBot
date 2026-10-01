@@ -197,6 +197,8 @@ function place(bucket, at, pick, ctx) {
   return at + pick.lengthMs;
 }
 
+const OVERRUN_MS = 120 * 60000; // how far a standing-slot movie may run past its slot
+
 // Fill [at, to) from this bucket; other buckets that fit the time of day take over if it
 // runs dry. Returns where it stopped (a quarter hour or so short of `to` at most,
 // unless nothing at all fits).
@@ -205,6 +207,11 @@ function fillWindow(bucket, at, to, ctx, buckets) {
   while (to - at >= gridMs()) {
     let b = bucket;
     let pick = dry ? null : pickBlock(b, at, to - at, ctx);
+    // A movie in a standing slot (a fixed weekly time, e.g. Friday musicals) is placed first and
+    // runs to its real length even if that's past the slot's end; the slots after it start when it ends.
+    if (!pick && !dry && isMovieFormat(b.format) && (config.broadcast.standing_slots || []).some((r) => r?.bucket === b.name)) {
+      pick = pickBlock(b, at, to - at + OVERRUN_MS, ctx);
+    }
     if (!pick) {
       // This bucket is out of things that fit: another in-season bucket for this time of
       // day, shows first (they fit any length).
@@ -231,22 +238,30 @@ export function fillSchedule(fromMs, toMs) {
   const slotAt = db.prepare("SELECT * FROM plan_slots WHERE start_at <= ? ORDER BY start_at DESC LIMIT 1");
   const slotAfter = db.prepare("SELECT * FROM plan_slots WHERE start_at > ? ORDER BY start_at LIMIT 1");
   let t = fromMs;
+  let stretch = null; // { slot, to }: the slot after an overrunning standing-slot movie, pushed later
   let carry = null; // a slot that starts early because the one before it couldn't fill its time exactly
   let blocks = 0;
   while (t < toMs) {
     const covering = blockAt(t);
     if (covering) { t = covering.end_at; carry = null; continue; }
-    const slot = carry || slotAt.get(t);
+    const slot = carry || stretch?.slot || slotAt.get(t);
     const next = slot && slotAfter.get(slot.start_at);
     if (!slot || !next) return { until: t, needPlan: true, blocks };
     carry = null;
-    let to = next.start_at;
+    let to = stretch ? stretch.to : next.start_at;
+    stretch = null;
     let hard = false;
     const fixed = nextBlockAfter(t);
     if (fixed && fixed.start_at < to) { to = fixed.start_at; hard = true; }
     if (to <= t) { carry = hard ? null : next; if (hard) t = to; continue; }
     const before = t;
     t = fillWindow(byId.get(slot.bucket_id), t, to, ctx, buckets);
+    // A movie ran past its slot (fillWindow's standing-slot overrun): the slot after it still gets
+    // its full length, starting when the movie ends, and the slots it overlaps are skipped.
+    if (t > to + gridMs()) {
+      const after = slotAfter.get(next.start_at);
+      if (after) stretch = { slot: next, to: t + (after.start_at - next.start_at) };
+    }
     blocks += db.prepare("SELECT COUNT(*) n FROM blocks WHERE start_at >= ? AND start_at < ?").get(before, t).n;
     if (t < to) {
       if (hard) {

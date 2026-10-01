@@ -114,7 +114,7 @@ days:
     - ["12:00", AFT_MOVIE]
     - ["14:30", AFT_TV]
     - ["17:00", EVE_TV]
-    - ["19:00", FRI_MOVIE]
+    # (no 19:00 movie slot: Wigby Wednesday's musical starts at 20:30, a standing slot; see broadcast.standing_slots)
     - ["22:00", LATE_PRESTIGE]
   Saturday:
     - ["00:00", LATE_A]
