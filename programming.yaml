@@ -32,7 +32,7 @@ pools:
     Transformers Saga, Alvin and the Chipmunks, Cars Trilogy, Incredibles Double Feature, Monsters Double Feature, Finding Nemo Double Feature, Inside Out Double Feature]
   EVE_TV: [TGIF Block, Courage Hour, Dark Serial Night, Prime Time Procedurals, Sitcoms, Nick at Nite, Whodunit Theater, Reality Check, British Comedy Classics, Superhero Prime Time,
     Sci-Fi Signal, Sitcom Rerun Central, Halloween Episodes, Spooky Season Anime, Thanksgiving Episodes, Christmas Episodes, "*cheats nefariously*",
-    Press Start, Versus Mode, Fortnite Crossovers, "Why Are You Gay?", Time Warp, Food Network, Creatures of the Night,
+    Press Start, Versus Mode, Fortnite Crossovers, Time Warp, Food Network, Creatures of the Night,
     Alternate Universe Episodes, Time Loop Episodes, Body Swap Episodes, Wedding Episodes, New Year's Episodes, Backstage Pass,
     Animated Sci-Fi Frontier, Slice of Life, Over the Garden Wall, Mockumentary Hour, Mind Games, Anime Classics]
   MON_MOVIE: [Nineties Movie Night, Heist Night, Spy Games, Buddy Cop Night, Taken Trilogy, Tarantino Night, Edge of Your Seat, Throwback Cinema]
@@ -51,7 +51,8 @@ pools:
     Cults and Curses, Edge of Your Seat, Ted and Friends]
   SUN_EVE: [Nineties Movie Night, Halloweentown Saga, Campy Halloween Classics, Date Night, Broadway Musicals, Western Showdown, Awards Season Cinema, Studio Ghibli Melancholy, Christmas Movies, World Cinema, Music Movie Night, Queer Cinema, Coming of Age Cinema,
     Autumn Comfort Cinema, Throwback Cinema, Sports Movie Night, Knives Out Saga]
-  LATE_PRESTIGE: [Prestige Prime Time, Prestige Crime Drama, Docuseries, Mob and Mafia, Grown-Up Cartoons, Anime Tearjerkers, Twilight Mystery Zone, "*cheats nefariously*", Seinen After Dark, "Why Are You Gay?", Backstage Pass,
+  SUN_LATE: [Prestige Prime Time, "Why Are You Gay?"]   # only Sunday 22:00 draws this pool, so Why Are You Gay? airs at most once a week
+  LATE_PRESTIGE: [Prestige Prime Time, Prestige Crime Drama, Docuseries, Mob and Mafia, Grown-Up Cartoons, Anime Tearjerkers, Twilight Mystery Zone, "*cheats nefariously*", Seinen After Dark, Backstage Pass,
     Period Dramas, Animated Sci-Fi Frontier]
 
 days:
@@ -135,4 +136,4 @@ days:
     - ["15:00", AFT_TV]
     - ["17:00", EVE_TV]
     - ["19:00", SUN_EVE]
-    - ["22:00", LATE_PRESTIGE]
+    - ["22:00", SUN_LATE]
