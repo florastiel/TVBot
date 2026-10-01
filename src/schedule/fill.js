@@ -182,12 +182,12 @@ function pickBlock(bucket, at, room, ctx) {
   return null;
 }
 
-// A serialized show starting from its very first episode gets billed as a premiere.
+// A serialized show starting from its very first episode (no_premiere_hours keeps these out of the quiet hours).
 const isPremiere = (rows) => rows[0]?.kind === "episode" && inOrder(rows[0].show_title) && rows[0].season === 1 && rows[0].episode === 1;
 
 function place(bucket, at, pick, ctx) {
   const theme = bucket.source === "auto" ? season(localDay(at)).theme : null;
-  const label = bucket.format === "one_show" && isPremiere(pick.rows) ? "Series Premiere" : bucket.name;
+  const label = bucket.name; // a show's first episode keeps its block's name (only the Series Premiere bucket says premiere)
   saveBlocks([{ start: at, end: at + pick.lengthMs, label, ids: pick.rows.map((r) => r.id), theme: theme && theme !== "none" ? theme : null, bucketId: bucket.id }], "bucket");
   for (const r of pick.rows) {
     for (const c of ctx.copies(r.id)) ctx.used.add(c);
