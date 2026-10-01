@@ -90,6 +90,15 @@ function episodesOf(show, count, at, ctx, bucket) {
   return eps.filter((e) => e.duration_ms);
 }
 
+// One episode of the show that fits `room` (an in-order show only has its next one to offer).
+function episodeFitting(show, at, ctx, bucket, room) {
+  if (orderedIn(show, bucket)) {
+    const e = episodesOf(show, 1, at, ctx, bucket)[0];
+    return e && fits([e], room) ? e : null;
+  }
+  return ctx.randomEps.all(show).find((e) => e.duration_ms && !ctx.used.has(e.id) && fits([e], room)) || null;
+}
+
 const run = (rows) => rows.reduce((n, r) => n + r.duration_ms, 0);
 const maxShow = () => config.broadcast.max_show_block_minutes * 60000;
 const fits = (rows, room) => {
@@ -119,20 +128,29 @@ function pickBlock(bucket, at, room, ctx) {
   if (bucket.format === "variety") {
     // Single episodes of different shows (or the bucket's own episodes); the best of a
     // few random combinations (the one that fills the block best).
-    const pool = [];
-    for (const show of stalest(bucket.shows.filter((s) => !today.has(s)), (s) => ctx.showLast.get(s)).slice(0, 16)) {
-      const e = episodesOf(show, 1, at, ctx, bucket)[0];
-      if (e) pool.push(e);
+    // Every candidate is one show with one episode that fits the room, whether the show is
+    // listed in the bucket or only through its files (the shorts folder: 40 files of one
+    // show mustn't make it turn up in every block), and gets the same rules: not already on
+    // today, least recently aired first. Filtering on fit before ranking keeps tiny shows
+    // from crowding out the longer ones whenever the room is big enough for those.
+    const room1 = Math.min(room, maxShow());
+    const cands = [];
+    const listed = new Set(bucket.shows);
+    for (const show of listed) {
+      if (today.has(show)) continue;
+      const e = episodeFitting(show, at, ctx, bucket, room1);
+      if (e) cands.push({ e, last: ctx.showLast.get(show) });
     }
-    // One entry per show, however many of its episodes are listed as items (40 files of one
-    // show mustn't make it turn up in every block).
-    const inPool = new Set(pool.map((e) => e.show_title).filter(Boolean));
-    for (const id of shuffle([...bucket.items]).slice(0, 200)) {
+    const files = new Map(); // show title (or "#id" for a file without one) -> one usable file
+    for (const id of shuffle([...bucket.items]).slice(0, 300)) {
       const e = ctx.item.get(id);
-      if (!e?.duration_ms || ctx.used.has(e.id) || !ctx.seasonOk(e, at)) continue;
-      if (e.show_title) { if (inPool.has(e.show_title)) continue; inPool.add(e.show_title); }
-      pool.push(e);
+      if (!e?.duration_ms || ctx.used.has(e.id) || !ctx.seasonOk(e, at) || !fits([e], room1)) continue;
+      if (e.show_title && (listed.has(e.show_title) || today.has(e.show_title))) continue;
+      const key = e.show_title || `#${e.id}`;
+      if (!files.has(key)) files.set(key, e); // shuffled, so the first is a random one
     }
+    for (const e of files.values()) cands.push({ e, last: ctx.showLast.get(e.show_title) });
+    const pool = stalest(cands, (c) => c.last).slice(0, 16).map((c) => c.e);
     let best = null;
     for (let t = 0; t < TRIES; t++) {
       const rows = [];

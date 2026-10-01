@@ -15,13 +15,13 @@ pools:
   LATE_MOVIE: [Midnight Fright Night, Camp Horror Night, Cult Weird Cinema, Documentary Night, "So Bad It's Good", Big Screen Laughs, Comedy Specials, Found Footage Oddities,
     David Lynch Nightmare, Fright Feature Vault, Halloween Horror Features, Slasher Night, Spooktober Anime, Western Showdown, Insert Coin Cinema, Bloodsucker Cinema, End of the World]
   LATE_B: [Dark Serial Night, Twilight Mystery Zone, Creatures of the Night, Dark Anime Thrillers, When They Cry Marathon, Anime Tearjerkers, Spooky Season Anime, Docuseries]
-  MORN_TOON: [Retro Toon Vault, Cartoon Network, Nicktoons, Goofy Kids Comedy, Marvel Animated Universe]
+  MORN_TOON: [Retro Toon Vault, Cartoon Network, Nicktoons, Goofy Kids Comedy, Marvel Animated Universe, Shorts]
   MORN_TOKU: [Tokusatsu Theater, Digimon Digital World, Dragon Ball Marathon, Weekly Shonen Giants, Shonen Showdown]
   MORN_COZY: [Peanuts Specials, Muppet Marathon, Cozy Halloween Cartoons, Anime Slice of Life, Iyashikei Hour, Pixar Picture Show, Family Movie Night, Studio Ghibli Matinee]
   AFT_MOVIE: [Campy Halloween Classics, Cozy Halloween Cartoons, Digimon Movie Vault, Family Movie Night, Studio Ghibli Matinee, Pixar Picture Show, Cozy Anime Autumn, Studio Ghibli Melancholy]
   AFT_TV: [TGIF Block, Courage Hour, Gag Anime Hour, Anime Rom-Coms, "Shojo & Josei", "Isekai & Fantasy", "Mecha & Kaiju", X-Men Legacy, Detective Anime, Sports Anime,
     Sitcom Rerun Central, Reality Check, Shonen Showdown, Halloween Episodes, Thanksgiving Episodes, Christmas Episodes,
-    Musical Episodes, Beach Episodes, Wedding Episodes, Valentine's Episodes]
+    Musical Episodes, Beach Episodes, Wedding Episodes, Valentine's Episodes, Shorts]
   AFT_SERIES: [Men in Black Saga, Muppet Marathon, Peanuts Specials, Halloweentown Saga, Toy Story Saga, Dragon Ball Movie Vault, Detective Conan Movie Vault, Mission Impossible Marathon,
     X-Men Movie Marathon, Spider-Man Saga, Hunger Games Saga, Digimon Movie Vault]
   EVE_TV: [TGIF Block, Courage Hour, Dark Serial Night, Prime Time Procedurals, Sitcoms, Nick at Nite, Whodunit Theater, Reality Check, British Comedy Classics, Superhero Prime Time,
