@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bucket Editor</title>
+<style>
+  :root { --bg:#f6f6f4; --panel:#fff; --ink:#1d1d1b; --muted:#6b6b66; --line:#dcdcd6; --accent:#2f5fd0; --accent-ink:#fff; --bad:#b3261e; --ok:#1e7a46; --warn:#9a6700; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161617; --panel:#1f1f21; --ink:#ececea; --muted:#9a9a94; --line:#333336; --accent:#6f95f2; --accent-ink:#101114; --bad:#ff8a80; --ok:#6fd49b; --warn:#e6b450; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:16px; margin:0; flex:1; }
+  main { display:grid; grid-template-columns:320px 1fr; gap:0; min-height:calc(100vh - 50px); }
+  aside { border-right:1px solid var(--line); background:var(--panel); padding:10px; overflow:auto; max-height:calc(100vh - 50px); position:sticky; top:50px; }
+  section { padding:16px; min-width:0; }
+  input, select, textarea, button { font:inherit; color:inherit; }
+  input[type=text], input[type=search], textarea, select { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:6px 8px; width:100%; }
+  textarea { resize:vertical; min-height:54px; }
+  button { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:6px 12px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  button.danger { color:var(--bad); }
+  button:disabled { opacity:.45; cursor:default; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .grow { flex:1; min-width:0; }
+  .item { padding:7px 9px; border-radius:6px; cursor:pointer; border:1px solid transparent; }
+  .item:hover { background:var(--bg); }
+  .item.sel { border-color:var(--accent); background:var(--bg); }
+  .item .nm { font-weight:600; }
+  .meta { color:var(--muted); font-size:12px; }
+  .tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:9px; border:1px solid var(--line); color:var(--muted); margin-right:4px; }
+  .tag.warn { color:var(--warn); border-color:var(--warn); }
+  .tag.bad { color:var(--bad); border-color:var(--bad); }
+  fieldset { border:1px solid var(--line); border-radius:8px; margin:0 0 14px; padding:12px; background:var(--panel); }
+  legend { padding:0 6px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  label.chk { margin-right:12px; white-space:nowrap; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { padding:5px 6px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
+  tr.dead td.t { color:var(--muted); text-decoration:line-through; }
+  td.act { white-space:nowrap; text-align:right; width:1%; }
+  .toast { position:fixed; bottom:16px; right:16px; max-width:420px; padding:10px 14px; border-radius:8px; background:var(--panel); border:1px solid var(--line); box-shadow:0 4px 18px rgba(0,0,0,.25); z-index:20; }
+  .toast.err { border-color:var(--bad); color:var(--bad); }
+  .hint { color:var(--muted); font-size:12px; }
+  @media (max-width: 800px) { main { grid-template-columns:1fr; } aside { position:static; max-height:none; border-right:0; border-bottom:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bucket Editor</h1>
+  <span class="hint">Edits are live in the database. A backup is taken before your first change.</span>
+  <button id="refill" title="Re-roll every block after the one on air, using the buckets as they are now">Refill schedule</button>
+</header>
+<main>
+  <aside>
+    <div class="row" style="margin-bottom:8px">
+      <input class="grow" type="search" id="filter" placeholder="Filter buckets">
+      <button id="new">+ New</button>
+    </div>
+    <div id="list"></div>
+  </aside>
+  <section id="detail"><p class="hint">Pick a bucket on the left.</p></section>
+</main>
+<div id="toast" class="toast" hidden></div>
+<script>
+const TOKEN = "__TOKEN__";
+let INFO = { pools: {}, formats: [], dayparts: [], min: {} };
+let BUCKETS = [];
+let CUR = null;        // detail of the selected bucket
+let CREATING = false;
+let SEARCH = { kind: "show", q: "", results: [] };
+
+const $ = (s, el = document) => el.querySelector(s);
+const h = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v === true) e.setAttribute(k, "");
+    else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return e;
+};
+
+async function api(path, method = "GET", body) {
+  const r = await fetch("/api/" + path, { method, headers: { "x-token": TOKEN, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+let toastTimer;
+function toast(msg, err = false) {
+  const t = $("#toast"); t.textContent = msg; t.className = "toast" + (err ? " err" : ""); t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), err ? 9000 : 4500);
+}
+const run = async (fn, ok) => { try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast(e.message, true); } };
+
+async function loadList(keep = true) {
+  BUCKETS = await api("buckets");
+  renderList();
+  if (keep && CUR && !CREATING) { const still = BUCKETS.find((b) => b.id === CUR.id); if (!still) { CUR = null; renderDetail(); } }
+}
+function renderList() {
+  const f = $("#filter").value.trim().toLowerCase();
+  const box = $("#list"); box.replaceChildren();
+  for (const b of BUCKETS.filter((x) => !f || x.name.toLowerCase().includes(f))) {
+    const total = b.shows + b.items, short = b.live < (INFO.min[b.format] || 1);
+    box.append(h("div", { class: "item" + (CUR && CUR.id === b.id && !CREATING ? " sel" : ""), onclick: () => select(b.id) },
+      h("div", { class: "nm" }, b.name),
+      h("div", { class: "meta" },
+        b.format.replace("_", " "), " · ", b.live, "/", total, " live",
+        b.active_from ? ` · ${b.active_from}..${b.active_to}` : "",
+        b.source !== "claude" ? " · auto" : ""),
+      (short || !INFO.pools[b.name] && b.source === "claude") && h("div", {},
+        short && h("span", { class: "tag bad" }, "thin"),
+        !INFO.pools[b.name] && b.source === "claude" && h("span", { class: "tag warn" }, "in no pool"))));
+  }
+}
+
+async function select(id) {
+  CREATING = false;
+  CUR = await run(() => api("bucket/" + id));
+  renderList(); renderDetail();
+}
+
+function renderDetail() {
+  const box = $("#detail"); box.replaceChildren();
+  if (CREATING) return renderCreate(box);
+  if (!CUR) { box.append(h("p", { class: "hint" }, "Pick a bucket on the left.")); return; }
+  const b = CUR, ro = !b.editable;
+  const pools = INFO.pools[b.name];
+  box.append(h("div", { class: "row", style: "margin-bottom:10px" },
+    h("h2", { style: "margin:0" }, b.name),
+    h("span", { class: "tag" }, b.format.replace("_", " ")),
+    ro && h("span", { class: "tag warn" }, `built by code (${b.source}): read-only`),
+    h("span", { class: "meta grow" }, pools ? "In: " + pools.join(", ") : "Not in any pool or standing slot, so it never airs.")));
+
+  const name = h("input", { type: "text", value: b.name, disabled: ro });
+  const about = h("textarea", { disabled: ro }, b.about || "");
+  const dp = INFO.dayparts.map((d) => h("input", { type: "checkbox", value: d, checked: b.dayparts.includes(d), disabled: ro }));
+  const from = h("input", { type: "text", value: b.active_from || "", placeholder: "MM-DD", size: 6, disabled: ro });
+  const to = h("input", { type: "text", value: b.active_to || "", placeholder: "MM-DD", size: 6, disabled: ro });
+  box.append(h("fieldset", {}, h("legend", {}, "Bucket"),
+    h("div", { style: "display:grid;gap:8px" },
+      h("label", {}, "Name", name),
+      h("label", {}, "About", about),
+      h("div", { class: "row" }, "Dayparts: ", INFO.dayparts.map((d, i) => h("label", { class: "chk" }, dp[i], " ", d))),
+      h("div", { class: "row" }, "Season (blank = all year): ", from, " to ", to),
+      !ro && h("div", { class: "row" },
+        h("button", { class: "primary", onclick: () => run(async () => {
+          const r = await api(`bucket/${b.id}/meta`, "POST", { name: name.value, about: about.value, dayparts: dp.filter((x) => x.checked).map((x) => x.value), active_from: from.value.trim(), active_to: to.value.trim() });
+          await loadList(); await select(b.id); if (r.note) toast(r.note);
+        }, "Saved.") }, "Save"),
+        h("button", { class: "danger", onclick: () => { if (confirm(`Retire "${b.name}"? It stops airing; its titles stay in other buckets.${pools ? "\n\nIt is still listed in: " + pools.join(", ") : ""}`)) run(async () => { await api(`bucket/${b.id}/retire`, "POST", {}); CUR = null; await loadList(false); renderDetail(); }, "Retired."); } }, "Retire bucket")))));
+
+  // members
+  const isMovie = b.format.startsWith("movie");
+  const series = b.format === "movie_series";
+  const move = (n, d) => run(async () => {
+    const keys = b.members.map((m) => m.key); const j = n + d; if (j < 0 || j >= keys.length) return;
+    [keys[n], keys[j]] = [keys[j], keys[n]];
+    await api(`bucket/${b.id}/order`, "POST", { keys }); await select(b.id);
+  });
+  const tbody = h("tbody", {}, b.members.map((m, n) => h("tr", { class: m.live ? "" : "dead" },
+    series && h("td", { class: "meta" }, n + 1),
+    h("td", { class: "t" }, m.title, m.year ? ` (${m.year})` : "", m.ep ? ` — ${m.ep}` : ""),
+    h("td", { class: "meta" }, m.type === "show" ? `${m.eps} eps` : [m.minutes != null ? `${m.minutes}m` : "", m.source ? ` · ${m.source}` : "", ` · #${m.id}`]),
+    h("td", { class: "act" },
+      !m.live && h("span", { class: "tag bad" }, "not on air"),
+      !ro && series && h("button", { onclick: () => move(n, -1), disabled: n === 0, title: "Earlier" }, "↑"),
+      !ro && series && h("button", { onclick: () => move(n, 1), disabled: n === b.members.length - 1, title: "Later" }, "↓"),
+      !ro && h("button", { class: "danger", onclick: () => run(async () => { await api(`bucket/${b.id}/remove`, "POST", { keys: [m.key] }); await select(b.id); await loadList(); }) }, "Remove")))));
+  const live = b.members.filter((m) => m.live).length, need = INFO.min[b.format] || 1;
+  box.append(h("fieldset", {}, h("legend", {}, `${isMovie ? "Movies" : "Shows"} (${live} on air of ${b.members.length}${series ? ", in play order" : ""})`),
+    live < need && h("p", { class: "meta" }, h("span", { class: "tag bad" }, "thin"), ` ${b.format.replace("_", " ")} buckets want at least ${need}.`),
+    b.members.length ? h("table", {}, tbody) : h("p", { class: "hint" }, "Empty."),
+    h("p", { class: "hint" }, "Struck-through = not currently playable (lost from a source). They stay so they come back with the file.")));
+
+  if (!ro) {
+    SEARCH.kind = isMovie ? "movie" : "show";
+    const q = h("input", { type: "search", placeholder: isMovie ? "Search movies by title…" : "Search shows by title…", value: SEARCH.q });
+    const out = h("div", {});
+    const draw = () => {
+      out.replaceChildren();
+      if (!SEARCH.results.length) { out.append(h("p", { class: "hint" }, SEARCH.q ? "Nothing found (only titles that can air are searched)." : "")); return; }
+      out.append(h("table", {}, h("tbody", {}, SEARCH.results.map((r) => {
+        const here = b.members.some((m) => m.key === (r.type === "show" ? `s:${r.title}` : `i:${r.id}`));
+        return h("tr", {},
+          h("td", {}, r.title, r.year ? ` (${r.year})` : "", " ", h("span", { class: "meta" }, r.type === "show" ? `${r.eps} eps` : r.minutes != null ? `${r.minutes}m · #${r.id}` : `#${r.id}`)),
+          h("td", { class: "meta" }, r.in.length ? "also in: " + r.in.join(", ") : "in no bucket"),
+          h("td", { class: "act" }, here ? h("span", { class: "tag" }, "already in") : h("button", { class: "primary", onclick: () => run(async () => {
+            await api(`bucket/${b.id}/add`, "POST", r.type === "show" ? { shows: [r.title] } : { items: [r.id] });
+            await select(b.id); await loadList(); await doSearch();
+          }, `Added ${r.title}.`) }, "Add")));
+      }))));
+    };
+    const doSearch = async () => { SEARCH.q = q.value.trim(); SEARCH.results = SEARCH.q.length >= 2 ? await api(`search?kind=${SEARCH.kind}&q=${encodeURIComponent(SEARCH.q)}`) : []; draw(); };
+    let timer; q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => run(doSearch), 250); });
+    box.append(h("fieldset", {}, h("legend", {}, "Add " + (isMovie ? "movies" : "shows")), q, out));
+    draw();
+  }
+}
+
+function renderCreate(box) {
+  const name = h("input", { type: "text", placeholder: "1-4 plain words" });
+  const about = h("textarea", {});
+  const fmt = h("select", {}, INFO.formats.map((f) => h("option", { value: f }, f.replace("_", " "))));
+  const dp = INFO.dayparts.map((d) => h("input", { type: "checkbox", value: d, checked: d === "evening" }));
+  const from = h("input", { type: "text", placeholder: "MM-DD", size: 6 }), to = h("input", { type: "text", placeholder: "MM-DD", size: 6 });
+  box.append(h("h2", { style: "margin-top:0" }, "New bucket"),
+    h("fieldset", {}, h("legend", {}, "Bucket"), h("div", { style: "display:grid;gap:8px" },
+      h("label", {}, "Name", name), h("label", {}, "About", about),
+      h("label", {}, "Format (movie buckets hold movies, the others hold shows)", fmt),
+      h("div", { class: "row" }, "Dayparts: ", INFO.dayparts.map((d, i) => h("label", { class: "chk" }, dp[i], " ", d))),
+      h("div", { class: "row" }, "Season (blank = all year): ", from, " to ", to),
+      h("div", { class: "row" },
+        h("button", { class: "primary", onclick: () => run(async () => {
+          const r = await api("bucket", "POST", { name: name.value, about: about.value, format: fmt.value, dayparts: dp.filter((x) => x.checked).map((x) => x.value), active_from: from.value.trim(), active_to: to.value.trim() });
+          await loadList(false); await select(r.id);
+        }, "Created. Add titles below, and put it in a pool in programming.yaml so it airs.") }, "Create"),
+        h("button", { onclick: () => { CREATING = false; renderDetail(); renderList(); } }, "Cancel")))));
+}
+
+$("#filter").addEventListener("input", renderList);
+$("#new").addEventListener("click", () => { CREATING = true; CUR = null; renderList(); renderDetail(); });
+$("#refill").addEventListener("click", () => {
+  if (!confirm("Re-roll every block after the one on air with the buckets as they are now?\n(Specials and the current block stay.)")) return;
+  const b = $("#refill"); b.disabled = true; b.textContent = "Refilling…";
+  run(() => api("refill", "POST", {}), "Schedule refilled.").finally(() => { b.disabled = false; b.textContent = "Refill schedule"; });
+});
+
+(async () => { await run(async () => { INFO = await api("info"); await loadList(); }); })();
+</script>
+</body>
+</html>

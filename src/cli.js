@@ -197,6 +197,16 @@ Object.assign(commands, {
     for (const a of await addFromUrls(kind, urls)) console.log(a.skipped ? `skipped "${a.title}": ${a.skipped}` : `added "${a.title}" (${a.seconds}s)`);
   },
 
+  // tv.cmd editor [port]       a local web page for fixing buckets by hand (Ctrl+C to stop)
+  async editor(port = "5174") {
+    const { startEditor } = await import("./editor.js");
+    const { url } = await startEditor({ port: Number(port) });
+    console.log(`Bucket editor: ${url}  (this PC only; Ctrl+C to stop)`);
+    const { exec } = await import("node:child_process");
+    exec(`start "" "${url}"`);
+    await new Promise(() => {}); // run until stopped
+  },
+
   async guide() {
     const { guideText } = await import("./schedule/guide.js");
     // Discord timestamps shown as local times for the terminal.
@@ -269,6 +279,7 @@ if (!commands[cmd]) {
   tmdb [--redo]                TMDB genres/keywords for shows and movies (needs TMDB_API_KEY in .env)
   schedule [days] [--replace|--replan]  fill the schedule from the week's grid (--replace: new picks, free; --replan: new grid from Claude)
   buckets [--html|--all|--build|--new ["ideas"]|--thin]  list the buckets (--build: Claude sorts the catalog; --new: a few new ones, or the ones asked for; --thin: new homes for titles with only one bucket)
+  editor [port]                open the bucket editor (a local web page: add/remove titles, reorder a series, change seasons, make or retire buckets)
   catalog --html               write catalog.html: every show/movie, Netflix-style rows + search
   plan [days]                  print the grid of bucket slots
   guide                        print what's on today
