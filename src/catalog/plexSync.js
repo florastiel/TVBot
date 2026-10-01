@@ -4,6 +4,8 @@ import { config, DATA_DIR } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
 import { chooseTracks, fromPlexStreams, hdrFromPlexStreams } from "./tracks.js";
+import { parseRelease } from "./release.js";
+import { splitSeason } from "./dedupe.js";
 
 export const SUBS_DIR = join(DATA_DIR, "subs");
 
@@ -25,9 +27,43 @@ function matchLevel(item, show) {
   return identified(item.guid) ? "full" : "show";
 }
 
-function baseRow(item, section, show) {
+// A show name compared the way dedupe.js does: case, punctuation and a "(2026)" tag ignored.
+const showKey = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/\(\s*(?:19|20)\d{2}\s*\)\s*$/, "").replace(/[^\p{L}\p{N}]/gu, "");
+// What follows a movie's year when the file is really an episode: "Show (2026) 05".
+const EPISODE_TAIL = /^[)\]\s._-]*(?:e|ep|episode)?\s*\d{1,3}(?:v\d)?(?=[\s._\[(]|$)/i;
+
+// Plex couldn't identify this file (a raw release name somewhere on his drives), so read it the
+// way Real-Debrid and local files are read: from the file's path. Only when that's confident -
+// anything ambiguous stays unidentified (and off the air) rather than guessed.
+// known: showKey -> the exact show title Plex already uses, so "D Gray-man" joins "D.Gray-man".
+export function identifyFromPath(row, file, known = new Map()) {
+  const p = parseRelease(file || row.title);
+  if (!p || p.match !== "full") return row;
+  if (p.kind === "episode") {
+    if (p.season === 1 && p.episode >= 1900 && p.episode <= 2099) return row; // "Movie - 2049", not episode 2049
+    // "Fire Force Season 3" / "Show S2" is season N of a show Plex already has; otherwise line the
+    // name up with Plex's spelling ("D Gray-man" -> "D.Gray-man").
+    const { base, season: n } = splitSeason(p.show_title);
+    const seasonOfKnown = n && known.has(showKey(base));
+    const show = seasonOfKnown ? known.get(showKey(base)) : known.get(showKey(p.show_title)) ?? p.show_title;
+    const season = seasonOfKnown && p.season === 1 ? n : p.season;
+    return { ...row, kind: "episode", show_title: show, season, episode: p.episode, title: p.title, match: "full" };
+  }
+  if (row.kind !== "movie") return row; // Plex says episode, the name says movie: don't guess
+  const name = (file || row.title).split("/").pop();
+  if (EPISODE_TAIL.test(name.slice(name.lastIndexOf(String(p.year)) + 4))) return row;
+  const title = p.title.replace(/^(?:\[[^\]]*\]\s*)+/, "").trim(); // "[AnimeRG] Ponyo" -> "Ponyo"
+  return title ? { ...row, title, year: p.year, match: "full" } : row;
+}
+
+export function baseRow(item, section, show, known) {
   const media = chooseMedia(item);
   const isEpisode = item.type === "episode";
+  const row = rowOf(item, section, show, media, isEpisode);
+  return row.match === "none" ? identifyFromPath(row, media?.Part?.[0]?.file, known) : row;
+}
+
+function rowOf(item, section, show, media, isEpisode) {
   return {
     source_key: String(item.ratingKey),
     kind: isEpisode ? "episode" : "movie",
@@ -73,6 +109,11 @@ export async function syncPlex(plex, { sinceMs = 0 } = {}) {
   const upsertShow = db.prepare(`INSERT INTO shows (title, summary, year, genres) VALUES (?, ?, ?, ?)
     ON CONFLICT (title) DO UPDATE SET summary = excluded.summary, year = excluded.year, genres = excluded.genres`);
 
+  // The show titles Plex itself identified, for lining up files it didn't (see identifyFromPath).
+  const known = new Map();
+  for (const r of db.prepare(`SELECT DISTINCT show_title t FROM items WHERE source = 'plex' AND kind = 'episode'
+    AND match IN ('full', 'show') AND show_title IS NOT NULL`).all()) known.set(showKey(r.t), r.t);
+
   const seen = new Set();
   for (const section of sections) {
     const t0 = Date.now();
@@ -93,7 +134,7 @@ export async function syncPlex(plex, { sinceMs = 0 } = {}) {
         upsertShow.run(s.title, s.summary || null, s.year ?? null, JSON.stringify((s.Genre || []).map((g) => g.tag)));
       }
       for (const it of items) {
-        const row = baseRow(it, section, shows.get(String(it.grandparentRatingKey)));
+        const row = baseRow(it, section, shows.get(String(it.grandparentRatingKey)), known);
         upsert.run(row);
         seen.add(row.source_key);
       }

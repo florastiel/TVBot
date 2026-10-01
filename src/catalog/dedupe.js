@@ -43,7 +43,7 @@ const ORDINAL = { second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6 };
 // "Haikyuu!! S2", "Bungou Stray Dogs 2nd Season", "Haikyuu!! Second Season", "Show Season 3"
 const SEASON_IN_NAME = /[\s._-]+(?:S(\d{1,2})|(\d{1,2})(?:st|nd|rd|th)[\s._-]*Season|(Second|Third|Fourth|Fifth|Sixth)[\s._-]*Season|Season[\s._-]*(\d{1,2}))$/i;
 
-function splitSeason(title) {
+export function splitSeason(title) {
   const m = title.match(SEASON_IN_NAME);
   if (!m) return { base: title, season: null };
   const season = Number(m[1] ?? m[2] ?? m[4]) || ORDINAL[m[3]?.toLowerCase()];

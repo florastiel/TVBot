@@ -42,7 +42,8 @@ export function parseRelease(path, torrentName = "") {
     return { kind: "episode", show_title: show, season: Number(m[1] ?? m[3]), episode, title: title || `Episode ${episode}`, match: show ? "full" : "none" };
   }
   // Anime: "[Group] Show Name - 05 (1080p) [ABCD1234]"
-  m = name.match(/^(?:\[[^\]]*\][ _]*)?(.+?)[ _]+-[ _]+(\d{1,4})(?:v\d)?(?:[ _]|$)/);
+  // (also "Show - E41 - Title")
+  m = name.match(/^(?:\[[^\]]*\][ _]*)?(.+?)[ _]+-[ _]+E?(\d{1,4})(?:v\d)?(?:[ _]|$)/);
   if (m) {
     const show = showName(m[1]);
     return { kind: "episode", show_title: show, season: 1, episode: Number(m[2]), title: `Episode ${Number(m[2])}`, match: show ? "full" : "none" };
