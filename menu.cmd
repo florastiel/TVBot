@@ -32,6 +32,7 @@ echo     [5]  Sync catalog     %C_DIM%(Plex + local + Real-Debrid; can take a lo
 echo     [6]  Catalog stats
 echo     [7]  Rebuild catalog.html
 echo     [8]  Tag new items with Claude
+echo     [21] Not schedulable: what and why   %C_DIM%(writes data\unschedulable.md)%C_OFF%
 echo.
 echo %C_HEAD%   SCHEDULE%C_OFF%
 echo     [9]  Today's guide
@@ -77,6 +78,7 @@ if "%pick%"=="17" goto :tail_bot
 if "%pick%"=="18" goto :badbot
 if "%pick%"=="19" start "" explorer "%ROOT%logs" & goto menu
 if "%pick%"=="20" goto :readd
+if "%pick%"=="21" goto :unsched
 echo.
 echo    %C_WARN%Not an option: %pick%%C_OFF%
 timeout /t 1 >nul
@@ -233,6 +235,14 @@ if exist "data\readd_links.txt" (
   echo    data\readd_links.txt doesn't exist yet.
   pause
 )
+goto menu
+
+:unsched
+call :run unschedulable
+if not exist "data\unschedulable.md" goto menu
+set "yn="
+set /p "yn=   Open the full list? (y/N): "
+if /i "%yn%"=="y" start "" notepad "data\unschedulable.md"
 goto menu
 
 :end

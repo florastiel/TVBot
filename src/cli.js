@@ -107,6 +107,16 @@ Object.assign(commands, {
     writeChangelogFile();
   },
 
+  // What the scheduler can't use and why: tv.cmd unschedulable [--all]; the full list is
+  // written to data\unschedulable.md.
+  async unschedulable(...flags) {
+    const { unschedulableReport } = await import("./unschedulable.js");
+    const r = unschedulableReport({ all: flags.includes("--all") });
+    console.log(`\n${r.schedulable} of ${r.total} catalog rows are schedulable. The rest, by the first reason that applies:\n`);
+    console.table(r.summary.map(({ reason: _key, why, items, ...kinds }) => ({ reason: why, items, kinds: Object.entries(kinds).map(([k, n]) => `${k} ${n}`).join(", ") })));
+    console.log(`Full list (shows and titles per reason): ${r.file}`);
+  },
+
   // Make a weather report right now (config weather.locations) and print where it is;
   // it doesn't go on air (that happens at weather.times).
   async weather() {
@@ -250,6 +260,7 @@ if (!commands[cmd]) {
   console.log(`commands:
   sync                         pull the catalog from Plex + local folders + Real-Debrid, import tags.csv files
   stats                        show what's in the catalog
+  unschedulable [--all]        everything the scheduler can't use and why (writes data/unschedulable.md)
   spots [commercial|clip|eyecatch] [--desc]  how often each has aired (least-played first; --desc: most first)
   player                       run the streamer (the throwaway account)
   bot                          run the remote-control bot
