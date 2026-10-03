@@ -11,3 +11,7 @@ catalog.html
 
 # your own settings and server/channel IDs (copy config.example.yaml)
 config.yaml
+
+# local-only: Claude worktrees and machine-specific shortcuts
+.claude/worktrees/
+*.lnk
