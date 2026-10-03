@@ -6,7 +6,13 @@ import { savePlaylist, clearPlaylist } from "./player/program.js";
 import { describe } from "./player/segments.js";
 
 const commands = {
-  async sync() {
+  async sync(where) {
+    if (where === "local") {
+      // Just the local folders (and their tags.csv files): seconds, not the minutes a full sync takes.
+      const { syncLocal } = await import("./catalog/index.js");
+      await syncLocal();
+      return;
+    }
     await runSync();
     await commands.stats();
   },
@@ -121,7 +127,22 @@ Object.assign(commands, {
   async add(kind, ...urls) {
     if (!["commercial", "clip"].includes(kind) || !urls.length) throw new Error("usage: tv.cmd add commercial|clip <url> [url...]");
     const { addFromUrls } = await import("./catalog/download.js");
-    for (const a of await addFromUrls(kind, urls)) console.log(a.skipped ? `skipped "${a.title}": ${a.skipped}` : `added "${a.title}" (${a.seconds}s)`);
+    for (const a of await addFromUrls(kind, urls)) console.log(a.skipped ? `skipped "${a.title}": ${a.skipped}` : `added "${a.title}" (${a.seconds}s)${a.staged ? " - in staging; sort it with: tv.cmd file" : ""}`);
+  },
+
+  // tv.cmd file [--dry]                     file what's in staging under brand folders (brand guessed from the name)
+  // tv.cmd file "Brand Name" <text|all>     file the staged videos whose names contain <text> under that brand
+  async file(...args) {
+    const { fileStaged } = await import("./catalog/staging.js");
+    const dry = args.includes("--dry");
+    const [brand, match] = args.filter((a) => !a.startsWith("--"));
+    if (brand && !match) throw new Error('usage: tv.cmd file ["Brand Name" <text in the file name | all>] [--dry]');
+    const r = await fileStaged({ brand, match, dry });
+    for (const m of r.moved) console.log(`${dry ? "would file" : "filed"} ${m.name}  ->  ${m.brand}`);
+    for (const d of r.dupes) console.log(`${dry ? "would delete" : "deleted"} ${d.name} (already in ${d.brand})`);
+    for (const c of r.clashes) console.log(`left ${c.name}: ${c.brand} has a different file with that name`);
+    if (r.left.length) console.log(`\n${r.left.length} left in staging${brand ? "" : ` (couldn't place; name them with: tv.cmd file "Brand" <text>)`}:\n  ${r.left.map((f) => f.name).join("\n  ")}`);
+    if (!r.moved.length && !r.left.length && !r.dupes.length) console.log("Staging is empty.");
   },
 
   async guide() {
@@ -185,7 +206,8 @@ if (cmd === "player" || cmd === "bot") {
 }
 if (!commands[cmd]) {
   console.log(`commands:
-  sync                         pull the catalog from Plex + local folders + Real-Debrid, import tags.csv files
+  sync [local]                 pull the catalog from Plex + local folders + Real-Debrid, import tags.csv files (local: just the local folders, fast)
+  file ["Brand" <text|all>] [--dry]  sort staged commercials into brand folders (guesses the brand; or name it)
   stats                        show what's in the catalog
   player                       run the streamer (the throwaway account)
   bot                          run the remote-control bot

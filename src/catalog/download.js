@@ -11,12 +11,20 @@ import { config, ROOT, DATA_DIR } from "../config.js";
 import { log } from "../log.js";
 import { syncLocal } from "./index.js";
 import { probe } from "./localScan.js";
+import { stagingDir, stagedHas } from "./staging.js";
+import { getDb } from "../db.js";
 
 const run = promisify(execFile);
 const MAX_MINUTES = 10; // anything longer is probably a compilation, not one ad
 // Where each kind goes, and its longest single video (seconds).
 const FOLDER_OF = { commercial: "commercials", clip: "clips", eyecatch: "eyecatches" };
 const folderFor = (kind) => config.local[FOLDER_OF[kind] || "commercials"];
+// Commercials wait in the staging folder (if set) until `tv.cmd file` puts them under a brand;
+// everything else goes straight into its library folder.
+const dropDir = (kind, folder, sub) => (kind === "commercial" && stagingDir() ? stagingDir() : join(folder, sub));
+const isStaged = (kind) => kind === "commercial" && !!stagingDir();
+// Already downloaded (in a brand folder or waiting in staging)? By the id in the file name.
+const haveVideo = (id) => !!id && (stagedHas(id) || !!getDb().prepare("SELECT 1 FROM items WHERE source = 'local' AND kind = 'commercial' AND present = 1 AND source_key LIKE ? LIMIT 1").get(`%[${id}]%`));
 const maxSeconds = (kind) => (kind === "eyecatch" ? 60 : MAX_MINUTES * 60);
 const tooLong = (kind, secs) => (kind === "eyecatch"
   ? `${Math.round(secs)} seconds long; an eyecatch is a few seconds (a minute at most)`
@@ -106,11 +114,24 @@ async function expand(url) {
   });
 }
 
+// Staged files aren't in the library yet (so nothing to scan); the rest are: only the local
+// folders are synced, since a full sync (Plex, Real-Debrid) takes minutes, longer than
+// Discord waits for the /tvadmin add reply.
+async function finish(kind, folder, added) {
+  if (isStaged(kind)) {
+    for (const a of added) if (!a.skipped) a.staged = true;
+  } else if (added.some((a) => !a.skipped)) {
+    await syncLocal(); // adds blank rows to tags.csv for the new files
+    if (prefillTags(folder)) await syncLocal();
+  }
+  return added;
+}
+
 // links: URLs, or { url, cuts } with cuts from parseCuts (pieces of a single video).
 export async function addFromUrls(kind, links) {
   const folder = folderFor(kind);
   if (!folder) throw new Error(`no ${kind}s folder set in config.yaml`);
-  const dest = join(folder, "youtube");
+  const dest = dropDir(kind, folder, "youtube");
   mkdirSync(dest, { recursive: true });
   const added = [];
   for (const l of links) {
@@ -150,6 +171,7 @@ export async function addFromUrls(kind, links) {
         added.push({ ...v, skipped: tooLong(kind, v.seconds) });
         continue;
       }
+      if (isStaged(kind) && haveVideo(v.id)) { added.push({ ...v, skipped: "already in the library (or waiting in staging)" }); continue; }
       try {
         await run(ytdlp(), ["--no-warnings", ...JS, ...auth(), "--no-overwrites", "--ffmpeg-location", join(ROOT, "tools", "ffmpeg", "bin"),
           "-f", "bv*[height<=1080]+ba/b[height<=1080]/b", "--merge-output-format", "mp4", "--restrict-filenames",
@@ -161,13 +183,7 @@ export async function addFromUrls(kind, links) {
       }
     }
   }
-  if (added.some((a) => !a.skipped)) {
-    // Only the local folders: a full sync (Plex, Real-Debrid) takes minutes, longer than
-    // Discord waits for the /tvadmin add reply.
-    await syncLocal(); // adds blank rows to tags.csv for the new files
-    if (prefillTags(folder)) await syncLocal();
-  }
-  return added;
+  return finish(kind, folder, added);
 }
 
 // Video files posted in a drop thread: [{ id, name, url }] (Discord attachments). Saved in
@@ -176,7 +192,7 @@ export async function addFromUrls(kind, links) {
 export async function addFromFiles(kind, files, cuts = []) {
   const folder = folderFor(kind);
   if (!folder) throw new Error(`no ${kind}s folder set in config.yaml`);
-  const dest = join(folder, "uploads");
+  const dest = dropDir(kind, folder, "uploads");
   mkdirSync(dest, { recursive: true });
   const added = [];
   for (const f of files) {
@@ -216,17 +232,13 @@ export async function addFromFiles(kind, files, cuts = []) {
       added.push({ title: f.name, skipped: e.message });
     }
   }
-  if (added.some((a) => !a.skipped)) {
-    await syncLocal();
-    if (prefillTags(folder)) await syncLocal();
-  }
-  return added;
+  return finish(kind, folder, added);
 }
 
 // Fill in blank tags.csv cells from the file names: the decade from a year in the
 // title, and "christmas" for obvious holiday ads. Anything already filled is kept.
 const XMAS = /christmas|xmas|holiday|santa|snowman|carol|north pole|12 days|reindeer|sleigh/i;
-function prefillTags(folder) {
+export function prefillTags(folder) {
   const file = join(folder, "tags.csv");
   if (!existsSync(file)) return false;
   const rows = parse(readFileSync(file, "utf8").replace(/^\uFEFF/, ""), { columns: true, skip_empty_lines: true });
