@@ -10,8 +10,11 @@
 //     and never read over the network.
 //  3. Local commercials/clips/shorts: the same file in several formats (archive.org
 //     downloads come as .mpg plus .mp4/.ogv copies) counts once; the biggest file, usually
-//     the original, is kept.
-import { statSync } from "node:fs";
+//     the original, is kept. So does the very same file under two different names (a clip
+//     uploaded to the drop thread twice): same kind, length and size, then the bytes
+//     compared, so two different videos are never merged on a coincidence.
+import { createHash } from "node:crypto";
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { dirname, basename, extname } from "node:path";
 import { config } from "../config.js";
 import { getDb, tx } from "../db.js";
@@ -140,6 +143,41 @@ function rank(r) {
 }
 const better = (a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
 
+const hashFile = (path) => {
+  const h = createHash("sha1"), buf = Buffer.alloc(1 << 20), fd = openSync(path, "r");
+  try { for (let n; (n = readSync(fd, buf, 0, buf.length, null)) > 0;) h.update(buf.subarray(0, n)); } finally { closeSync(fd); }
+  return h.digest("hex");
+};
+const hashed = new Map(); // path|size|mtime -> sha1, so a repeat sync doesn't reread the same files
+
+// Groups (arrays of 2+ rows) of local spot files whose bytes are identical: rows need
+// { kind, source_key, duration_ms }. Only files of the same kind, length and size are hashed.
+export function identicalFiles(rows) {
+  const bySize = new Map();
+  for (const r of rows) {
+    let st; try { st = statSync(r.source_key); } catch { continue; }
+    if (!st.size) continue;
+    r.size = st.size; r.mtime = st.mtimeMs;
+    const key = `${r.kind}|${r.duration_ms}|${st.size}`;
+    if (!bySize.has(key)) bySize.set(key, []);
+    bySize.get(key).push(r);
+  }
+  const out = [];
+  for (const cands of bySize.values()) {
+    if (cands.length < 2) continue;
+    const byHash = new Map();
+    for (const r of cands) {
+      const k = `${r.source_key}|${r.size}|${r.mtime}`;
+      try { if (!hashed.has(k)) hashed.set(k, hashFile(r.source_key)); } catch { continue; }
+      const h = hashed.get(k);
+      if (!byHash.has(h)) byHash.set(h, []);
+      byHash.get(h).push(r);
+    }
+    for (const g of byHash.values()) if (g.length > 1) out.push(g);
+  }
+  return out;
+}
+
 // Step 2. Returns { groups, duplicates, changed }.
 function markDuplicates(db) {
   const rows = db.prepare(`SELECT id, source, kind, show_title, season, episode, title, year, playable, excluded,
@@ -168,7 +206,7 @@ function markDuplicates(db) {
   // A YouTube download carries its video id in the filename ("Ad [oxopPDMq7rs].mp4"): the
   // same video saved into two folders (loose in youtube\ and again inside a playlist folder)
   // is the same ad, so those are keyed by id + kind and not by folder.
-  const files = db.prepare(`SELECT id, kind, source_key, playable, excluded FROM items
+  const files = db.prepare(`SELECT id, kind, source_key, playable, excluded, duration_ms FROM items
     WHERE source = 'local' AND present = 1 AND kind IN ('commercial', 'clip', 'short', 'eyecatch')`).all();
   const same = new Map();
   for (const r of files) {
@@ -185,8 +223,15 @@ function markDuplicates(db) {
     dupGroups++;
     for (const r of g.slice(1)) { want.set(r.id, g[0].id); duplicates++; }
   }
+  // Step 3b: the same bytes under different names. Of each group the oldest row stays (it
+  // keeps its play history), unless a vetoed or unplayable one would outrank it.
+  for (const g of identicalFiles(files.filter((r) => !want.has(r.id)))) {
+    g.sort((a, b) => b.excluded - a.excluded || b.playable - a.playable || a.id - b.id);
+    dupGroups++;
+    for (const r of g.slice(1)) { want.set(r.id, g[0].id); duplicates++; }
+  }
   const current = db.prepare("SELECT id, duplicate_of FROM items WHERE duplicate_of IS NOT NULL").all();
-  const set = db.prepare("UPDATE items SET duplicate_of = ? WHERE id = ?");
+  const set =db.prepare("UPDATE items SET duplicate_of = ? WHERE id = ?");
   let changed = 0;
   for (const r of current) if (!want.has(r.id)) { set.run(null, r.id); changed++; }
   const had = new Map(current.map((r) => [r.id, r.duplicate_of]));
