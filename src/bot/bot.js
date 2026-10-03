@@ -428,7 +428,7 @@ export async function startBot() {
       ]);
       const added = done.filter((a) => !a.skipped);
       ok = added.length > 0;
-      text = done.map((a) => (a.skipped ? `Skipped "${a.title}": ${a.skipped}` : `Added ${kind}: "${a.title}"`)).join("\n") || "No videos found at those links.";
+      text = done.map((a) => (a.skipped ? `Skipped "${a.title}": ${a.skipped}` : `Added ${kind}: "${a.title}"${a.staged ? " (in staging until it's sorted into a brand folder)" : ""}`)).join("\n") || "No videos found at those links.";
       log.info(`bot: drop thread: ${m.author.username} added ${added.length} of ${done.length} (${kind})`);
     } catch (e) {
       ok = false;
@@ -514,7 +514,7 @@ export async function startBot() {
           if (maintenance.pending) await i.editReply("Waiting for another TV job (a catalog sync or schedule update) to finish first; this message updates when your links are in.").catch(() => {});
           else await i.editReply(`Downloading ${urls.length} link${urls.length === 1 ? "" : "s"}...`).catch(() => {});
           const done = await maintenance.run(() => addFromUrls(i.options.getString("kind"), urls));
-          return i.editReply(done.map((a) => (a.skipped ? `Skipped "${a.title}": ${a.skipped}` : `Added "${a.title}"`)).join("\n") || "No links found.");
+          return i.editReply(done.map((a) => (a.skipped ? `Skipped "${a.title}": ${a.skipped}` : `Added "${a.title}"${a.staged ? " (in staging until it's sorted into a brand folder)" : ""}`)).join("\n") || "No links found.");
         }
         if (sub === "special") {
           await i.deferReply(ephemeral);
