@@ -66,7 +66,10 @@ function chooseSubs(streams, subLang) {
   const inFile = streams.filter((s) => s.type === "subtitle" && !s.external).sort((a, b) => a.index - b.index);
 
   if (sidecar) return { mode: "sidecar", id: sidecar.id, codec: sidecar.codec };
-  if (image) return { mode: "image", index: image.index, codec: image.codec };
+  // `text`: the same language's text track in the file, if there is one. Drawing a picture
+  // track costs about a third of real time on 1080p (a text track runs at 2x or more), so
+  // the player uses it instead whenever it has a local copy (player/segments.js).
+  if (image) return { mode: "image", index: image.index, codec: image.codec, text: embeddedText ? { index: embeddedText.index, pos: inFile.indexOf(embeddedText), codec: embeddedText.codec } : null };
   if (embeddedText) return { mode: "embedded_text", index: embeddedText.index, pos: inFile.indexOf(embeddedText), codec: embeddedText.codec };
   if (unlabeledSidecar) return { mode: "sidecar", id: unlabeledSidecar.id, codec: unlabeledSidecar.codec, unlabeled: true };
   return null;

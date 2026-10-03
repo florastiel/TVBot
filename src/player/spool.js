@@ -9,8 +9,11 @@ import { closeSync, existsSync, mkdirSync, openSync, readdirSync, renameSync, rm
 import { setTimeout as sleep } from "node:timers/promises";
 import { join, extname } from "node:path";
 import { config, DATA_DIR } from "../config.js";
+import { getDb } from "../db.js";
 import { log } from "../log.js";
 import { detectAndSave } from "../catalog/breakdetect.js";
+import { probe } from "../catalog/localScan.js";
+import { chooseTracks, fromFfprobeStreams } from "../catalog/tracks.js";
 import { rd } from "../realdebrid.js";
 import { isPlexPaused } from "./bandwidth.js";
 
@@ -30,6 +33,25 @@ const SHOWS = new Set(["episode", "movie", "short"]);
 const needsSpool = (row) => (row?.source === "plex" || row?.source === "realdebrid") && row.media_path && SHOWS.has(row.kind);
 const needsCheck = (row) => SHOWS.has(row?.kind) && !(row.ad_cues_checked != null && row.ad_cues_checked === row.source_updated);
 
+// A picture-subtitle (PGS/VobSub) item whose file hasn't been looked at for a text track
+// yet (subs.text undefined; null means it has none): see preferTextSubs.
+const needsTextCheck = (row) => {
+  if (!needsSpool(row) || !existsSync(fileFor(row))) return false;
+  try { const s = JSON.parse(row.subs || "null"); return s?.mode === "image" && s.text === undefined; } catch { return false; }
+};
+
+// Drawing picture subtitles on the stream runs at about a third of real time on a 1080p
+// file, a text track at 2x or more, and a Blu-ray release usually carries both. Look in the
+// downloaded copy once for a text track in our language and remember it in items.subs.text;
+// segments.js draws that one from the local copy.
+async function preferTextSubs(row, file) {
+  const s = JSON.parse(row.subs);
+  const t = chooseTracks(fromFfprobeStreams((await probe(file)).streams), { showTitle: row.show_title });
+  const text = t.subs?.mode === "image" ? t.subs.text ?? null : null;
+  getDb().prepare("UPDATE items SET subs = ? WHERE id = ?").run(JSON.stringify({ ...s, text }), row.id);
+  if (text) log.info(`spool: ${row.show_title || row.title} (${row.id}): drawing its text subtitles, not the picture ones (much lighter to encode)`);
+}
+
 // Local copy of an item if it's fully downloaded, else null.
 export function spooledPath(row) {
   if (!needsSpool(row)) return null;
@@ -46,7 +68,7 @@ export function wantSpool(rows, plex) {
   for (const row of rows) {
     if (!row || failed.has(row.id)) continue;
     const download = needsSpool(row) && !existsSync(fileFor(row)) && !(row.source === "plex" && isPlexPaused());
-    if (!download && !needsCheck(row)) continue;
+    if (!download && !needsCheck(row) && !needsTextCheck(row)) continue;
     if (busy?.id === row.id || queue.some((q) => q.row.id === row.id)) continue;
     queue.push({ row, plex });
   }
@@ -60,6 +82,7 @@ async function work() {
     try {
       if (needsSpool(row) && !existsSync(fileFor(row))) await download(row, plex);
       const file = row.source === "local" ? row.source_key : existsSync(fileFor(row)) ? fileFor(row) : null;
+      if (file && needsTextCheck(row)) await preferTextSubs(row, file).catch((e) => log.warn(`spool: ${row.show_title || row.title} (${row.id}): text subtitle check failed: ${e.message}`));
       if (file && needsCheck(row)) await detectAndSave(row, file).catch((e) => log.warn(`breaks: ${row.show_title || row.title} (${row.id}): ${e.message}`));
     } catch (e) {
       if (e instanceof PlexPaused) {

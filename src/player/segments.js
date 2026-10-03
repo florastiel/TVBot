@@ -17,12 +17,15 @@ export function describe(row) {
 
 // plex: the Plex client, for building file URLs.
 export function toSegment(row, plex, { seekMs = 0, breakId = null } = {}) {
-  const subs = row.subs ? JSON.parse(row.subs) : { mode: "none" };
+  let subs = row.subs ? JSON.parse(row.subs) : { mode: "none" };
   let subsFile = null;
   // A downloaded-ahead copy plays instead of the Plex stream whenever there is one.
   // Real-Debrid: without a copy, input stays null and the player unrestricts rdLink
   // right before playing (that takes an API call, and the URL shouldn't sit around).
   const local = row.source === "local" ? row.source_key : spooledPath(row);
+  // Picture subtitles are slow to draw (about 0.3x real time on 1080p, enough to buffer the
+  // stream); with a local copy a text track of the same language in the file is drawn instead.
+  if (subs.mode === "image" && subs.text && local) subs = { mode: "embedded_text", ...subs.text };
   let input = local || (row.source === "plex" ? plex.fileUrl(row.media_path) : null);
   if (subs.mode === "sidecar") {
     // The copy matching the chosen track's format (a stale one in the other format may
