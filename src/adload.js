@@ -7,7 +7,7 @@ export const LONG_MS = 40 * 60000; // an item this long or longer is cut into pi
 // The ad time that follows `contentMs` of long-form content at broadcast.ad_minutes_per_hour
 // of airtime (14 ad minutes an hour = 14 ad minutes per 46 of show).
 export function adAfter(contentMs) {
-  const ph = Math.min(45, Math.max(0, Number(config.broadcast.ad_minutes_per_hour ?? 14)));
+  const ph = Math.min(45, Math.max(0, Number(config.broadcast.ad_minutes_per_hour ?? 12)));
   return (contentMs * ph) / (60 - ph);
 }
 

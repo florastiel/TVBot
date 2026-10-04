@@ -52,6 +52,7 @@ export class PlaylistProgram {
 const LOOKAHEAD_MS = 3 * 3600000; // how far ahead to download files that need it for subtitles
 const MIN_LEFT = 20000; // don't join the last 20 seconds of a show; go to the next thing
 const EDGE = 5 * 60000;  // never break within 5 minutes of the start/end of a show
+const FULL_BREAK_MS = 7 * 60000; // a between-shows break can run this long; with less time before a special, fill exactly instead
 const pieceMs = () => (Number(config.broadcast.piece_minutes) || 12) * 60000; // long shows and movies get a break about this often
 
 // A movie's found break points can leave a long stretch with no break (a film with two
@@ -279,8 +280,13 @@ export class ScheduleProgram {
       }
     }
     this.blockRest = new Set();
-    // The break between blocks.
-    if (sinceBreak >= breakEvery) {
+    // The break between blocks. A special that starts when this block ends keeps its announced
+    // time, so a full-length break (several spots, easily 5+ minutes) started with less than
+    // that left would run into it and the special would start late (after a restart one is
+    // always due). With less time left the exact fill below does the job instead: commercials
+    // that fit, then an "Up next" card, ending right on the special's start.
+    const specialNext = nextBlock?.source === "special" && nextBlock.start_at === block.end_at;
+    if (sinceBreak >= breakEvery && !(specialNext && block.end_at - this.clock() < FULL_BREAK_MS)) {
       yield* before(makeBreak(this.plex, { theme: block.theme }), nextBlock?.items[0]);
       if (this.live) return null;
     }

@@ -347,8 +347,8 @@ minutes) get a break about every `piece_minutes` (12), at a chapter mark or righ
 point when there aren't any, and a movie's found break points are subdivided to that pace
 too. Inside a short show a break is one commercial (a minute at most), or two if both are
 `short_spot_seconds` or shorter; inside a movie or hour-long show it's as many as it
-takes to hit `ad_minutes_per_hour` (14) over the whole item, and its block is planned
-to match. Between shows: `between_spots` videos, each a clip `clip_chance` of the time.
+takes to hit `ad_minutes_per_hour` (12) over the whole item, and its block is planned
+to match. Between shows: `between_spots` videos; `clip_chance` of the breaks (not of each spot) have exactly one clip among them.
 Nothing longer than `max_spot_minutes` airs, except that a between-shows break runs long
 rather than repeat a spot that has aired more than a longer one. Every break, inside or
 between shows, is bookended by an eyecatch. Picks: files in a `variety_folders` folder or
