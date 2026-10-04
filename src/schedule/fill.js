@@ -10,6 +10,7 @@ import { localDay, gridMs, season } from "./time.js";
 import { saveBlocks, usedIds, copyIndex, blockAt, nextBlockAfter } from "./store.js";
 import { listBuckets, inSeason, daypart, isMovieFormat } from "./buckets.js";
 import { blockLength, inOrder, nextInOrder } from "./generate.js";
+import { loadHistory, addToHistory, violation } from "./limits.js";
 
 const DAY = 86400000;
 const TRIES = 12;
@@ -36,6 +37,7 @@ function makeCtx(fromMs) {
   const copies = copyIndex();
   const ctx = {
     copies,
+    hist: loadHistory(fromMs), // every block around the fill, for the airing limits (limits.js)
     used: usedIds(fromMs - N, fromMs + 60 * DAY, copies),
     showLast: new Map(db.prepare(`SELECT i.show_title t, MAX(b.start_at) at FROM block_items bi JOIN blocks b ON b.id = bi.block_id
       JOIN items i ON i.id = bi.item_id WHERE i.show_title IS NOT NULL GROUP BY i.show_title`).all().map((r) => [r.t, r.at])),
@@ -185,9 +187,23 @@ function pickBlock(bucket, at, room, ctx) {
 // A serialized show starting from its very first episode (no_premiere_hours keeps these out of the quiet hours).
 const isPremiere = (rows) => rows[0]?.kind === "episode" && inOrder(rows[0].show_title) && rows[0].season === 1 && rows[0].episode === 1;
 
+// A pick only counts if the bucket's airing limits (blocked days, per day / week, run length,
+// marathons) allow it at this time; otherwise it's as if the bucket had run dry.
+const movieCount = (pick) => pick.rows.filter((r) => r.kind === "movie").length;
+function allowed(bucket, at, pick, ctx) {
+  const why = violation(bucket, at, pick.lengthMs, movieCount(pick), ctx.hist);
+  if (why) {
+    const key = `${bucket.id}|${localDay(at).date}|${why}`;
+    ctx.limitLog ??= new Set();
+    if (!ctx.limitLog.has(key)) { ctx.limitLog.add(key); log.info(`fill: ${bucket.name} sits out ${localDay(at).date}: ${why}`); }
+  }
+  return !why;
+}
+
 function place(bucket, at, pick, ctx) {
   const theme = bucket.source === "auto" ? season(localDay(at)).theme : null;
   const label = bucket.name; // a show's first episode keeps its block's name (only the Series Premiere bucket says premiere)
+  addToHistory(ctx.hist, { start: at, end: at + pick.lengthMs, label, bucketId: bucket.id, movies: movieCount(pick) });
   saveBlocks([{ start: at, end: at + pick.lengthMs, label, ids: pick.rows.map((r) => r.id), theme: theme && theme !== "none" ? theme : null, bucketId: bucket.id }], "bucket");
   for (const r of pick.rows) {
     for (const c of ctx.copies(r.id)) ctx.used.add(c);
@@ -207,19 +223,25 @@ function fillWindow(bucket, at, to, ctx, buckets) {
   while (to - at >= gridMs()) {
     let b = bucket;
     let pick = dry ? null : pickBlock(b, at, to - at, ctx);
+    if (pick && !allowed(b, at, pick, ctx)) pick = null;
     // A movie in a standing slot (a fixed weekly time, e.g. Friday musicals) is placed first and
     // runs to its real length even if that's past the slot's end; the slots after it start when it ends.
     if (!pick && !dry && isMovieFormat(b.format) && (config.broadcast.standing_slots || []).some((r) => r?.bucket === b.name)) {
       pick = pickBlock(b, at, to - at + OVERRUN_MS, ctx);
+      if (pick && !allowed(b, at, pick, ctx)) pick = null;
     }
     if (!pick) {
-      // This bucket is out of things that fit: another in-season bucket for this time of
-      // day, shows first (they fit any length).
+      // This bucket is out of things that fit (or at one of its limits): another in-season
+      // bucket for this time of day, shows first (they fit any length).
       dry++;
       const day = localDay(at);
       const others = shuffle(buckets.filter((x) => x.id !== bucket.id && inSeason(x, day) && x.dayparts.includes(daypart(hourOf(at)))))
         .sort((x, y) => isMovieFormat(x.format) - isMovieFormat(y.format));
-      for (const o of others) if ((pick = pickBlock(o, at, to - at, ctx))) { b = o; break; }
+      for (const o of others) {
+        pick = pickBlock(o, at, to - at, ctx);
+        if (pick && allowed(o, at, pick, ctx)) { b = o; break; }
+        pick = null;
+      }
       if (!pick) break;
     }
     at = place(b, at, pick, ctx);

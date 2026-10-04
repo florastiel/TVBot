@@ -9,6 +9,7 @@ import { localDay, localToUtc, localTime, gridMs, season } from "./time.js";
 import { listBuckets, inSeason, daypart, isMovieFormat } from "./buckets.js";
 import { blockLength } from "./generate.js";
 import { templateSlots } from "./templategrid.js";
+import { blockedDays, blockedOn } from "./limits.js";
 
 const DAY = 86400000;
 const MAX_ATTEMPTS = 3;
@@ -46,10 +47,12 @@ const SYSTEM = `You lay out the weekly grid of a retro cable-TV style channel ru
 
 Rules:
 - Every date starts with a slot at 00:00. Slots start on a quarter hour (HH:00, :15, :30, :45), in order, and each runs until the next slot (the day's last slot runs until midnight).
-- A slot lasts at least 1 hour. Movie buckets need room for their movies (movie lengths are listed; 2 to 3 hours is typical); a movie_series slot plays the series in order for as long as the slot lasts.
+- A slot lasts at least 1 hour. Movie buckets need room for their movies (movie lengths are listed; 2 to 3 hours is typical); a movie_series slot plays the series in order, but at most ${config.broadcast.max_marathon_movies ?? 2} movies in a row (so about 4-5 hours at the very most, and shorter is fine).
 - Only use a bucket in the dayparts it allows, judged by the slot's start time (morning 6-12, afternoon 12-17, evening 17-22, late 22-6), and seasonal buckets only on dates in their window.
 - Use a wide spread of buckets over the week: no bucket more than twice a day, and give buckets that haven't aired lately their turn (recent use is listed). Don't lean on the same few.
-- Think like real TV: cartoons on weekend mornings, strongest material in prime time, weird and adult stuff late at night, movie nights, a weekend marathon or two. If a holiday or notable date falls in the week, lean into it.
+- Think like real TV: cartoons on weekend mornings, strongest material in prime time, weird and adult stuff late at night, movie nights. If a holiday or notable date falls in the week, lean into it.
+- No marathons: nobody sits through hours of one thing. A slot of one bucket runs at most ${config.broadcast.max_marathon_minutes ?? 240} minutes (movies: at most ${config.broadcast.max_marathon_movies ?? 2} in a row), and only ${config.broadcast.max_marathons_per_day ?? 1} slot a day may run ${config.broadcast.marathon_minutes ?? 180} minutes or more.
+- Each bucket line may list limits (never on some weekdays, a cap per day or per week, a different longest run). They are hard rules.
 - Specials already on the schedule (listed, if any) take over their time; slots overlapping them are cut short automatically.`;
 
 const dateOf = (day) => day.date;
@@ -70,7 +73,10 @@ function bucketLines(buckets, days) {
       size = `${b.shows.length || b.items.length} ${b.shows.length ? "shows" : "episodes"}`;
     }
     const when = b.active_from ? `${b.active_from} to ${b.active_to}` : "all year";
-    return `${b.name} | ${b.format} | ${b.dayparts.join("/")} | ${when} | ${size} | aired ${recent.get(b.id) || 0} blocks in the last 2 weeks | ${b.about || ""}`;
+    const limits = [blockedDays(b).length && `never on ${blockedDays(b).join("/")}`, b.max_per_day && `at most ${b.max_per_day}x a day`,
+      b.min_gap_days && `${b.min_gap_days} day(s) between days it airs`, b.max_hours_week && `at most ${b.max_hours_week} hours a week`,
+      b.max_run_minutes && `a slot at most ${b.max_run_minutes} minutes`].filter(Boolean).join(", ");
+    return `${b.name} | ${b.format} | ${b.dayparts.join("/")} | ${when} | ${size} | aired ${recent.get(b.id) || 0} blocks in the last 2 weeks${limits ? ` | LIMITS: ${limits}` : ""} | ${b.about || ""}`;
   });
 }
 
@@ -90,6 +96,7 @@ function parseSlots(out, days, buckets) {
       if (!b) { problems.push(`${where} ${s.start}: there's no bucket called "${s.bucket}".`); continue; }
       if (!inSeason(b, day)) problems.push(`${where} ${s.start}: "${b.name}" is out of season on this date.`);
       if (!b.dayparts.includes(daypart(+m[1]))) problems.push(`${where} ${s.start}: "${b.name}" can't air in the ${daypart(+m[1])} (allowed: ${b.dayparts.join(", ")}).`);
+      if (blockedOn(b, day.weekday)) problems.push(`${where} ${s.start}: "${b.name}" never airs on ${day.weekday}s.`);
       list.push({ at: localToUtc(day.y, day.m, day.d, +m[1], +m[2]), bucket: b, label: `${where} ${s.start}` });
     }
     list.sort((a, b) => a.at - b.at);
@@ -97,9 +104,17 @@ function parseSlots(out, days, buckets) {
     list.forEach((s, i) => {
       const end = list[i + 1]?.at ?? day.endMs;
       if (end - s.at < MIN_SLOT) problems.push(`${s.label}: "${s.bucket.name}" runs only ${Math.round((end - s.at) / 60000)} minutes; slots last at least an hour.`);
+      const cap = s.bucket.max_run_minutes ?? (isMovieFormat(s.bucket.format) ? null : config.broadcast.max_marathon_minutes);
+      if (cap && end - s.at > cap * 60000) problems.push(`${s.label}: "${s.bucket.name}" runs ${Math.round((end - s.at) / 60000)} minutes; a slot of it is at most ${cap}.`);
     });
+    const long = list.filter((s, i) => !isMovieFormat(s.bucket.format) && (list[i + 1]?.at ?? day.endMs) - s.at >= (config.broadcast.marathon_minutes ?? 180) * 60000);
+    if (long.length > (config.broadcast.max_marathons_per_day ?? 1)) problems.push(`${where}: ${long.length} slots run ${config.broadcast.marathon_minutes ?? 180}+ minutes (${long.map((s) => s.bucket.name).join(", ")}); at most ${config.broadcast.max_marathons_per_day ?? 1} a day.`);
     const count = Map.groupBy(list, (s) => s.bucket.name);
-    for (const [name, xs] of count) if (xs.length > 2) problems.push(`${where}: "${name}" is used ${xs.length} times; at most twice a day.`);
+    for (const [name, xs] of count) {
+      if (xs.length > 2) problems.push(`${where}: "${name}" is used ${xs.length} times; at most twice a day.`);
+      const per = xs[0].bucket.max_per_day;
+      if (per && xs.length > per) problems.push(`${where}: "${name}" is used ${xs.length} times; its limit is ${per} a day.`);
+    }
     slots.push(...list);
   }
   return { problems, slots };
@@ -111,7 +126,7 @@ function fallbackSlots(days, buckets) {
   for (const day of days) {
     const used = new Set();
     for (let h = 0; h < 24; h += 3) {
-      const fits = buckets.filter((b) => inSeason(b, day) && b.dayparts.includes(daypart(h)) && !used.has(b.id));
+      const fits = buckets.filter((b) => inSeason(b, day) && b.dayparts.includes(daypart(h)) && !used.has(b.id) && !blockedOn(b, day.weekday));
       const b = fits[Math.floor(Math.random() * fits.length)] || buckets[0];
       used.add(b.id);
       slots.push({ at: localToUtc(day.y, day.m, day.d, h, 0), bucket: b });

@@ -23,6 +23,18 @@ broadcast:
   # A folder of commercials counts as one brand (so 88 Pop-Tarts ads don't take over);
   # folders named here are packs of many different ads, and each file counts on its own.
   variety_folders: ["commercialpack1", "Collectionof90sCommercials"]
+  # Marathons. A "run" is blocks of one bucket (or one special) back to back. A run of
+  # marathon_minutes or more is a marathon and max_marathons_per_day of them fit on a day; a
+  # run is never longer than max_marathon_minutes (a bucket's own "longest run" in the bucket
+  # editor replaces that); at most max_marathon_movies movies play back to back (two is a double
+  # feature, fine; a six-movie night isn't); a planned special runs at most max_special_hours
+  # hours. Per-bucket limits (never on some weekdays, times a day, days between airings, hours a
+  # week) are set in the bucket editor: tv.cmd editor.
+  marathon_minutes: 180
+  max_marathons_per_day: 1
+  max_marathon_minutes: 240
+  max_marathon_movies: 2
+  max_special_hours: 5
   # Brand folders of one kind of product (every cereal) counted as ONE brand, so a break
   # carries at most one of them and the family doesn't take over just because it has dozens
   # of folders. Matched by folder name, ignoring case. ad_family_weight: how often a family

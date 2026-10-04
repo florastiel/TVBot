@@ -114,7 +114,8 @@ function renderList() {
         b.source !== "claude" ? " · auto" : ""),
       (short || !INFO.pools[b.name] && b.source === "claude") && h("div", {},
         short && h("span", { class: "tag bad" }, "thin"),
-        !INFO.pools[b.name] && b.source === "claude" && h("span", { class: "tag warn" }, "in no pool"))));
+        !INFO.pools[b.name] && b.source === "claude" && h("span", { class: "tag warn" }, "in no pool")),
+      b.limited && h("div", {}, h("span", { class: "tag" }, "limits"))));
   }
 }
 
@@ -153,6 +154,22 @@ function renderDetail() {
           await loadList(); await select(b.id); if (r.note) toast(r.note);
         }, "Saved.") }, "Save"),
         h("button", { class: "danger", onclick: () => { if (confirm(`Retire "${b.name}"? It stops airing; its titles stay in other buckets.${pools ? "\n\nIt is still listed in: " + pools.join(", ") : ""}`)) run(async () => { await api(`bucket/${b.id}/retire`, "POST", {}); CUR = null; await loadList(false); renderDetail(); }, "Retired."); } }, "Retire bucket")))));
+
+  // airing limits: any bucket's, including the ones code builds
+  const M = INFO.marathon;
+  const wd = INFO.weekdays.map((d) => h("input", { type: "checkbox", value: d, checked: (b.blocked_days || []).includes(d) }));
+  const num = (v, ph, step = "1") => h("input", { type: "number", min: "1", step, value: v ?? "", placeholder: ph, style: "width:90px" });
+  const perDay = num(b.max_per_day, "no limit"), gap = num(b.min_gap_days, "none"), hrs = num(b.max_hours_week, "no limit", "0.5"), runM = num(b.max_run_minutes, `${M.maxRun} (default)`);
+  box.append(h("fieldset", {}, h("legend", {}, "Airing limits"),
+    h("div", { style: "display:grid;gap:8px" },
+      h("div", { class: "row" }, "Never on: ", INFO.weekdays.map((d, i) => h("label", { class: "chk" }, wd[i], " ", d.slice(0, 3)))),
+      h("div", { class: "row" }, "Times a day: ", perDay, " Days between airings: ", gap),
+      h("div", { class: "row" }, "Hours a week: ", hrs, " Longest run (minutes): ", runM),
+      h("div", { class: "hint" }, `Blank = no limit. A run is this bucket's blocks back to back. For every bucket: a run of ${M.minutes}+ minutes is a marathon (${M.perDay} a day), a run stops at ${M.maxRun} minutes unless set here, and at most ${M.movies} movies play in a row. Limits apply the next time the schedule is filled (Refill).`),
+      h("div", { class: "row" }, h("button", { class: "primary", onclick: () => run(async () => {
+        await api(`bucket/${b.id}/limits`, "POST", { blocked_days: wd.filter((x) => x.checked).map((x) => x.value), max_per_day: perDay.value, min_gap_days: gap.value, max_hours_week: hrs.value, max_run_minutes: runM.value });
+        await loadList(); await select(b.id);
+      }, "Limits saved.") }, "Save limits")))));
 
   // members
   const isMovie = b.format.startsWith("movie");

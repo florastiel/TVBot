@@ -360,6 +360,17 @@ folders doesn't win the family the break; `ad_family_weight` (2) is how often it
 against a single folder, as a multiple of what its combined size would give.
 `D:\data\tv\ad-lengths.csv` lists every commercial and clip with its length.
 
+**Airing limits and marathons**: nobody wants hours of one thing, so the schedule filler keeps
+runs short. A run is blocks of one bucket (or one special) back to back: one of
+`marathon_minutes` (180) or more is a marathon, `max_marathons_per_day` (1) fit on a day, a
+run stops at `max_marathon_minutes` (240), at most `max_marathon_movies` (2) movies play in a
+row, and a planned special runs at most `max_special_hours` (5) hours and there is one
+special a day. Each bucket can also have its own limits, set in the bucket editor
+(`tv.cmd editor`, the "Airing limits" panel): weekdays it never airs on, times a day, days
+between airings, hours a week, and its own longest run. A bucket at a limit sits that slot
+out and another bucket covers it (`fill: ... sits out` in the log); limits apply whenever
+the schedule is filled, and the editor's Refill button refills the week.
+
 **Skipping**: `/tvadmin skip` drops the rest of the show or movie and takes it off the
 schedule; `/tvadmin skipblock` does that for everything left in the block. The next
 block starts right away and the rest of the day moves up with it (the guide times
