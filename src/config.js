@@ -27,7 +27,7 @@ const DEFAULTS = {
     max_show_block_minutes: 75,
     split_without_chapters: true,
     piece_minutes: 12,
-    ad_minutes_per_hour: 14,
+    ad_minutes_per_hour: 12,
     brand_share: 0.25,
     clip_chance: 0.3,
     no_repeat_days: 14,
