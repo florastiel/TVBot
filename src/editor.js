@@ -202,11 +202,18 @@ async function refill() {
   await generateSchedule({ days: 7, replace: true });
 }
 
-export function startEditor({ port = 5174 } = {}) {
+// host: the address to listen on (default this PC only). requireUser: when the editor is
+// published behind a login proxy (Authelia via Caddy forwards the signed-in name in a
+// Remote-User header), refuse anything that didn't come through it, so the page can't be
+// reached by going around the proxy.
+export function startEditor({ port = 5174, host = "127.0.0.1", requireUser = false } = {}) {
   const token = randomBytes(16).toString("hex");
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     const send = (code, body, type = "application/json") => { res.writeHead(code, { "content-type": `${type}; charset=utf-8`, "cache-control": "no-store" }); res.end(typeof body === "string" ? body : JSON.stringify(body)); };
+    const user = String(req.headers["remote-user"] || "");
+    if (requireUser && !user) return send(403, { error: "sign in through the site's login" });
+    if (req.method !== "GET") console.log(`editor: ${user || "local"} ${req.method} ${url.pathname}`);
     try {
       if (req.method === "GET" && url.pathname === "/") return send(200, readFileSync(PAGE, "utf8").replace("__TOKEN__", token), "text/html");
       if (!url.pathname.startsWith("/api/")) return send(404, { error: "not found" });
@@ -238,6 +245,6 @@ export function startEditor({ port = 5174 } = {}) {
   });
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${port}/` }));
+    server.listen(port, host, () => resolve({ server, url: `http://${host}:${port}/` }));
   });
 }
