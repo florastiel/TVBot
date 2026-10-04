@@ -21,6 +21,8 @@ const DEFAULTS = {
     episode_breaks: 1,
     eyecatches: "tv",
     variety_folders: [],
+    ad_families: {},
+    ad_family_weight: 2,
     standing_slots: [],
     break_every_minutes: 8,
     max_spot_minutes: 3,
