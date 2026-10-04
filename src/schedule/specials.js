@@ -15,7 +15,8 @@ import { withScheduleLock } from "./lock.js";
 
 const DAY = 86400000;
 const MAX_ATTEMPTS = 3;
-const MAX_HOURS = 12;
+const maxHours = () => Number(config.broadcast.max_special_hours) || 5;
+const maxMovies = () => Number(config.broadcast.max_marathon_movies) || 2;
 
 const SCHEMA = {
   type: "object",
@@ -56,7 +57,8 @@ const SYSTEM = `You plan specials for a retro cable-TV style channel run for a g
 Rules:
 - Only use movies and shows from the catalog. Movie series go in release order.
 - Each item is either a movie (movie_id, with show "" and episodes 0) or a run of random episodes of one show (show title exactly as listed and how many episodes, with movie_id 0).
-- A special runs 2 to ${MAX_HOURS} hours including a few minutes of commercials per hour, starts on a quarter hour (HH:00, :15, :30 or :45) in the channel's time zone, and has to fit in the dates you're given.
+- A special runs 2 to ${maxHours()} hours including a few minutes of commercials per hour, starts on a quarter hour (HH:00, :15, :30 or :45) in the channel's time zone, and has to fit in the dates you're given.
+- Nobody watches hours of the same thing: a special has at most ${maxMovies()} movies (two is a double feature; more is not a special, it's a slog), and there is only ONE special on any one day.
 - Put specials where people are likely watching: evenings, and weekend afternoons. Match the audience to the time of day.
 - label: a plain name for the special in 1 to 4 words, like "Scream Marathon" or "Ghibli Sunday". No puns, no punctuation other than & and apostrophes, no emoji.
 - Don't repeat a recent special.`;
@@ -147,8 +149,10 @@ function expand(sp, cat, used, { fromMs, toMs }) {
   }
   flushEpisodes();
   const hours = (at - start) / 3600000;
+  const movies = sp.items.filter((it) => it.movie_id).length;
+  if (movies > maxMovies()) problems.push(`${name}: it has ${movies} movies; at most ${maxMovies()} (a double feature), then something else.`);
   if (!blocks.length) problems.push(`${name}: it has nothing in it.`);
-  else if (hours > MAX_HOURS) problems.push(`${name}: it runs ${hours.toFixed(1)} hours; keep it under ${MAX_HOURS}.`);
+  else if (hours > maxHours()) problems.push(`${name}: it runs ${hours.toFixed(1)} hours; keep it under ${maxHours()}.`);
   else if (hours < 1.5) problems.push(`${name}: it runs only ${hours.toFixed(1)} hours; make it at least 2.`);
   return { blocks, problems, start, end: at };
 }
@@ -205,6 +209,11 @@ ${cat.text}`;
       const clash = getDb().prepare("SELECT label FROM blocks WHERE source = 'special' AND start_at < ? AND end_at > ?").get(p.end, p.start);
       if (clash) problems.push(`Special "${p.sp.label}" overlaps the special "${clash.label}" that's already scheduled; pick another time.`);
       if (planned.some((q) => q !== p && q.start < p.end && q.end > p.start)) problems.push(`Special "${p.sp.label}" overlaps another special in your list.`);
+      // One special a day: any special already starting on that local day (or ending into it), or another in this list.
+      const day = localDay(p.start);
+      const same = getDb().prepare("SELECT label FROM blocks WHERE source = 'special' AND start_at < ? AND end_at > ? LIMIT 1").get(day.endMs, day.startMs);
+      if (same) problems.push(`Special "${p.sp.label}" is on the same day as the special "${same.label}" that's already scheduled; only one special a day, pick another day.`);
+      if (planned.some((q) => q !== p && localDay(q.start).date === day.date)) problems.push(`Special "${p.sp.label}" is on the same day as another special in your list; only one special a day.`);
     }
     if (!specials.length) problems.push("No specials were returned.");
     if (!problems.length) {

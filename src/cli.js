@@ -198,12 +198,21 @@ Object.assign(commands, {
   },
 
   // tv.cmd editor [port]       a local web page for fixing buckets by hand (Ctrl+C to stop)
-  async editor(port = "5174") {
+  // Published behind the login proxy as a service (tvchannel-editor):
+  //   editor 5174 --host 10.99.0.2 --require-user --no-open
+  async editor(...args) {
+    const flag = (n) => args.includes(n);
+    const value = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+    const port = args.find((a) => /^\d+$/.test(a)) ?? "5174";
+    const host = value("--host") ?? "127.0.0.1";
     const { startEditor } = await import("./editor.js");
-    const { url } = await startEditor({ port: Number(port) });
-    console.log(`Bucket editor: ${url}  (this PC only; Ctrl+C to stop)`);
-    const { exec } = await import("node:child_process");
-    exec(`start "" "${url}"`);
+    const { url } = await startEditor({ port: Number(port), host, requireUser: flag("--require-user") });
+    const here = host === "127.0.0.1";
+    console.log(`Bucket editor: ${url}  (${here ? "this PC only" : `listening on ${host}${flag("--require-user") ? ", signed-in users only" : ""}`}; Ctrl+C to stop)`);
+    if (here && !flag("--no-open")) {
+      const { exec } = await import("node:child_process");
+      exec(`start "" "${url}"`);
+    }
     await new Promise(() => {}); // run until stopped
   },
 

@@ -226,6 +226,14 @@ const MIGRATIONS = [
   ALTER TABLE items ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE items ADD COLUMN last_played_at INTEGER;
   `,
+  `
+  -- Airing limits per bucket (set in the bucket editor; NULL = no limit), kept by schedule/limits.js.
+  ALTER TABLE buckets ADD COLUMN blocked_days TEXT;       -- JSON array of weekday names it never airs on
+  ALTER TABLE buckets ADD COLUMN max_per_day INTEGER;     -- most separate airings (back-to-back stretches) on one day
+  ALTER TABLE buckets ADD COLUMN min_gap_days INTEGER;    -- whole days that must pass between days it airs
+  ALTER TABLE buckets ADD COLUMN max_hours_week REAL;     -- most airtime in a Monday-Sunday week
+  ALTER TABLE buckets ADD COLUMN max_run_minutes INTEGER; -- longest stretch of it back to back
+  `,
 ];
 
 let db;

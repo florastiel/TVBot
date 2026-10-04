@@ -12,6 +12,7 @@ import { getDb, tx, setMeta } from "./db.js";
 import { schedulableSql } from "./catalog/schedulable.js";
 import { FORMATS, DAYPARTS, isMovieFormat, listBuckets } from "./schedule/buckets.js";
 import { loadTemplate } from "./schedule/templategrid.js";
+import { WEEKDAYS, blockedDays } from "./schedule/limits.js";
 
 const PAGE = join(dirname(fileURLToPath(import.meta.url)), "editor.html");
 const MIN = { one_show: 1, variety: 4, movie: 3, movie_series: 2 };
@@ -57,7 +58,9 @@ function info() {
   const pools = {};
   try { for (const [p, list] of Object.entries(loadTemplate().pools || {})) for (const n of list) (pools[n] ??= []).push(p); } catch { /* no template */ }
   for (const r of config.broadcast.standing_slots || []) if (r?.bucket) (pools[r.bucket] ??= []).push(`standing ${r.day} ${r.from}`);
-  return { pools, formats: FORMATS, dayparts: DAYPARTS, min: MIN };
+  const bc = config.broadcast;
+  return { pools, formats: FORMATS, dayparts: DAYPARTS, min: MIN, weekdays: WEEKDAYS,
+    marathon: { minutes: bc.marathon_minutes, perDay: bc.max_marathons_per_day, maxRun: bc.max_marathon_minutes, movies: bc.max_marathon_movies } };
 }
 
 function list() {
@@ -66,6 +69,7 @@ function list() {
   const liveShows = new Set(db.prepare(`SELECT DISTINCT i.show_title t FROM items i WHERE i.kind = 'episode' AND ${S}`).all().map((r) => r.t));
   return listBuckets().map((b) => ({
     id: b.id, name: b.name, source: b.source, format: b.format, dayparts: b.dayparts, active_from: b.active_from, active_to: b.active_to, about: b.about,
+    limited: !!(blockedDays(b).length || b.max_per_day || b.min_gap_days || b.max_hours_week || b.max_run_minutes),
     shows: b.shows.length, items: b.items.length,
     live: b.shows.filter((s) => liveShows.has(s)).length + b.items.filter((i) => liveItems.has(i)).length,
   }));
@@ -84,7 +88,7 @@ function detail(id) {
     return { key: `i:${r.item_id}`, type: "item", id: r.item_id, title: it?.title ?? `(missing item ${r.item_id})`, year: it?.year ?? null, minutes: it?.duration_ms ? Math.round(it.duration_ms / 60000) : null,
       source: it?.source ?? null, ep: it?.kind === "episode" ? `${it.show_title} S${it.season}E${it.episode}` : null, live: !!it?.ok, n };
   });
-  return { ...b, members, editable: b.source === "claude" };
+  return { ...b, blocked_days: blockedDays(b), members, editable: b.source === "claude" };
 }
 
 function search(q, kind) {
@@ -152,6 +156,31 @@ function saveMeta(id, body) {
   return m.name !== b.name ? `Renamed. programming.yaml and config.yaml refer to buckets by name: update "${b.name}" there if it's in a pool or standing slot.` : null;
 }
 
+// Airing limits (schedule/limits.js): blank = no limit. Any bucket's, including the ones code builds.
+function saveLimits(id, body) {
+  const b = getDb().prepare("SELECT id FROM buckets WHERE id = ? AND NOT retired").get(id);
+  if (!b) bad("No such bucket.");
+  const whole = (v, what, lo, hi) => {
+    if (v === null || v === undefined || v === "") return null;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < lo || n > hi) bad(`${what}: a whole number from ${lo} to ${hi}, or blank.`);
+    return n;
+  };
+  const days = WEEKDAYS.filter((d) => (body.blocked_days || []).includes(d));
+  const hours = body.max_hours_week === null || body.max_hours_week === undefined || body.max_hours_week === "" ? null : Number(body.max_hours_week);
+  if (hours !== null && !(hours >= 0.5 && hours <= 168)) bad("Hours per week: 0.5 to 168, or blank.");
+  const l = {
+    blocked: days.length ? JSON.stringify(days) : null,
+    perDay: whole(body.max_per_day, "Times per day", 1, 10),
+    gap: whole(body.min_gap_days, "Days between", 1, 30),
+    hours,
+    run: whole(body.max_run_minutes, "Longest run (minutes)", 15, 1440),
+  };
+  backup();
+  getDb().prepare("UPDATE buckets SET blocked_days = ?, max_per_day = ?, min_gap_days = ?, max_hours_week = ?, max_run_minutes = ? WHERE id = ?")
+    .run(l.blocked, l.perDay, l.gap, l.hours, l.run, id);
+}
+
 function create(body) {
   const m = checkMeta(body, { format: body.format });
   backup();
@@ -173,11 +202,18 @@ async function refill() {
   await generateSchedule({ days: 7, replace: true });
 }
 
-export function startEditor({ port = 5174 } = {}) {
+// host: the address to listen on (default this PC only). requireUser: when the editor is
+// published behind a login proxy (Authelia via Caddy forwards the signed-in name in a
+// Remote-User header), refuse anything that didn't come through it, so the page can't be
+// reached by going around the proxy.
+export function startEditor({ port = 5174, host = "127.0.0.1", requireUser = false } = {}) {
   const token = randomBytes(16).toString("hex");
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     const send = (code, body, type = "application/json") => { res.writeHead(code, { "content-type": `${type}; charset=utf-8`, "cache-control": "no-store" }); res.end(typeof body === "string" ? body : JSON.stringify(body)); };
+    const user = String(req.headers["remote-user"] || "");
+    if (requireUser && !user) return send(403, { error: "sign in through the site's login" });
+    if (req.method !== "GET") console.log(`editor: ${user || "local"} ${req.method} ${url.pathname}`);
     try {
       if (req.method === "GET" && url.pathname === "/") return send(200, readFileSync(PAGE, "utf8").replace("__TOKEN__", token), "text/html");
       if (!url.pathname.startsWith("/api/")) return send(404, { error: "not found" });
@@ -196,6 +232,7 @@ export function startEditor({ port = 5174 } = {}) {
         else if (seg[2] === "remove") removeMembers(id, body.keys);
         else if (seg[2] === "order") reorder(id, body.keys);
         else if (seg[2] === "meta") return send(200, { note: saveMeta(id, body) });
+        else if (seg[2] === "limits") saveLimits(id, body);
         else if (seg[2] === "retire") retire(id);
         else return send(404, { error: "not found" });
         return send(200, { ok: true });
@@ -208,6 +245,6 @@ export function startEditor({ port = 5174 } = {}) {
   });
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${port}/` }));
+    server.listen(port, host, () => resolve({ server, url: `http://${host}:${port}/` }));
   });
 }
