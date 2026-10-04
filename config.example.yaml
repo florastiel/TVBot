@@ -16,7 +16,7 @@ discord:
 broadcast:
   timezone: America/New_York
   grid_minutes: 5              # planned block times round to this; while the TV is on, times follow what actually played
-  between_spots: 2             # videos in the break between shows (the first is sometimes a clip, see clip_chance)
+  between_spots: 2             # videos in the break between shows (one of them is a clip in clip_chance of the breaks)
   inside_spots: 1              # commercials in a break inside a show (at a fade to black): 1, or 2 = add a second when both are short
   short_spot_seconds: 35       # with inside_spots 2: "short" means this long or less
   eyecatches: tv               # an eyecatch before and after a break inside a show: tv (what Claude judged would air with TV breaks: sitcoms, cartoons, network dramas, rom-coms...), all, or none. Anime included, but never with the show's own eyecatches
@@ -32,7 +32,7 @@ broadcast:
   max_show_block_minutes: 75   # regular blocks of episodes are at most this long (movies and specials can run longer)
   split_without_chapters: true # if a file has no chapter markers, allow a break at its middle (may be mid-scene)
   piece_minutes: 12            # a movie or hour-long show (40+ min) gets a break about this often (at a chapter mark, or right at the point without chapters)
-  ad_minutes_per_hour: 14      # ads per hour of airtime for those long items; each of their breaks is sized to the stretch of show before it, and their blocks are planned to match
+  ad_minutes_per_hour: 12      # ads per hour of airtime for those long items; each of their breaks is sized to the stretch of show before it, and their blocks are planned to match
   clip_chance: 0.3             # chance a break includes one of the clips (0 to 1)
   no_repeat_days: 14           # don't reuse an episode/movie within this many days
   plan_days: 1                 # how far ahead blocks are filled from the week's grid (upkeep tops it up)

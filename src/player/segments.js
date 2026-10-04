@@ -269,8 +269,8 @@ function pickEyecatch(show, avoid) {
 }
 
 // A commercial break, always bookended by an eyecatch at each end. Between shows (inside:
-// false): between_spots videos, each with clip_chance of being a clip instead of a
-// commercial, sharing a length budget (max_spot_minutes x between_spots) - a spot much
+// false): between_spots videos, clip_chance of the breaks having one clip among them (never
+// more than one), sharing a length budget (max_spot_minutes x between_spots) - a spot much
 // longer than usual still plays, it just leaves less room for the rest of the pod rather
 // than being excluded. Inside a show: one commercial (with inside_spots 2, a second one
 // when both are short_spot_seconds or less) - here the bookends only happen where
@@ -321,9 +321,12 @@ export function makeBreak(plex, { theme = null, inside = false, show = null, tar
     // usual pick the common case instead of the occasional one. The last spot going long
     // still isn't piled onto by anything after it.
     let budget = maxMs * b.between_spots;
+    // clip_chance is per BREAK, not per spot: one roll, and a break that wins it gets exactly
+    // one clip, in a random slot (rolling every spot gave three clips in a row now and then).
+    const clipSlot = Math.random() < b.clip_chance ? Math.floor(Math.random() * b.between_spots) : -1;
     for (let k = 0; k < b.between_spots && budget > 0; k++) {
       const cap = k === b.between_spots - 1 ? budget : Math.min(maxMs, budget);
-      const r = add(Math.random() < b.clip_chance ? "clip" : "commercial", cap);
+      const r = add(k === clipSlot ? "clip" : "commercial", cap);
       if (r) budget -= r.duration_ms;
     }
     const outOf = pickEyecatch(null, [...rows, into].filter(Boolean).map((x) => x.id)) || into;
