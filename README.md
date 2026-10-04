@@ -354,7 +354,10 @@ rather than repeat a spot that has aired more than a longer one. Every break, in
 between shows, is bookended by an eyecatch. Picks: files in a `variety_folders` folder or
 loose in the thread folders are the mixed pool, every other commercial/clip folder is a
 brand, and all brand folders together get `brand_share` (0.25) of the picks; within a
-group the least-played file goes first.
+group the least-played file goes first. Folders named under `ad_families` (every cereal
+folder, say) count as ONE brand, so a break carries at most one of them and having dozens of
+folders doesn't win the family the break; `ad_family_weight` (2) is how often it comes up
+against a single folder, as a multiple of what its combined size would give.
 `D:\data\tv\ad-lengths.csv` lists every commercial and clip with its length.
 
 **Skipping**: `/tvadmin skip` drops the rest of the show or movie and takes it off the

@@ -115,11 +115,21 @@ function notRecent(rows) {
 // are avoided.
 const folderWeight = (n) => Math.sqrt(n);
 const brandShare = () => Math.min(1, Math.max(0, Number(config.broadcast.brand_share ?? 0.25)));
+// broadcast.ad_families: folders of one kind of product (every cereal) that count as a single
+// brand, "family:cereal": one per break, and weighed as one brand (ad_family_weight times the
+// weight its combined size gives) so having dozens of folders doesn't win it the break.
+const familyOf = (folder) => {
+  const leaf = String(folder).toLowerCase();
+  return Object.keys(config.broadcast.ad_families || {}).find((name) => (config.broadcast.ad_families[name] || []).some((f) => String(f).toLowerCase() === leaf)) ?? null;
+};
+const familyWeight = () => Math.max(0, Number(config.broadcast.ad_family_weight ?? 2));
 function groupOf(row, kind) {
   const root = kind === "clip" ? config.local.clips : config.local.commercials;
   const dir = relative(root || "", row.source_key).split(sep).slice(0, -1).join("/");
   const variety = (config.broadcast.variety_folders || []).map((f) => String(f).toLowerCase());
   if (dir && variety.includes(dir.split("/").at(-1).toLowerCase())) return row.source_key;
+  const family = dir && familyOf(dir.split("/").at(-1));
+  if (family) return `family:${family}`;
   return !dir || ["youtube", "uploads"].includes(dir.toLowerCase()) ? row.source_key : dir;
 }
 
@@ -159,7 +169,7 @@ function pick(kind, theme, exclude, maxMs = Infinity, usedGroups = null, noRepea
   const singles = groups.filter(single), brands = groups.filter((g) => !single(g));
   let key, group;
   if (brands.length && (!singles.length || Math.random() < brandShare())) {
-    const weight = ([k, g]) => folderWeight(fullGroups.get(k)?.length ?? g.length);
+    const weight = ([k, g]) => folderWeight(fullGroups.get(k)?.length ?? g.length) * (k.startsWith("family:") ? familyWeight() : 1);
     let n = Math.random() * brands.reduce((t, b) => t + weight(b), 0);
     [key, group] = brands.find((b) => (n -= weight(b)) < 0) || brands.at(-1);
   } else {

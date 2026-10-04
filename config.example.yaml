@@ -23,6 +23,13 @@ broadcast:
   # A folder of commercials counts as one brand (so 88 Pop-Tarts ads don't take over);
   # folders named here are packs of many different ads, and each file counts on its own.
   variety_folders: ["commercialpack1", "Collectionof90sCommercials"]
+  # Brand folders of one kind of product (every cereal) counted as ONE brand, so a break
+  # carries at most one of them and the family doesn't take over just because it has dozens
+  # of folders. Matched by folder name, ignoring case. ad_family_weight: how often a family
+  # comes up against a single folder, as a multiple of what its combined size would give.
+  ad_families:
+    cereal: ["Alpha-Bits", "Apple Jacks", "Basic 4", "Cap'n Crunch", "Cheerios", "Chex", "Cinnamon Toast Crunch", "Cocoa Puffs", "Cookie Crisp", "Corn Pops", "Froot Loops", "Frosted Flakes", "Honeycomb", "Kellogg's", "Krave", "Lucky Charms", "Pebbles", "Post", "Raisin Bran", "Rice Krispies", "Special K", "Trix"]
+  ad_family_weight: 2
   # How often a pick comes from a brand folder (all brand folders together) instead of the
   # mixed pool (variety-folder files, loose files, the youtube/uploads thread folders).
   brand_share: 0.25
