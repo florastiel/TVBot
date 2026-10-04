@@ -40,7 +40,7 @@ pools:
   WED_MOVIE: [Buddy Cop Night, Whodunit Feature Films, Western Showdown, Date Night, Dark Comedy Night, Dune Double Feature, Knives Out Saga, Edge of Your Seat]
   THU_MOVIE: [Awards Season Cinema, Prestige Biopic Cinema, Broadway Musicals, Documentary Night, World Cinema, Coming of Age Cinema, Queer Cinema, Music Movie Night,
     Autumn Comfort Cinema, Sports Movie Night]
-  FRI_MOVIE: [Nineties Movie Night, Camp Horror Night, Campy Halloween Classics, Action Blockbuster Night, Superheroes, Anime Action Movies, Big Screen Laughs, Halloween Horror Features, Christmas Movies,
+  FRI_MOVIE: [Nineties Movie Night, Camp Horror Night, Campy Halloween Classics, Action Blockbuster, Superheroes, Anime Action Movies, Big Screen Laughs, Halloween Horror Features, Christmas Movies,
     Comedy Specials, Die Hard Marathon, Fortnite Movie Night, Insert Coin Cinema, End of the World, Full Throttle, Tarantino Night,
     Throwback Cinema, Summer Beach Watch, Transformers Saga, Sports Movie Night]
   SAT_EVE: [Men in Black Saga, Campy Halloween Classics, Camp Horror Night, Gremlins Double Feature, Mission Impossible Marathon, John Wick Saga, Twilight Saga, Evangelion Rebuild, Naruto Movie Night, Broadway Musicals,
