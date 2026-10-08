@@ -10,9 +10,15 @@
 # The weekly Claude Code pass (PROGRAMMING.md) edits this file; so can you. Changes apply
 # to grid days planned after the change (the grid runs about two weeks ahead).
 
+# mix: anime_max_share caps how much of the grid anime buckets (60%+ anime titles) can take. Once
+#   anime holds that share of the slots laid out, anime buckets sit out while any other bucket in
+#   the pool can air. 0 or absent = no cap.
+mix:
+  anime_max_share: 0.25
+
 pools:
   LATE_A: [Adult Swim, Toonami, Seinen Gag Night, Grappler Gauntlet, Cringe Comedy Hour, Grown-Up Cartoons, Versus Mode]
-  LATE_MOVIE: [Midnight Fright Night, Camp Horror Night, Cult Weird Cinema, Documentary Night, "So Bad It's Good", Big Screen Laughs, Comedy Specials, Found Footage Oddities,
+  LATE_MOVIE: [Camp Horror Night, Cult Weird Cinema, Documentary Night, "So Bad It's Good", Big Screen Laughs, Comedy Specials, Found Footage Oddities,
     David Lynch Nightmare, Fright Feature Vault, Halloween Horror Features, Slasher Night, Spooktober Anime, Western Showdown, Insert Coin Cinema, Bloodsucker Cinema, End of the World,
     Alien Saga, Matrix Marathon, Tarantino Night, Dark Comedy Night, Mind Benders, Queer Cinema,
     Edge of Your Seat, Cults and Curses, Ted and Friends, Fate Anthology]
@@ -47,7 +53,7 @@ pools:
     X-Men Movie Marathon, Dark Knight Trilogy, Spider-Man Saga, Hunger Games Saga, Planet of the Apes, Die Hard Marathon, Fortnite Movie Night, Full Throttle,
     Star Wars Saga, Matrix Marathon, Middle-earth Saga, Alien Saga, Taken Trilogy, Dune Double Feature, Tarantino Night,
     Transformers Saga, Knives Out Saga, Fate Anthology, Throwback Cinema, Summer Beach Watch]
-  SAT_LATE: [Midnight Fright Night, Camp Horror Night, Scream Marathon, Jason Voorhees Marathon, Slasher Night, Cult Weird Cinema, Comedy Specials, "So Bad It's Good",
+  SAT_LATE: [Halloween Horror Features, Camp Horror Night, Scream Marathon, Jason Voorhees Marathon, Slasher Night, Cult Weird Cinema, Comedy Specials, "So Bad It's Good",
     Cults and Curses, Edge of Your Seat, Ted and Friends]
   SUN_EVE: [Nineties Movie Night, Halloweentown Saga, Campy Halloween Classics, Date Night, Broadway Musicals, Western Showdown, Awards Season Cinema, Studio Ghibli Melancholy, Christmas Movies, World Cinema, Music Movie Night, Queer Cinema, Coming of Age Cinema,
     Autumn Comfort Cinema, Throwback Cinema, Sports Movie Night, Knives Out Saga]

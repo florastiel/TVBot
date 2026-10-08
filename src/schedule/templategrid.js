@@ -44,6 +44,21 @@ export function checkTemplate(t, buckets) {
   return problems;
 }
 
+// Buckets that are mostly anime (60%+ of their shows/movies are tagged anime), by name. Catch-alls don't count.
+function animeBuckets(buckets) {
+  const db = getDb();
+  const show = db.prepare("SELECT anime FROM shows WHERE title = ?");
+  const movie = db.prepare("SELECT anime FROM tags WHERE item_id = ?");
+  const out = new Set();
+  for (const b of buckets) {
+    const n = b.shows.length + b.items.length;
+    if (b.source === "fallback" || !n) continue;
+    const anime = b.shows.filter((t) => show.get(t)?.anime).length + b.items.filter((i) => movie.get(i)?.anime).length;
+    if (anime / n >= 0.6) out.add(b.name);
+  }
+  return out;
+}
+
 // Slots for `days` ([{ weekday, y, m, d, ... }]). Recent grid history seeds the rotation so
 // one week doesn't repeat the last.
 export function templateSlots(days, buckets) {
@@ -54,6 +69,11 @@ export function templateSlots(days, buckets) {
   for (const r of getDb().prepare(`SELECT b.name FROM plan_slots p JOIN buckets b ON b.id = p.bucket_id WHERE p.start_at >= ? AND p.start_at < ? ORDER BY p.start_at`)
     .all(days[0].startMs - 21 * 86400000, days[0].startMs)) lastUsed.set(r.name, tick++);
   const standing = config.broadcast.standing_slots || [];
+  // mix.anime_max_share (programming.yaml): once anime holds this share of the slots laid out so far,
+  // anime buckets sit out while any other bucket in the pool can air.
+  const maxAnime = Number(t.mix?.anime_max_share) || 0;
+  const anime = maxAnime ? animeBuckets(buckets) : new Set();
+  let animeSlots = 0;
   const slots = [];
   for (const day of days) {
     const used = new Map();
@@ -68,11 +88,13 @@ export function templateSlots(days, buckets) {
       } else {
         const ok = (t.pools[pool] || []).map((n) => byName.get(n)).filter((x) => x && inSeason(x, day) && x.dayparts.includes(daypart(h)) && (used.get(x.name) || 0) < 2);
         ok.sort((x, y) => (lastUsed.get(x.name) ?? -1) - (lastUsed.get(y.name) ?? -1));
-        b = ok[0];
+        const capped = maxAnime && slots.length >= 4 && animeSlots / slots.length >= maxAnime;
+        b = (capped && ok.find((x) => !anime.has(x.name))) || ok[0];
       }
       if (!b) { log.warn(`plan: template: nothing can air ${day.weekday} ${day.date} ${hhmm} (pool ${pool}); the slot before runs on`); continue; }
       lastUsed.set(b.name, tick++);
       used.set(b.name, (used.get(b.name) || 0) + 1);
+      if (anime.has(b.name)) animeSlots++;
       slots.push({ at, bucket: b });
     }
   }
