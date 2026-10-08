@@ -239,6 +239,15 @@ const MIGRATIONS = [
   -- none found, NULL = not checked yet. player/program.js cuts the credits short after this.
   ALTER TABLE items ADD COLUMN credits_start INTEGER;
   `,
+  `
+  -- "Play next": items queued by hand (tv.cmd queue), aired in order at the next show boundary
+  -- by player/program.js, whatever the schedule says.
+  CREATE TABLE play_queue (
+    id       INTEGER PRIMARY KEY,
+    item_id  INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    added_at TEXT NOT NULL
+  );
+  `,
 ];
 
 let db;

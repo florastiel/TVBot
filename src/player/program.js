@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { DATA_DIR, config } from "../config.js";
 import { getItem, toSegment, makeBreak, fillBreak, card } from "./segments.js";
 import { wantSpool } from "./spool.js";
-import { blockAt, nextBlockAfter, blocksBetween, usedIds, appendToBlock, shiftBlocks } from "../schedule/store.js";
+import { blockAt, nextBlockAfter, blocksBetween, usedIds, appendToBlock, shiftBlocks, queuePop } from "../schedule/store.js";
 import { inOrder, nextInOrder } from "../schedule/generate.js";
 import { getDb } from "../db.js";
 import { schedulableSql } from "../catalog/schedulable.js";
@@ -286,6 +286,11 @@ export class ScheduleProgram {
     for (let i = start; i < pieces.length; i++) {
       const p = pieces[i];
       if (this.skipped.has(p.row.id)) continue;
+      // The "play next" queue (tv.cmd queue): between shows, never inside one.
+      if (i > start && p.row.id !== pieces[i - 1].row.id) {
+        yield* this.playQueued(block);
+        if (this.live) return null;
+      }
       this.blockRest = new Set(pieces.slice(i).map((q) => q.row.id));
       // Download ahead (in airing order) whatever airs in the next few hours and needs
       // it for subtitles, so even big movies are ready well before they start.
@@ -319,6 +324,8 @@ export class ScheduleProgram {
         if (this.live) return null;
       }
     }
+    yield* this.playQueued(block, { lead: true });
+    if (this.live) return null;
     this.blockRest = new Set();
     // The break between blocks. A special that starts when this block ends keeps its announced
     // time, so a full-length break (several spots, easily 5+ minutes) started with less than
@@ -344,6 +351,32 @@ export class ScheduleProgram {
       yield* before(fillBreak(this.plex, left, { theme: block.theme, upNextTitle: nextTitle }), nextHead);
     }
     return this.clock() > block.end_at + 30000 && nextBlock?.start_at === block.end_at ? nextBlock : null;
+  }
+
+  // Airs whatever is in the play-next queue, oldest first, each cut into pieces with its own
+  // breaks like a scheduled item and saved into the block (so it counts as aired). The block
+  // runs long by their length; retime() moves the rest of the day. lead: a break first (the
+  // show before it ended without one).
+  *playQueued(block, { lead = false } = {}) {
+    for (let id; (id = queuePop()) != null; ) {
+      const row = getItem(id);
+      if (!row || !row.present || !row.playable) continue;
+      if (lead) { yield* makeBreak(this.plex, { theme: block.theme }); if (this.live) return; }
+      lead = true;
+      appendToBlock(block.id, row.id);
+      const pieces = planPieces([row]);
+      for (let k = 0; k < pieces.length; k++) {
+        const q = pieces[k];
+        this.blockRest = new Set([row.id]);
+        yield { ...toSegment(row, this.plex, { seekMs: q.from }), durationMs: q.to, fullDurationMs: row.duration_ms, continuation: q.from > 0, blockId: block.id, upNext: null };
+        if (this.live || this.skipped.has(row.id)) return;
+        if (k + 1 < pieces.length) {
+          const targetMs = row.duration_ms >= LONG_MS ? breakTargetMs(q.to - q.from, row.duration_ms) : null;
+          yield* makeBreak(this.plex, { theme: block.theme, inside: true, show: row, targetMs });
+          if (this.live) return;
+        }
+      }
+    }
   }
 
   // Make the block end now and move the rest of the day with it. False if it can't.

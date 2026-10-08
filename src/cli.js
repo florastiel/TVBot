@@ -183,6 +183,33 @@ Object.assign(commands, {
     }
   },
 
+  // tv.cmd queue "Show S1E3" | "Movie title" | "Show" (a random unaired episode) | <item id>; --list; --clear
+  // The player airs the queue at the next show boundary, then carries on with the schedule.
+  async queue(...args) {
+    const { queueAdd, queueList, queueClear } = await import("./schedule/store.js");
+    const { getDb } = await import("./db.js");
+    const { schedulableSql } = await import("./catalog/schedulable.js");
+    const name = (r) => (r.kind === "episode" ? `${r.show_title} S${r.season}E${r.episode}` : `${r.title}${r.year ? ` (${r.year})` : ""}`);
+    const show = () => queueList().forEach((r, i) => console.log(`  ${i + 1}. ${name(r)}`)) ?? "";
+    if (args.includes("--clear")) return console.log(`cleared ${queueClear()} from the queue`);
+    const text = args.filter((a) => !a.startsWith("--")).join(" ").trim();
+    if (!text) { console.log("play next:"); return show(); }
+    const db = getDb();
+    const S = schedulableSql("i");
+    const ep = text.match(/^(.+?)\s+S(\d+)\s*E(\d+)$/i);
+    let row;
+    if (/^\d+$/.test(text)) row = db.prepare(`SELECT * FROM items i WHERE i.id = ? AND ${S}`).get(Number(text));
+    else if (ep) row = db.prepare(`SELECT * FROM items i WHERE i.kind = 'episode' AND i.show_title LIKE ? AND i.season = ? AND i.episode = ? AND ${S}`).get(`%${ep[1]}%`, Number(ep[2]), Number(ep[3]));
+    else {
+      row = db.prepare(`SELECT * FROM items i WHERE i.kind = 'movie' AND i.title LIKE ? AND ${S} ORDER BY length(i.title) LIMIT 1`).get(`%${text}%`)
+        || db.prepare(`SELECT * FROM items i WHERE i.kind = 'episode' AND i.show_title LIKE ? AND ${S} ORDER BY (i.last_played_at IS NOT NULL), random() LIMIT 1`).get(`%${text}%`);
+    }
+    if (!row) throw new Error(`nothing schedulable matches "${text}"`);
+    queueAdd(row.id);
+    console.log(`queued ${name(row)}; play next:`);
+    show();
+  },
+
   // tv.cmd special "Scream marathon Saturday 8pm"   (or no text: Claude picks one)
   async special(...words) {
     const { planSpecials } = await import("./schedule/specials.js");
@@ -292,6 +319,7 @@ if (!commands[cmd]) {
   catalog --html               write catalog.html: every show/movie, Netflix-style rows + search
   plan [days]                  print the grid of bucket slots
   guide                        print what's on today
+  queue ["Show S1E3"|title|id] [--list|--clear]  play next: airs at the next show boundary (no text: list the queue)
   playlist --clear             drop the test playlist; the TV follows the schedule
   add commercial|clip <url...> download from YouTube etc. into rotation
   special ["request"]          plan a marathon/themed special (no text: Claude picks)

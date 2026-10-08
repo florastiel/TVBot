@@ -49,6 +49,19 @@ export function appendToBlock(blockId, itemId) {
   db.prepare("INSERT INTO block_items (block_id, position, item_id) VALUES (?, ?, ?)").run(blockId, pos, itemId);
 }
 
+// The "play next" queue (tv.cmd queue): the player airs these in order at the next show boundary.
+export const queueAdd = (itemId) => getDb().prepare("INSERT INTO play_queue (item_id, added_at) VALUES (?, ?)").run(itemId, new Date().toISOString());
+export const queueList = () => getDb().prepare("SELECT q.id, q.item_id, i.kind, i.title, i.year, i.show_title, i.season, i.episode FROM play_queue q JOIN items i ON i.id = q.item_id ORDER BY q.id").all();
+export const queueClear = () => getDb().prepare("DELETE FROM play_queue").run().changes;
+// Take the oldest queued item off the queue; its id, or null when the queue is empty.
+export function queuePop() {
+  const db = getDb();
+  const r = db.prepare("SELECT id, item_id FROM play_queue ORDER BY id LIMIT 1").get();
+  if (!r) return null;
+  db.prepare("DELETE FROM play_queue WHERE id = ?").run(r.id);
+  return r.item_id;
+}
+
 // Block `blockId` (ending at oldEnd) now ends at newEnd, and the blocks after it move by
 // the same amount, earlier or later. The move stops at a gap or at a special, which keeps
 // its announced time: moving earlier, the block just before it keeps its end (the spare
