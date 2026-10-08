@@ -13,8 +13,11 @@
 # mix: anime_max_share caps how much of the grid anime buckets (60%+ anime titles) can take. Once
 #   anime holds that share of the slots laid out, anime buckets sit out while any other bucket in
 #   the pool can air. 0 or absent = no cap.
+#   season_ramp_min: a seasonal bucket's chance of taking a slot on its first day (active_from),
+#   rising evenly to 1 on its last day, so holiday programming builds up instead of front-loading.
 mix:
   anime_max_share: 0.25
+  season_ramp_min: 0.15
 
 pools:
   LATE_A: [Adult Swim, Toonami, Seinen Gag Night, Grappler Gauntlet, Cringe Comedy Hour, Grown-Up Cartoons, Versus Mode]

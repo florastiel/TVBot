@@ -84,10 +84,50 @@ function subdivide(found, durationMs, cues) {
 // and get long stretches between their found break points cut up too).
 const hiddenTitles = (block) => (config.broadcast.hidden_title_blocks || []).includes(block.label);
 
-export function planPieces(items) {
+// Movies with broadcast.movie_breaks on: one long break at the middle (two, a third and two
+// thirds in, over broadcast.movie_two_break_minutes), at whichever chapter mark or found
+// fade-to-black is nearest the target (within a tenth of the film), else right at it if
+// split_without_chapters allows. The break is sized to the stretch before it (see adload.js).
+function movieCuts(r, chapters) {
+  const D = r.duration_ms;
+  const n = D > (Number(config.broadcast.movie_two_break_minutes) || 120) * 60000 ? 2 : 1;
+  const points = [...chapters, ...(r.ad_cues ? JSON.parse(r.ad_cues) : [])].filter((c) => c > EDGE && c < D - EDGE);
+  const out = [];
+  for (let k = 1; k <= n; k++) {
+    const target = (D * k) / (n + 1);
+    const near = points.filter((c) => Math.abs(c - target) <= D / 10 && !out.some((o) => Math.abs(o - c) < D / 4))
+      .sort((x, y) => Math.abs(x - target) - Math.abs(y - target))[0];
+    const cut = near ?? (config.broadcast.split_without_chapters ? Math.round(target) : null);
+    if (cut != null) out.push(cut);
+  }
+  return out.sort((x, y) => x - y);
+}
+
+// Credits cut short (broadcast.credits_keep_seconds, 0 = off): an item whose credits marker is in
+// its back half ends that long after the credits start, if that saves at least 30 seconds.
+function creditsTrimmed(pieces) {
+  const keep = Number(config.broadcast.credits_keep_seconds) || 0;
+  if (!keep) return pieces;
+  return pieces.map((p) => {
+    const r = p.row, start = r.credits_start;
+    if (p.to !== r.duration_ms || !(start > r.duration_ms / 2)) return p;
+    const end = start + keep * 1000;
+    return end <= r.duration_ms - 30000 && end > p.from + 60000 ? { ...p, to: end } : p;
+  });
+}
+
+export const planPieces = (items) => creditsTrimmed(planPiecesRaw(items));
+
+function planPiecesRaw(items) {
   const out = [];
   const cap = config.broadcast.episode_breaks;
   for (const r of items) {
+    if (r.kind === "movie" && config.broadcast.movie_breaks && r.duration_ms >= LONG_MS) {
+      let from = 0;
+      for (const cut of movieCuts(r, r.cues ? JSON.parse(r.cues) : [])) { out.push({ row: r, from, to: cut }); from = cut; }
+      out.push({ row: r, from, to: r.duration_ms });
+      continue;
+    }
     const limit = r.kind === "episode" ? cap : Infinity;
     if (limit <= 0) { out.push({ row: r, from: 0, to: r.duration_ms }); continue; }
     const cues = r.cues ? JSON.parse(r.cues) : [];

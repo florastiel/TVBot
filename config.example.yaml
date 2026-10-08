@@ -51,6 +51,9 @@ broadcast:
   max_show_block_minutes: 75   # regular blocks of episodes are at most this long (movies and specials can run longer)
   split_without_chapters: true # if a file has no chapter markers, allow a break at its middle (may be mid-scene)
   piece_minutes: 12            # a movie or hour-long show (40+ min) gets a break about this often (at a chapter mark, or right at the point without chapters)
+  movie_breaks: true           # a movie gets one long break at its midpoint (nearest chapter mark or fade to black) instead of one every piece_minutes; false = the old way
+  movie_two_break_minutes: 120 # a movie longer than this gets two breaks, at a third and two thirds
+  credits_keep_seconds: 20     # end credits are cut off this long after they start (needs a Plex credits marker; 0 = play them in full)
   ad_minutes_per_hour: 12      # ads per hour of airtime for those long items; each of their breaks is sized to the stretch of show before it, and their blocks are planned to match
   clip_chance: 0.3             # chance a break includes one of the clips (0 to 1)
   no_repeat_days: 14           # don't reuse an episode/movie within this many days

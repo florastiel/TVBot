@@ -44,6 +44,25 @@ export function checkTemplate(t, buckets) {
   return problems;
 }
 
+// How far into its window a seasonal bucket is on this day: 0 on active_from, 1 on active_to
+// (windows may wrap New Year). Year-round buckets: 1.
+function seasonProgress(b, day) {
+  if (!b.active_from || !b.active_to) return 1;
+  const [fm, fd] = b.active_from.split("-").map(Number);
+  const [tm, td] = b.active_to.split("-").map(Number);
+  const wraps = b.active_from > b.active_to;
+  const startYear = wraps && `${String(day.m).padStart(2, "0")}-${String(day.d).padStart(2, "0")}` <= b.active_to ? day.y - 1 : day.y;
+  const start = Date.UTC(startYear, fm - 1, fd), end = Date.UTC(startYear + (wraps ? 1 : 0), tm - 1, td);
+  return end > start ? Math.min(1, Math.max(0, (Date.UTC(day.y, day.m - 1, day.d) - start) / (end - start))) : 1;
+}
+
+// Stable 0..1 roll for a bucket in a slot, so replanning a day doesn't reshuffle it.
+function roll(...parts) {
+  let h = 2166136261;
+  for (const c of parts.join("|")) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return ((h >>> 0) % 10000) / 10000;
+}
+
 // Buckets that are mostly anime (60%+ of their shows/movies are tagged anime), by name. Catch-alls don't count.
 function animeBuckets(buckets) {
   const db = getDb();
@@ -74,6 +93,7 @@ export function templateSlots(days, buckets) {
   const maxAnime = Number(t.mix?.anime_max_share) || 0;
   const anime = maxAnime ? animeBuckets(buckets) : new Set();
   let animeSlots = 0;
+  const rampMin = Math.min(1, Math.max(0, Number(t.mix?.season_ramp_min ?? 0.15)));
   const slots = [];
   for (const day of days) {
     const used = new Map();
@@ -87,6 +107,10 @@ export function templateSlots(days, buckets) {
         b = rule && byName.get(rule.bucket);
       } else {
         const ok = (t.pools[pool] || []).map((n) => byName.get(n)).filter((x) => x && inSeason(x, day) && x.dayparts.includes(daypart(h)) && (used.get(x.name) || 0) < 2);
+        // Seasonal buckets ramp up: a slot's chance of taking one is season_ramp_min on its first day,
+        // rising to 1 by the end of its window (skipped if that would leave nothing to air).
+        const ramped = ok.filter((x) => !x.active_from || roll(day.date, hhmm, x.name) < rampMin + (1 - rampMin) * seasonProgress(x, day));
+        if (ramped.length) ok.splice(0, ok.length, ...ramped);
         ok.sort((x, y) => (lastUsed.get(x.name) ?? -1) - (lastUsed.get(y.name) ?? -1));
         const capped = maxAnime && slots.length >= 4 && animeSlots / slots.length >= maxAnime;
         b = (capped && ok.find((x) => !anime.has(x.name))) || ok[0];

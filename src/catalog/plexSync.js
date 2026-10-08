@@ -155,6 +155,24 @@ export async function syncPlex(plex, { sinceMs = 0 } = {}) {
   if (gone) log.info(`plex: ${gone} items no longer on the server (kept in history, not schedulable)`);
 
   await refreshTracks(plex);
+  await refreshCredits(plex);
+}
+
+// Where Plex says the end credits start (ms), or -1 if it has no credits marker for the item.
+const creditsStartOf = (m) => (m.Marker || []).filter((x) => x.type === "credits").map((x) => x.startTimeOffset)[0] ?? -1;
+
+// Credits markers for Plex items that predate credits_start (refreshTracks covers new and changed ones).
+async function refreshCredits(plex) {
+  const db = getDb();
+  const todo = db.prepare("SELECT id, source_key FROM items WHERE source = 'plex' AND present = 1 AND credits_start IS NULL").all();
+  if (!todo.length) return;
+  log.info(`plex: reading credits markers for ${todo.length} items`);
+  const save = db.prepare("UPDATE items SET credits_start = ? WHERE id = ?");
+  const byKey = new Map(todo.map((r) => [r.source_key, r.id]));
+  for (let i = 0; i < todo.length; i += 100) {
+    const meta = await plex.metadataBatch(todo.slice(i, i + 100).map((r) => r.source_key));
+    tx(() => { for (const m of meta) { const id = byKey.get(String(m.ratingKey)); if (id) save.run(creditsStartOf(m), id); } });
+  }
 }
 
 // Read audio/subtitle tracks for items that are new or changed since we last looked.
@@ -166,7 +184,7 @@ async function refreshTracks(plex) {
   if (!todo.length) return;
   log.info(`plex: reading audio/subtitle tracks for ${todo.length} new or changed items`);
   const save = db.prepare(`UPDATE items SET audio_stream = ?, audio_lang = ?, subs = ?, playable = ?,
-                           unplayable_reason = ?, streams_checked = ?, cues = ?, hdr = ? WHERE id = ?`);
+                           unplayable_reason = ?, streams_checked = ?, cues = ?, hdr = ?, credits_start = ? WHERE id = ?`);
   const byKey = new Map(todo.map((r) => [r.source_key, r]));
   const batches = [];
   for (let i = 0; i < todo.length; i += 100) batches.push(todo.slice(i, i + 100));
@@ -187,7 +205,7 @@ async function refreshTracks(plex) {
           const cues = (m.Chapter || []).map((c) => c.startTimeOffset).filter((ms) => ms > 0);
           save.run(t.audioStream ?? null, t.audioLang ?? null, JSON.stringify(t.subs || { mode: "none" }),
             t.playable ? 1 : 0, t.reason || null, row.source_updated, cues.length ? JSON.stringify(cues) : null,
-            row.media_path ? hdrFromPlexStreams(streams) : null, row.id);
+            row.media_path ? hdrFromPlexStreams(streams) : null, creditsStartOf(m), row.id);
         }
       });
       done += b.length;

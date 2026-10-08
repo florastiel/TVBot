@@ -234,6 +234,11 @@ const MIGRATIONS = [
   ALTER TABLE buckets ADD COLUMN max_hours_week REAL;     -- most airtime in a Monday-Sunday week
   ALTER TABLE buckets ADD COLUMN max_run_minutes INTEGER; -- longest stretch of it back to back
   `,
+  `
+  -- Where the end credits start (ms), from Plex's credits marker (catalog/plexSync.js); -1 = checked,
+  -- none found, NULL = not checked yet. player/program.js cuts the credits short after this.
+  ALTER TABLE items ADD COLUMN credits_start INTEGER;
+  `,
 ];
 
 let db;
