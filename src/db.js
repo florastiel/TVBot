@@ -234,6 +234,13 @@ const MIGRATIONS = [
   ALTER TABLE buckets ADD COLUMN max_hours_week REAL;     -- most airtime in a Monday-Sunday week
   ALTER TABLE buckets ADD COLUMN max_run_minutes INTEGER; -- longest stretch of it back to back
   `,
+  `
+  -- Measured integrated loudness (LUFS) of a commercial/clip/eyecatch, by catalog/loudness.js.
+  -- player/segments.js turns it into a gain so every spot airs at broadcast.ad_loudness_lufs.
+  -- loudness_checked: the source_updated this was measured for (like ad_cues_checked).
+  ALTER TABLE items ADD COLUMN loudness_lufs REAL;
+  ALTER TABLE items ADD COLUMN loudness_checked INTEGER;
+  `,
 ];
 
 let db;

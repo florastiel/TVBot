@@ -7,7 +7,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, config } from "../config.js";
 import { getItem, toSegment, makeBreak, fillBreak, card } from "./segments.js";
-import { wantSpool } from "./spool.js";
+import { wantSpool, noteStreaming } from "./spool.js";
 import { blockAt, nextBlockAfter, blocksBetween, usedIds, appendToBlock, shiftBlocks } from "../schedule/store.js";
 import { inOrder, nextInOrder } from "../schedule/generate.js";
 import { getDb } from "../db.js";
@@ -252,6 +252,7 @@ export class ScheduleProgram {
       const ahead = [...new Set(pieces.slice(i + 1).map((q) => q.row))];
       for (const b of blocksBetween(block.end_at, block.end_at + LOOKAHEAD_MS)) ahead.push(...b.items);
       wantSpool(ahead, this.plex);
+      if (!this.skipped.has(p.row.id) && p.from === 0) noteStreaming(p.row); // once per item, at its first piece
       const up = upNextOf(i);
       const seekMs = p.from + (i === start ? offsetMs : 0);
       const startedAt = this.clock();

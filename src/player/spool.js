@@ -64,15 +64,54 @@ export function spooledPath(row) {
 
 // Ask for these items to be downloaded and checked for break points (in order), if
 // they need it.
+const reported = new Set(); // "id:reason" already logged, so a skipped item says why once
+const label = (row) => (row.show_title ? `${row.show_title} S${row.season}E${row.episode}` : row.title);
+function reportOnce(row, why) {
+  const k = `${row.id}:${why}`;
+  if (reported.has(k)) return;
+  reported.add(k);
+  log.info(`spool: ${label(row)} (${row.id}) ${why}`);
+}
+
+// rows are in airing order. The first one that needs work (the next thing to air) goes to the
+// FRONT of the queue, even if the queue already holds a long list of later items; the rest
+// queue behind whatever is there. A download in progress isn't interrupted.
 export function wantSpool(rows, plex) {
+  let next = true;
   for (const row of rows) {
-    if (!row || failed.has(row.id)) continue;
-    const download = needsSpool(row) && !existsSync(fileFor(row)) && !(row.source === "plex" && isPlexPaused());
+    if (!row) continue;
+    if (failed.has(row.id)) { reportOnce(row, "isn't queued: its download failed earlier, so it streams instead"); continue; }
+    const missing = needsSpool(row) && !existsSync(fileFor(row));
+    const paused = missing && row.source === "plex" && isPlexPaused();
+    if (paused) reportOnce(row, "waits for the download: Plex downloads are paused");
+    const download = missing && !paused;
     if (!download && !needsCheck(row) && !needsTextCheck(row)) continue;
-    if (busy?.id === row.id || queue.some((q) => q.row.id === row.id)) continue;
+    if (busy?.id === row.id) { next = false; continue; }
+    const at = queue.findIndex((q) => q.row.id === row.id);
+    if (next) {
+      next = false;
+      if (at > 0) queue.unshift(...queue.splice(at, 1));
+      else if (at < 0) { queue.unshift({ row, plex }); log.info(`spool: queued ${label(row)} (${row.id}) at the front of the queue (${queue.length - 1} behind it)`); }
+      continue;
+    }
+    if (at >= 0) continue;
     queue.push({ row, plex });
+    log.info(`spool: queued ${label(row)} (${row.id}) (#${queue.length} in line)`);
   }
   if (!busy) work();
+}
+
+// Called as an item starts to air: say so when it has no local copy (so no inside subtitles or
+// detected breaks), and why - the download is still going, it's waiting in line, it failed...
+export function noteStreaming(row) {
+  if (!needsSpool(row) || existsSync(fileFor(row))) return;
+  const q = queue.findIndex((x) => x.row.id === row.id);
+  const why = failed.has(row.id) ? "its download failed"
+    : busy?.id === row.id ? "its download is still in progress"
+    : q >= 0 ? `it is #${q + 1} in the download queue`
+    : row.source === "plex" && isPlexPaused() ? "Plex downloads are paused"
+    : "it was never queued";
+  log.warn(`spool: playing ${label(row)} (${row.id}) without a local copy (no inside subtitles): ${why}`);
 }
 
 async function work() {

@@ -8,6 +8,7 @@ import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
 import { chooseTracks, fromFfprobeStreams, hdrFromFfprobeStreams } from "./tracks.js";
 import { parseRelease, showName, tidy as tidyName } from "./release.js";
+import { measureSpots } from "./loudness.js";
 
 const run = promisify(execFile);
 const VIDEO = new Set([".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts", ".webm", ".flv"]);
@@ -206,4 +207,7 @@ export async function scanLocal() {
   const n = todo.length;
   await Promise.all(Array.from({ length: 4 }, worker));
   if (n) log.info(`local: read durations/tracks for ${n} files`);
+
+  // Spots (commercials, clips, eyecatches) are brought to one volume when they air.
+  await measureSpots();
 }

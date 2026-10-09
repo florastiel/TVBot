@@ -52,7 +52,8 @@ broadcast:
   split_without_chapters: true # if a file has no chapter markers, allow a break at its middle (may be mid-scene)
   piece_minutes: 12            # a movie or hour-long show (40+ min) gets a break about this often (at a chapter mark, or right at the point without chapters)
   ad_minutes_per_hour: 12      # ads per hour of airtime for those long items; each of their breaks is sized to the stretch of show before it, and their blocks are planned to match
-  clip_chance: 0.3             # chance a break includes one of the clips (0 to 1)
+  ad_loudness_lufs: -24        # every commercial, clip and eyecatch is brought to this volume (measured once per file); closer to 0 = louder, -20 loud, -30 quiet. 0 or "off" = leave them as they are
+  clip_chance: 0.3            # chance a break includes one of the clips (0 to 1)
   no_repeat_days: 14           # don't reuse an episode/movie within this many days
   plan_days: 1                 # how far ahead blocks are filled from the week's grid (upkeep tops it up)
   grid_weeks_ahead: 2          # how far ahead Claude lays out the grid of block kinds (a week at a time)
@@ -158,6 +159,7 @@ player:
   port: 7651                   # local-only port the bot uses to talk to the player
   spool_max_gb: 30             # download-ahead folder (for subtitles inside files) never grows past this
   spool_max_mbps: 20           # download-ahead speed limit, leaving the Plex server's upload for the live stream
+  max_source_height: 2160      # never schedule video taller than this (8K can't be software-decoded in realtime)
   spool_max_file_gb: 8         # files bigger than this aren't downloaded ahead; they play without subtitles
   stream_preview_minutes: 5    # how often the Go Live thumbnail updates (0 = no thumbnail)
 

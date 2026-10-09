@@ -36,6 +36,7 @@ const DEFAULTS = {
     piece_minutes: 12,
     ad_minutes_per_hour: 12,
     brand_share: 0.25,
+    ad_loudness_lufs: -24,
     clip_chance: 0.3,
     no_repeat_days: 14,
     plan_days: 1,
@@ -54,7 +55,7 @@ const DEFAULTS = {
   realdebrid: { enabled: true, min_file_mb: 50, skip_torrents: [] },
   encode: { height: 720, frame_rate: 30, bitrate_kbps: 2500, max_bitrate_kbps: 4000, encoder: "software", hw_decode: false },
   entrance: { max_seconds: 8, loudness_lufs: -32 },
-  player: { port: 7651, spool_max_gb: 30, spool_max_mbps: 20, spool_max_file_gb: 8, stream_preview_minutes: 5 },
+  player: { port: 7651, spool_max_gb: 30, spool_max_mbps: 20, spool_max_file_gb: 8, max_source_height: 2160, stream_preview_minutes: 5 },
   claude: { model: "claude-sonnet-5", scheduling: "api" },
 };
 

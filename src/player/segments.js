@@ -6,6 +6,7 @@ import { getDb } from "../db.js";
 import { SUBS_DIR } from "../catalog/plexSync.js";
 import { spooledPath } from "./spool.js";
 import { takeWeather } from "../weather/report.js";
+import { adGainDb } from "../catalog/loudness.js";
 
 export function describe(row) {
   if (row.kind === "episode" || row.kind === "short") {
@@ -51,6 +52,8 @@ export function toSegment(row, plex, { seekMs = 0, breakId = null } = {}) {
     durationMs: row.duration_ms,
     audioStream: row.audio_stream,
     hdr: !!row.hdr,
+    // Commercials, clips and eyecatches are evened out to broadcast.ad_loudness_lufs.
+    gainDb: ["commercial", "clip", "eyecatch"].includes(row.kind) ? adGainDb(row) : 0,
     subs,
     subsFile,
     breakId,
@@ -171,8 +174,21 @@ function pick(kind, theme, exclude, maxMs = Infinity, usedGroups = null, noRepea
   const single = ([k, g]) => g.length === 1 && k === g[0].source_key;
   const singles = groups.filter(single), brands = groups.filter((g) => !single(g));
   let key, group;
-  if (brands.length && (!singles.length || Math.random() < brandShare())) {
-    const weight = ([k, g]) => folderWeight(fullGroups.get(k)?.length ?? g.length) * (k.startsWith("family:") ? familyWeight() : 1);
+  // Commercials: brand folders get a fixed brand_share (an 88-ad folder mustn't take over).
+  // Clips: that fixed share piled 75% of the airtime onto the handful of loose files (each
+  // aired ~8x as often as a foldered clip), so by default every clip gets an equal turn: a
+  // folder's chance is its share of the files. broadcast.clip_brand_share (0 to 1) overrides.
+  const clipShare = kind === "clip" && config.broadcast.clip_brand_share != null ? Math.min(1, Math.max(0, Number(config.broadcast.clip_brand_share))) : null;
+  const perFile = kind === "clip" && clipShare === null;
+  // An ordered saga is one pick at a time, in order, with long chapters: weigh it like the old sqrt rule, not by every chapter.
+  const filesIn = ([k, g]) => { const n = fullGroups.get(k)?.length ?? g.length; return isOrdered(k) ? Math.max(1, Math.round(Math.sqrt(n))) : n; };
+  let share = clipShare ?? brandShare();
+  if (perFile) {
+    const inBrands = brands.reduce((t, b) => t + filesIn(b), 0);
+    share = inBrands / ((inBrands + singles.length) || 1);
+  }
+  if (brands.length && (!singles.length || Math.random() < share)) {
+    const weight = ([k, g]) => (perFile ? filesIn([k, g]) : folderWeight(fullGroups.get(k)?.length ?? g.length)) * (k.startsWith("family:") ? familyWeight() : 1);
     let n = Math.random() * brands.reduce((t, b) => t + weight(b), 0);
     [key, group] = brands.find((b) => (n -= weight(b)) < 0) || brands.at(-1);
   } else {

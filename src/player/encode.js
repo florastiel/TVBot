@@ -62,12 +62,21 @@ export function itemArgs(seg, offsetSec) {
   // HDR (PQ/HLG) source: Discord's stream carries no HDR metadata, so without this a
   // viewer's player renders the raw PQ values as SDR gamma and it comes out washed out.
   // Tone-map to SDR/bt709 before the usual scale/pad chain.
+  // Downscale BEFORE tone-mapping: the float zscale/tonemap chain is brutal at 4K/8K
+  // (an 8K "AI upscale" used to eat 6+ GB and run far slower than realtime) but cheap at 720p.
   const hdrToSdr = seg.hdr ? "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv," : "";
-  const fit = `${hdrToSdr}scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=${pixFmt()}`;
+  // force_divisible_by: a wide HDR movie (2.39:1) scales to an odd height, and zscale
+  // refuses "image dimensions must be divisible by subsampling factor" - the item then
+  // fails instantly and the player skips it (Alien, 2026-10-09).
+  const shrink = `scale=${w}:${h}:force_original_aspect_ratio=decrease:force_divisible_by=2,`;
+  const fit = `${seg.hdr ? shrink + hdrToSdr : ""}${seg.hdr ? "" : shrink}pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=${pixFmt()}`;
   let graph;
   if (seg.subs?.mode === "image") {
     // Picture subtitles are drawn at the source resolution, bottom-centered, then scaled with the video.
-    graph = `[0:V:0][0:${seg.subs.index}]overlay=(W-w)/2:H-h[s];[s]${fit}[v]`;
+    // Shrink the video first and scale the bitmap by the same factor (assumes its canvas matches
+    // the video), so the overlay happens at output size instead of 4K/8K.
+    graph = `[0:V:0]${shrink}setsar=1[vs];[0:${seg.subs.index}]scale=${w}:${h}:force_original_aspect_ratio=decrease:flags=bilinear,format=rgba[ss];` +
+      `[vs][ss]overlay=(W-w)/2:H-h[s];[s]${fit}[v]`;
   } else if ((seg.subs?.mode === "sidecar" || seg.subs?.mode === "embedded_text") && seg.subsFile) {
     // After an input seek the video restarts at 0 but the subtitle file doesn't, so
     // shift the clock forward for the subtitle renderer and back again afterwards.
@@ -87,6 +96,12 @@ export function itemArgs(seg, offsetSec) {
   const remaining = seg.durationMs ? seg.durationMs / 1000 - seek : null;
   if (remaining) args.push("-t", Math.max(0.5, remaining).toFixed(3));
   else if (silent) args.push("-shortest");
+
+  // A measured gain (commercials, clips, eyecatches): stereo first so a mono file is
+  // boosted by the same amount it was measured at, and a limiter so a boost can't clip.
+  if (!silent && Number.isFinite(seg.gainDb) && seg.gainDb !== 0) {
+    args.push("-filter:a", `aformat=channel_layouts=stereo,volume=${seg.gainDb.toFixed(1)}dB,alimiter=limit=0.89:level=false`);
+  }
 
   args.push(...videoCodecArgs(),
     "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
