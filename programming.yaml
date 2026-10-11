@@ -12,11 +12,11 @@
 
 pools:
   LATE_A: [Adult Swim, Toonami, Seinen Gag Night, Grappler Gauntlet, Cringe Comedy Hour, Grown-Up Cartoons, Versus Mode]
-  LATE_MOVIE: [Midnight Fright Night, Camp Horror Night, Cult Weird Cinema, Documentary Night, "So Bad It's Good", Big Screen Laughs, Comedy Specials, Found Footage Oddities,
+  LATE_MOVIE: [Camp Horror Night, Cult Weird Cinema, Documentary Night, "So Bad It's Good", Big Screen Laughs, Comedy Specials, Found Footage Oddities,
     David Lynch Nightmare, Fright Feature Vault, Halloween Horror Features, Slasher Night, Spooktober Anime, Western Showdown, Insert Coin Cinema, Bloodsucker Cinema, End of the World,
     Alien Saga, Matrix Marathon, Tarantino Night, Dark Comedy Night, Mind Benders, Queer Cinema,
     Edge of Your Seat, Cults and Curses, Ted and Friends, Fate Anthology]
-  LATE_B: [Dark Serial Night, Twilight Mystery Zone, Creatures of the Night, Dark Anime Thrillers, When They Cry Marathon, Anime Tearjerkers, Spooky Season Anime, Docuseries]
+  LATE_B: [Dark Serial Night, Twilight Mystery Zone, Creatures of the Night, Dark Anime Thrillers, Higurashi Marathon, Anime Tearjerkers, Spooky Season Anime, Docuseries]
   MORN_TOON: [Retro Toon Vault, Cartoon Network, Nicktoons, Goofy Kids Comedy, Superhero Cartoons, Shorts]
   MORN_TOKU: [Tokusatsu Theater, Super Sentai,Digimon Digital World, Dragon Ball Marathon, Weekly Shonen Giants, Shonen Showdown]
   MORN_COZY: [Peanuts Specials, Muppet Marathon, Cozy Halloween Cartoons, Anime Slice of Life, Iyashikei Hour, Pixar Picture Show, Family Movie Night, Studio Ghibli Matinee,
@@ -47,7 +47,7 @@ pools:
     X-Men Movie Marathon, Dark Knight Trilogy, Spider-Man Saga, Hunger Games Saga, Planet of the Apes, Die Hard Marathon, Fortnite Movie Night, Full Throttle,
     Star Wars Saga, Matrix Marathon, Middle-earth Saga, Alien Saga, Taken Trilogy, Dune Double Feature, Tarantino Night,
     Transformers Saga, Knives Out Saga, Fate Anthology, Throwback Cinema, Summer Beach Watch]
-  SAT_LATE: [Midnight Fright Night, Camp Horror Night, Scream Marathon, Jason Voorhees Marathon, Slasher Night, Cult Weird Cinema, Comedy Specials, "So Bad It's Good",
+  SAT_LATE: [Halloween Horror Features, Camp Horror Night, Scream Marathon, Jason Voorhees Marathon, Slasher Night, Cult Weird Cinema, Comedy Specials, "So Bad It's Good",
     Cults and Curses, Edge of Your Seat, Ted and Friends]
   SUN_EVE: [Nineties Movie Night, Halloweentown Saga, Campy Halloween Classics, Date Night, Broadway Musicals, Western Showdown, Awards Season Cinema, Studio Ghibli Melancholy, Christmas Movies, World Cinema, Music Movie Night, Queer Cinema, Coming of Age Cinema,
     Autumn Comfort Cinema, Throwback Cinema, Sports Movie Night, Knives Out Saga]
