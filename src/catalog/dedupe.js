@@ -139,7 +139,7 @@ function rank(r) {
     : r.streams_checked == null && r.unplayable_reason == null ? 1
     : r.streams_checked == null ? 2 : 3;
   const h = r.video_height ?? 0;
-  return [r.excluded ? 0 : 1, state, SOURCE_RANK[r.source] ?? 3, MATCH_RANK[r.match] ?? 3, h > 1080 ? h : 1080 - h, r.duplicate_of == null ? 0 : 1, r.id];
+  return [r.excluded ? 0 : 1, state, SOURCE_RANK[r.source] ?? 3, MATCH_RANK[r.match] ?? 3, h > (config.player.max_source_height || 2160) ? 99999 - h : h > 1080 ? h : 1080 - h, r.duplicate_of == null ? 0 : 1, r.id];
 }
 const better = (a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
 

@@ -5,6 +5,7 @@ import { log } from "../log.js";
 import { syncPlex } from "./plexSync.js";
 import { scanLocal } from "./localScan.js";
 import { syncRealDebrid } from "./rdSync.js";
+import { fetchMissingSubs } from "./opensubs.js";
 import { importCsvTags } from "./csvTags.js";
 import { dedupeCatalog } from "./dedupe.js";
 import { writeChangelogFile } from "../changelog.js";
@@ -33,6 +34,11 @@ export async function runSync({ plex = new Plex(), quick = false } = {}) {
     }
   }
   dedupeCatalog(); // Real-Debrid also runs it between its reads; this covers syncs without it
+  try {
+    await fetchMissingSubs();
+  } catch (e) {
+    log.error("sync: OpenSubtitles part failed:", e.message);
+  }
   importCsvTags();
   setMeta(quick ? "last_quick_sync" : "last_sync", new Date().toISOString());
   try { writeChangelogFile(); } catch (e) { log.warn(`sync: couldn't write the change log: ${e.message}`); }

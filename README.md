@@ -147,6 +147,11 @@ subtitles are shown whenever a file has them (`language.always_subtitles`), and
 foreign-audio items need them to be scheduled at all.
 - Picture-based subtitle tracks are drawn on live.
 - Separate `.srt` files are downloaded to `data\subs` at sync (tiny).
+- Items with no English subtitles at all (mostly Real-Debrid) get one from OpenSubtitles.com
+  at sync (`opensubtitles:` in config.yaml; `OPENSUBTITLES_*` in `.env`), saved to
+  `data\subs` the same way. Foreign-audio files that were skipped for lacking English
+  subtitles become playable. Matched by title/season/episode, so timing can be off on a
+  different release. Misses are retried after `retry_days`.
 - Text tracks *inside* the file (most common) need a local copy: while one show plays,
   the next ones that need it are **downloaded ahead** into `data\spool` (in 32 MB chunks;
   the Plex server drops single long downloads), then played from there with subtitles

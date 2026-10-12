@@ -241,6 +241,11 @@ const MIGRATIONS = [
   ALTER TABLE items ADD COLUMN loudness_lufs REAL;
   ALTER TABLE items ADD COLUMN loudness_checked INTEGER;
   `,
+  `
+  -- Items catalog/opensubs.js has already looked up on OpenSubtitles (found or not), so a
+  -- miss isn't searched again every sync and the daily download quota isn't wasted.
+  CREATE TABLE subtitle_lookups (item_id INTEGER PRIMARY KEY, tried_at TEXT NOT NULL, result TEXT NOT NULL);
+  `,
 ];
 
 let db;
