@@ -6,8 +6,8 @@ channel, on the wall clock like real TV; a normal bot (TVbot, coupbot's old toke
 the remote control. Claude sorts the catalog into kinds of blocks and lays out a weekly
 grid of them; code fills the grid with random picks.
 
-**Status: running.** Both parts are Windows services on glados that start with the
-machine and restart if they crash (see *Running it*).
+**Status: running.** The player, the bot and the bucket editor are Windows services on
+glados that start with the machine and restart if they crash (see *Running it*).
 
 ## How it fits together
 
@@ -27,6 +27,10 @@ machine and restart if they crash (see *Running it*).
 - **Bot** (`tv.cmd bot`): slash commands, the Skip button, now-playing posts. Also
   does the upkeep: weekly catalog sync + tagging new items, and keeps at least 2 days
   scheduled.
+- **Editor** (`tv.cmd editor`): a small web page, published behind the login proxy, for
+  fixing buckets by hand. It also hosts the **eyecatch clipper** at `/clip`, where you watch
+  an eyecatch and press Space where one ends and the next begins (see *Eyecatches that are
+  really several*). It reads and writes the same database.
 
 ## Why it runs natively (not Docker)
 
@@ -67,9 +71,12 @@ then close the window *without* logging out.
 
 ## Running it
 
-Two NSSM services, `tvchannel-player` and `tvchannel-bot` (run as LocalSystem, start
-with Windows, restart on a crash; `scripts\install-services.ps1` sets them up). Logs:
-`logs\player-YYYY-MM-DD.log` and `logs\bot-YYYY-MM-DD.log`. For a test by hand, stop
+Three NSSM services: `tvchannel-player` and `tvchannel-bot` (run as LocalSystem, start
+with Windows, restart on a crash; `scripts\install-services.ps1` sets them up) and
+`tvchannel-editor` (the bucket editor and eyecatch clipper, added by hand with nssm:
+`editor 5174 --host 10.99.0.2 --require-user --no-open`, so only the login proxy can reach
+it). Logs: `logs\player-YYYY-MM-DD.log` and `logs\bot-YYYY-MM-DD.log` (and the
+`*-console.log` files, which hold whatever the process printed). For a test by hand, stop
 the services and run `tv.cmd player` / `tv.cmd bot` in two terminals.
 
 To load new code or settings: `tv.cmd restart`. The bot restarts right away; the
@@ -77,6 +84,12 @@ player restarts at the next commercial break (in place of the ads) and comes bac
 the same channel by itself after about 20 seconds; viewers click Watch again (with the
 TV off it restarts at once). If the player ever freezes,
 the bot notices after 2 minutes and kills it, and the service starts a fresh one.
+`tv.cmd restart` covers the bot and the player; the editor loads new code with
+`Restart-Service tvchannel-editor` (an administrator PowerShell).
+
+A file that won't start doesn't loop the channel: a show or movie is played in pieces, and
+when the second piece of one dies on the spot the player drops the rest of that item for now
+(it stays on the schedule; `/tvadmin skip` takes it off) and goes on with the next thing.
 
 ## Discord commands
 
@@ -111,14 +124,30 @@ show during ads.
 ## Command line
 
 ```
-tv.cmd sync                          pull the catalog from Plex + local folders + Real-Debrid (~30 s)
+tv.cmd sync [--quick]                pull the catalog from Plex + local folders + Real-Debrid; --quick = only what's new
 tv.cmd stats                         what's in the catalog, why things can't be scheduled
+tv.cmd unschedulable [--all]         what the scheduler can't use and why (the full list is data\unschedulable.md)
+tv.cmd changelog [days]              what was added, by day
 tv.cmd tag                           tag anything untagged with Claude (batch, half price)
 tv.cmd tag --dry                     estimate what tagging would cost, no API calls
-tv.cmd tag --redo                    retag everything
-tv.cmd schedule [days] [--replace]   program the schedule (default 7 days; keeps existing days)
+tv.cmd tag --redo                    retag everything (--breaks, --order, --episodes redo just one kind of call)
+tv.cmd tmdb [--redo]                 TMDB genres and keywords for shows and movies not looked up yet
+tv.cmd shorts [--redo]               which anime are shorts (AniList)
+tv.cmd buckets [--build|--new|--thin|--html]   list the buckets, or have Claude build or extend them
+tv.cmd catalog --html                write catalog.html, a browsable page of the whole library
+tv.cmd plan [days]                   print the grid (bucket slots) for the next days
+tv.cmd schedule [days] [--replace|--replan]    program the schedule (default 7 days; keeps existing days)
+tv.cmd special "Scream marathon Saturday 8pm"  plan a special (or no text: Claude picks one)
 tv.cmd guide                         print today's guide
-tv.cmd add commercial <links...>     download commercials (or: add clip) from YouTube etc. and sync
+tv.cmd spots [commercial|clip|eyecatch] [--desc]   how often each spot has aired
+tv.cmd add commercial|clip <links...>   download from YouTube etc. and sync
+tv.cmd brands [eyecatch|clip]        show where each loose file would be filed (--apply files them, --deep asks the models now)
+tv.cmd brands migrate [--apply]      move brand folders out of commercials\youtube (undo <list.json> puts them back)
+tv.cmd eyecatches [--all] [--apply]  find eyecatches that are really several and cut them
+tv.cmd commercials [--apply]         find long reels of several ads and cut them (--force --only=a,b skips Claude's check)
+tv.cmd weather                       make a weather report now (doesn't air it)
+tv.cmd editor [port]                 the bucket editor and eyecatch clipper
+tv.cmd restart [bot|player]          load new code and settings
 tv.cmd playlist "<show>" [count]     test override: loop a few episodes instead of the schedule
 tv.cmd playlist --clear              back to the schedule
 ```
@@ -130,7 +159,10 @@ planned-time rounding (5 min), commercials per break, clip chance, longest comme
 no-repeat window, idle timeout, which shows always/never play in order, encode
 size/bitrate, Plex server + libraries, local folders, entrance sound length and volume,
 encoder (qsv = Intel Quick Sync, falls back to CPU by itself), how often the Go Live
-thumbnail updates (`player.stream_preview_minutes`, 5; 0 = none), Claude model.
+thumbnail updates (`player.stream_preview_minutes`, 5; 0 = none), Claude model, the volume
+spots are brought to (`broadcast.ad_loudness_lufs`), how new drops are filed and cut
+(`brand_sort:`), where Claude calls are logged (`claude.usage_log`), OpenSubtitles
+(`opensubtitles:`) and the tallest video that is scheduled (`player.max_source_height`, 2160).
 After changing settings: `tv.cmd restart`.
 
 ## The catalog
@@ -157,18 +189,32 @@ foreign-audio items need them to be scheduled at all.
   the Plex server drops single long downloads), then played from there with subtitles
   burned in. Same total transfer from the Plex server, just earlier. Copies are deleted
   after 12 hours unused; the folder is capped at `player.spool_max_gb` and files over
-  `player.spool_max_file_gb` are skipped. The first show after `/tv`, or one joined
-  midway, hasn't been downloaded yet and plays without subtitles.
+  `player.spool_max_file_gb` (a big movie; the default is 8) aren't downloaded and stream
+  instead, with no subtitles inside the file and no detected break points. Whatever airs
+  next goes to the front of the download queue, but the first show after `/tv`, or one
+  joined midway, hasn't been downloaded yet and plays without subtitles. The player log
+  says why an item aired without a local copy (`spool: playing X without a local copy`).
 - Foreign-audio files with no subtitle track are skipped unless the show is listed
   under `language.hardsubbed_shows`.
 
 **Local files** go in the folders under `local:` in config.yaml:
 - shows: `shows\<Show Name>\...\Show.Name.S01E02.Episode.Title.mkv`
 - movies: `movies\Movie Title (1994).mkv`
-- commercials / clips: anything, subfolders fine
+- commercials: one folder per brand (`commercials\Pop-Tarts\...`). New drops land loose in
+  `youtube\` or `uploads\` and are filed into a brand folder for you (see *Filing new drops*).
+- clips: one folder per game (`clips\Fortnite\...`), filed the same way.
+- eyecatches: one folder per series (`eyecatches\Azumanga Daioh\...`), filed the same way.
 - shorts: `shorts\<Series>\Series S01E02.mkv`. Short shows (2–15 min, e.g. short anime)
   that are never scheduled on their own; they fill the odd minutes after a skip (below).
   Run `tv.cmd sync` (or wait for the weekly one) after adding files.
+
+**Moving files by hand.** A file's path is its key in the catalog, so a moved file used to look
+brand new, with its play count and tags reset. A spot whose name ends in `[id]` (a YouTube id or
+a Discord attachment id) is now recognised at the next sync as the moved copy of a vanished
+row and keeps that row's play count, last-played time, tags and `tags.csv` decade, holiday and
+notes (`src/catalog/history.js`). The parts of a split file never inherit. Video taller than
+`player.max_source_height` (2160) is never scheduled, and isn't the copy kept when a file
+comes in twice.
 
 **Real-Debrid**: with `RD_TOKEN` in `.env`, every finished torrent on the account joins
 the catalog (library "Real-Debrid"), one item per video file. There's no metadata server
@@ -208,7 +254,9 @@ each post is downloaded and scanned into the local folders within seconds). Spot
 any language; the "foreign audio needs English subtitles" rule is only for shows and
 movies. Shorts are episodic, not a flat spot: a YouTube playlist becomes one show, its
 videos numbered episodes in order; a lone link, or files dropped together in one message,
-become their own one- (or few-) episode show, named after the video/first file.
+become their own one- (or few-) episode show, named after the video/first file. Spots and
+eyecatches land loose in the folder's `youtube\` or `uploads\`, and the next scan files each
+into a brand, series or game folder (see *Filing new drops*).
 
 **Timestamps** cut a video into pieces. After a link (or in the message with one
 uploaded file): cut points split it (`https://youtu.be/... 0:05` -> 0:00-0:05 and 0:05 to
@@ -222,6 +270,28 @@ an hour.
 `data\youtube-cookies.txt`, not OAuth). **`/tvhelp`** posts (and edits) the help post in
 the TV channel; its text is `helpEmbeds()` in `src/bot/bot.js`.
 
+**Filing new drops.** A loose file plays far more often than one inside a folder (a folder
+counts as one brand when breaks are filled, a loose file as its own), so every sync, before
+the folders are scanned (`src/catalog/brandsort.js`), each loose commercial, eyecatch and clip
+is filed into a folder: commercials into a brand folder, eyecatches into a series folder, clips
+into a game folder.
+- A title that names an existing folder goes there at once ("Kellogg's Pop Tarts" goes in
+  Pop-Tarts). An eyecatch's series is its title minus words like "eyecatch" and "widescreen"
+  ("Azumanga Daioh Eye Catch 3" goes in the Azumanga Daioh folder, made if it's new).
+- Anything else waits in `_staging` (`brand_sort.staging_folder`), which the picker treats as
+  one brand, so it stays in rotation without crowding anything out. In the background after the
+  sync a model then looks: Claude at five frames (about a cent or two a file, at most 30 calls a
+  pass, `brand_sort.claude_vision`), or without an API key a local Ollama model on the title
+  (`brand_sort.model`) and then on frames (`brand_sort.vision_model`). A new folder is only made
+  when the title or Claude is sure; otherwise the file stays in staging until you move it into
+  a folder by hand (its play count and tags follow it).
+- Moves keep the catalog row and the `tags.csv` row. `tv.cmd brands [eyecatch|clip]` shows what
+  it would do, `--apply` does it now and `--deep` asks the models now. `tv.cmd brands migrate
+  --apply` moves existing brand folders out of `commercials\youtube\` (with an undo list in
+  `data\`); that was done once.
+- Claude's part stops for the rest of the month at `brand_sort.monthly_ceiling_usd` (see
+  *Claude usage*); the name match and Ollama carry on.
+
 **Eyecatches** (`D:\data\tv\eyecatches`): a break inside a show or movie gets one before
 and one after the commercial if it's the kind of thing that aired with TV breaks:
 sitcoms, cartoons, network dramas, rom-coms, TV-friendly movies; not HBO-style prestige
@@ -232,15 +302,44 @@ or none. Every file in `eyecatches\` is for any eligible show, except that a fol
 after a show (`eyecatches\Fullmetal Alchemist Brotherhood\`) holds *that show's own*
 eyecatches, saved for other shows, and isn't used on the show itself (it'd double up). A
 folder counts as one source, like commercials, so a folder of 128 doesn't dominate: a
-source is picked first, then a file in it. Loose files and the thread folders are each
-their own source.
+source is picked first, then a file in it. A file dropped loose is filed into its series
+folder first (see *Filing new drops*), so a series is one source.
+
+**Eyecatches that are really several.** Some uploads hold two or three eyecatches back to
+back. Any eyecatch longer than `brand_sort.split_min_seconds` (10.5) is checked at sync
+(`src/catalog/eyesplit.js`): ffmpeg looks for a gap of silence, a black frame or a hard
+picture cut, and Claude looks at frames either side of each candidate and says which are
+real boundaries between separate eyecatches. If any are, the video is cut into
+`<name> - part N [id]` files (dead air at the cut is dropped) and the original goes to
+`data\eyecatch-originals`. A short eyecatch is only asked about when silence or black is
+there too, and every file is looked at once (`data\eyesplit-checked.json`).
+`tv.cmd eyecatches` shows what it would do (`--all` checks every eyecatch of 4 s or more,
+`--apply` cuts). A join that shows as none of those (a dissolve, one continuous music bed)
+can't be found this way, so there is also a manual tool:
+
+**The eyecatch clipper** is the editor's `/clip` page (same login as the editor; it's linked
+from the editor's header). Pick an eyecatch and it plays in your browser, with sound. Press
+`Space` the moment one eyecatch ends and the next begins (it drops a cut marker and keeps
+playing), then `Enter` to cut. `K` plays and pauses, the arrow keys jump 1 s (`Shift` 0.1 s),
+`,` and `.` step a frame, `Backspace` undoes the last cut, `N` says it's one eyecatch and `S`
+skips. Untick a piece to drop it (the dead air between two eyecatches). Cutting keeps the
+original in `data\eyecatch-originals` and the catalog follows within seconds; what you've
+looked at is remembered in `data\eyecatch-reviewed.json`.
+
+**Commercial reels.** A long commercial that is really a reel of several ads is found the same
+way. `tv.cmd commercials` looks at commercials over 75 s for black picture and silence together,
+at least 8 s from either end, and asks Claude whether each is a boundary between separate ads
+(a black lead-in or an end tag isn't). Only a file that comes out as 3 or more pieces is
+touched, and it is never automatic: run it with `--apply`. A serial that Claude sees as one
+story is left alone unless you force it (`--force --only=name,name` cuts at every black and
+silence moment). Originals go to `data\commercial-originals`, and each part gets its original's
+`tags.csv` row.
 
 **Tagging commercials and clips** is by hand: each of those folders gets a
 `tags.csv`. Sync adds a blank row for new files; fill in `decade` (90s, 1990s, 1994
 all work), `holiday` (halloween / thanksgiving / christmas / none) and `notes` in
-Excel, save, and the next sync imports it. Close Excel before syncing.
-`D:\data\tv\commercials\_TEST` and `clips\_TEST` hold fake test files; delete them
-once real ones are in.
+Excel, save, and the next sync imports it. Close Excel before syncing. A file that is moved
+or filed keeps its row.
 
 **Tagging shows and movies** is by Claude, once (`tv.cmd tag`; cached forever):
 vibe, audience (kids/family/teen/adult), animated, anime, country, decade, and which
@@ -303,7 +402,9 @@ scheduled task (Sundays 04:00, `scripts\install-weekly-program.ps1`), follows
 template). It syncs and tags first (tagging still uses the API, pennies). Between passes,
 titles new to the catalog air from the catch-all "Reruns"/"Movie" buckets. Summary:
 `data\program\last-run.md`; log: `logs\weekly-program-*.log`. If Claude Code is logged
-out the pass fails and the TV carries on from the template.
+out the pass fails and the TV carries on from the template. It commits its `programming.yaml`
+change only when the checkout is on `main`; on another branch it leaves the file modified and
+says so in its log.
 
 **Episode order.** Claude marks each show serialized (a continuing story: Loki,
 Interview With The Vampire, most anime) or episodic (sitcoms, anthologies: Fresh Prince,
@@ -356,14 +457,17 @@ takes to hit `ad_minutes_per_hour` (12) over the whole item, and its block is pl
 to match. Between shows: `between_spots` videos; `clip_chance` of the breaks (not of each spot) have exactly one clip among them.
 Nothing longer than `max_spot_minutes` airs, except that a between-shows break runs long
 rather than repeat a spot that has aired more than a longer one. Every break, inside or
-between shows, is bookended by an eyecatch. Picks: files in a `variety_folders` folder or
-loose in the thread folders are the mixed pool, every other commercial/clip folder is a
-brand, and all brand folders together get `brand_share` (0.25) of the picks; within a
-group the least-played file goes first. Folders named under `ad_families` (every cereal
+between shows, is bookended by an eyecatch. Commercial picks: files in a `variety_folders`
+folder or loose ones are the mixed pool, every other folder is a brand, and all brand folders
+together get `brand_share` (0.25) of the picks; within a group the least-played file goes first. Folders named under `ad_families` (every cereal
 folder, say) count as ONE brand, so a break carries at most one of them and having dozens of
 folders doesn't win the family the break; `ad_family_weight` (2) is how often it comes up
 against a single folder, as a multiple of what its combined size would give.
-`D:\data\tv\ad-lengths.csv` lists every commercial and clip with its length.
+Clips are picked per file instead: every clip gets an equal turn, so a folder's chance is its
+share of all the clips (a saga in `ordered_folders`, played one file at a time in order, counts
+as the square root of its size). A fixed share used to send three quarters of the clip airtime
+to the few loose clips, which then aired about eight times as often as a clip in a folder;
+`broadcast.clip_brand_share` (0 to 1) sets a fixed share again if you want one.
 
 **Airing limits and marathons**: nobody wants hours of one thing, so the schedule filler keeps
 runs short. A run is blocks of one bucket (or one special) back to back: one of
@@ -384,6 +488,25 @@ before one gets, in order: an episode of a show with nothing scheduled later if 
 fits (in-order shows continue where they left off), then shorts from the shorts folder
 (each series in order, no repeats within 2 days), then commercials. Whatever fills in
 is saved into the schedule, so it counts as aired.
+
+## Volume
+
+Spots come from everywhere (a 2005 cereal ad, a 2025 stream clip), so their loudness differed
+by about 10 dB. At sync each commercial, clip and eyecatch is measured once (integrated
+loudness, `items.loudness_lufs`, by `src/catalog/loudness.js`), and when it airs a fixed gain
+brings it to `broadcast.ad_loudness_lufs` (-24; 0 or `off` leaves them alone), capped at +15 and
+-20 dB with a limiter so a boost can't clip. Changing the target needs no re-measuring. Shows
+and movies aren't touched; entrance sounds have their own level (`entrance.loudness_lufs`).
+
+## Claude usage
+
+Every call goes through `claudeClient()` (`src/claude.js`), which appends one line (time,
+project, purpose, model, input and output tokens - never prompts or answers) to a shared log,
+`claude.usage_log` (here `D:\docker-data\claude-usage.jsonl`, the file the money dashboard reads
+for its weekly spend note; blank means `data\claude-usage.jsonl`). The batch tagging is logged
+with `batch: true` (it bills at half price). The automatic filing and splitting - not the weekly
+tagging and planning - also stop using Claude for the rest of the calendar month once they have
+used about `brand_sort.monthly_ceiling_usd` ($2), counted from that log at list prices.
 
 ## Optional: turning on Quick Sync
 
@@ -407,6 +530,9 @@ Adapter" with an error). To enable it:
 - Jellyfin as a second source (waiting on the server's address and a login).
 - Several voice channels at once (one Discord account can only be in one call; it would
   take a second throwaway account and player).
+- Bringing shows and movies to one volume too (only spots are leveled).
+- Finding the join in an eyecatch that shows as no silence, black or cut, by sampling frames
+  across the video and asking Claude (the clipper covers it by hand meanwhile).
 
 ## Heads up
 
