@@ -9,6 +9,8 @@ import { log } from "../log.js";
 import { chooseTracks, fromFfprobeStreams, hdrFromFfprobeStreams } from "./tracks.js";
 import { parseRelease, showName, tidy as tidyName } from "./release.js";
 import { measureSpots } from "./loudness.js";
+import { sortLoose, refineStaging, scanState } from "./brandsort.js";
+import { splitEyecatches } from "./eyesplit.js";
 
 const run = promisify(execFile);
 const VIDEO = new Set([".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts", ".webm", ".flv"]);
@@ -100,6 +102,24 @@ export async function probe(file) {
 }
 
 export async function scanLocal() {
+  // New raw drops go into brand/series folders (or staging) before anything is scanned.
+  for (const kind of ["commercial", "eyecatch", "clip"]) {
+    try { await sortLoose({ kind }); } catch (e) { log.warn(`brands: sorting new ${kind}s failed: ${e.message}`); }
+  }
+  const scan = async () => {
+    scanState.running = true;
+    try { await scanLocalFolders(); } finally { scanState.running = false; }
+  };
+  await scan();
+  // An eyecatch that is really two or three: cut apart (durations are known now), then read the new files.
+  try {
+    if ((await splitEyecatches()).some((r) => r.done)) await scan();
+  } catch (e) { log.warn(`eyesplit: ${e.message}`); }
+  // The slow part (a model reading staged titles) runs in the background, after the sync.
+  refineStaging().catch((e) => log.warn(`brands: background sort failed: ${e.message}`));
+}
+
+async function scanLocalFolders() {
   const db = getDb();
   const upsert = db.prepare(`
     INSERT INTO items (source, source_key, kind, library, show_title, season, episode, title, year, match, source_updated, present)

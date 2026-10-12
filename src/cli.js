@@ -54,6 +54,60 @@ const commands = {
 };
 
 Object.assign(commands, {
+  // Commercials into brand folders (catalog/brandsort.js).
+  // tv.cmd brands [eyecatch|clip]      show where each loose commercial (or eyecatch, or clip - by game) would be filed (changes nothing)
+  // tv.cmd brands [eyecatch] --apply    file them (a sync does this by itself)
+  // tv.cmd brands --deep [--apply]      also ask the models (Ollama, Claude on a few frames) now, instead of in the background
+  // tv.cmd brands migrate [eyecatch]    show the folders that would move out of <folder>\youtube\
+  // tv.cmd brands migrate --apply       move them (play counts, tags and tags.csv rows go with them)
+  // tv.cmd brands undo <list.json>      put a migration back (the list is saved in data\)
+  async brands(...args) {
+    const b = await import("./catalog/brandsort.js");
+    const apply = args.includes("--apply");
+    const kind = args.includes("eyecatch") ? "eyecatch" : args.includes("clip") ? "clip" : "commercial";
+    if (args[0] === "undo") { console.table(b.undoMigration(args[1])); return; }
+    if (args[0] === "migrate") {
+      const plan = b.migrateYoutubeFolders({ kind, dryRun: !apply });
+      console.table(plan.map((p) => ({ folder: p.from.split("\\").at(-1), result: p.skip ? `skipped: ${p.skip}` : apply ? `moved (${p.files} files)` : "will move" })));
+      if (!apply) console.log("\nNothing moved. Run with --apply to do it (stop the player first so no file is open).");
+      return;
+    }
+    const res = await b.sortLoose({ kind, dryRun: !apply, deep: args.includes("--deep") });
+    console.table(res.map((r) => ({ file: r.file.split("\\").slice(-2).join("\\"), "goes to": r.to.split("\\").at(-1), why: r.via })));
+    if (!res.length) console.log("No loose commercials to file.");
+    else if (!apply) console.log("\nNothing moved. Run with --apply to file them.");
+    if (kind === "commercial" && !args.includes("--deep")) console.log("(Only names are matched here; files it can't place get a model's look in the background after a sync, or now with --deep.)");
+  },
+
+  // Eyecatches over ~10 s that are really several (catalog/eyesplit.js).
+  // tv.cmd eyecatches            show which would be cut, and where (changes nothing; asks Claude about candidates)
+  // tv.cmd eyecatches --apply    cut them (a sync does this by itself); originals go to data\eyecatch-originals
+  // tv.cmd eyecatches --all       check every eyecatch of 4 s or more, not just ones over ~10 s (add --apply to cut)
+  async eyecatches(...args) {
+    const { splitEyecatches } = await import("./catalog/eyesplit.js");
+    const apply = args.includes("--apply");
+    // --all: the one-time sweep of every eyecatch (not just the ones over ~10 s), with a bigger Claude budget
+    const rep = await splitEyecatches({ dryRun: !apply, ...(args.includes("--all") ? { minSeconds: 4, maxClaude: 400 } : {}) });
+    console.table(rep.map((r) => ({ file: r.file.split("\\").slice(-2).join("\\").slice(-60), s: r.seconds, cuts: r.cuts.join(", ") || "-", pieces: r.pieces.join(" | ") || "(one)", via: r.via, why: r.why, done: r.done ? "yes" : "" })));
+    if (apply && rep.some((r) => r.done)) { const { syncLocal } = await import("./catalog/index.js"); await syncLocal(); } // so the catalog follows the moved files
+    if (!rep.length) console.log("Nothing to check.");
+    else if (!apply) console.log("\nNothing changed. Run with --apply to cut the ones with cuts.");
+  },
+
+  // Long commercials that are really reels of several ads (catalog/eyesplit.js).
+  // tv.cmd commercials            show which would be cut, and where (changes nothing; asks Claude to confirm)
+  // tv.cmd commercials --apply    cut them; originals go to data\commercial-originals
+  async commercials(...args) {
+    const { splitCommercials } = await import("./catalog/eyesplit.js");
+    const apply = args.includes("--apply");
+    const only = (args.find((a) => a.startsWith("--only=")) || "").slice(7).split(",").filter(Boolean); // --only=aflac,krave
+    const rep = await splitCommercials({ dryRun: !apply, only });
+    console.table(rep.map((r) => ({ file: r.file.split("\\").slice(-2).join("\\").slice(-58), s: r.seconds, pieces: r.pieces, lengths: r.lengths, via: r.via, note: r.skipped || (r.done ? "cut" : ""), why: (r.why || "").slice(0, 70) })));
+    if (apply && rep.some((r) => r.done)) { const { syncLocal } = await import("./catalog/index.js"); await syncLocal(); }
+    if (!rep.length) console.log("No reels found.");
+    else if (!apply) console.log("\nNothing changed. Run with --apply to cut them.");
+  },
+
   async player() {
     const { Player } = await import("./player/player.js");
     await new Player().start();

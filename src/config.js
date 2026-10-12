@@ -53,8 +53,11 @@ const DEFAULTS = {
   language: { audio: "eng", subtitles: "eng", always_subtitles: true, hardsubbed_shows: [] },
   local: { shows: "", movies: "", clips: "", commercials: "", shorts: "", eyecatches: "", library: [] },
   realdebrid: { enabled: true, min_file_mb: 50, skip_torrents: [] },
+  opensubtitles: { enabled: true, sources: ["realdebrid"], retry_days: 14, max_per_sync: 40 },
   encode: { height: 720, frame_rate: 30, bitrate_kbps: 2500, max_bitrate_kbps: 4000, encoder: "software", hw_decode: false },
   entrance: { max_seconds: 8, loudness_lufs: -32 },
+  // New loose commercials are filed into brand folders (catalog/brandsort.js).
+  brand_sort: { enabled: true, ollama_url: "http://127.0.0.1:11434", model: "llama3.2:3b", vision_model: "qwen2.5vl:3b", claude_vision: true, claude_model: "", max_claude_per_run: 30, staging_folder: "_staging", split_eyecatches: true, split_min_seconds: 10.5 },
   player: { port: 7651, spool_max_gb: 30, spool_max_mbps: 20, spool_max_file_gb: 8, max_source_height: 2160, stream_preview_minutes: 5 },
   claude: { model: "claude-sonnet-5", scheduling: "api" },
 };
@@ -77,4 +80,7 @@ export const secrets = {
   anthropicKey: process.env.ANTHROPIC_API_KEY,
   rdToken: process.env.RD_TOKEN,
   tmdbKey: process.env.TMDB_API_KEY,
+  osKey: process.env.OPENSUBTITLES_API_KEY,
+  osUser: process.env.OPENSUBTITLES_USERNAME,
+  osPass: process.env.OPENSUBTITLES_PASSWORD,
 };

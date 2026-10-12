@@ -143,6 +143,14 @@ realdebrid:
   min_file_mb: 50              # smaller video files are skipped (samples, extras)
   skip_torrents: []            # torrents whose name contains any of these stay out, e.g. ["Sample", "Trailer"]
 
+opensubtitles:
+  # English subtitles from OpenSubtitles.com for items whose file has none: downloaded ahead
+  # into data\subs at sync. Needs OPENSUBTITLES_API_KEY + USERNAME/PASSWORD in .env.
+  enabled: true
+  sources: [realdebrid]        # which sources to fill in: plex, local, realdebrid
+  retry_days: 14               # a title with no match is searched again after this long
+  max_per_sync: 40             # most lookups per sync (the free account allows a few downloads a day)
+
 encode:
   height: 720
   frame_rate: 30
@@ -170,6 +178,25 @@ claude:
   # buckets and the template. api: Claude API calls plan the grid and new buckets weekly.
   scheduling: local
 
+
+# New loose commercials, eyecatches and clips (dropped in a thread, or added with /tvadmin add)
+# are filed into folders, because a loose file plays far more often than one inside a folder:
+#   commercials -> brand folder; eyecatches -> series folder; clips -> game folder.
+# A title that names an existing folder is filed at once; the rest wait in _staging (one
+# folder to the picker, so they stay in rotation) until a model has looked: Ollama on the title
+# (commercials), then Claude on 5 frames (about a cent or two per file). New folders are only
+# made when the title or Claude is sure. `tv.cmd brands` shows what it would do.
+brand_sort:
+  enabled: true
+  staging_folder: _staging
+  ollama_url: http://127.0.0.1:11434
+  model: llama3.2:3b           # reads commercial titles; blank = skip
+  vision_model: qwen2.5vl:3b   # looks at commercial frames when Claude is off; blank = skip
+  claude_vision: true          # Claude looks at frames (needs ANTHROPIC_API_KEY); false = never
+  claude_model: ""             # blank = claude.model
+  max_claude_per_run: 30       # most Claude calls in one background pass
+  split_eyecatches: true       # an eyecatch longer than split_min_seconds that is really two or three is cut apart (needs a boundary: a gap of silence, a black frame or a hard cut; Claude confirms from frames). The original goes to data\eyecatch-originals
+  split_min_seconds: 10.5
 # A weather report from the National Weather Service (US places): one clean static board (every
 # place, its next few hours side by side), read over by a different TTS voice per place. In the
 # first commercial break after each time. Remove this section (or leave "times" empty) for no weather.
