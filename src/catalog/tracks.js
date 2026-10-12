@@ -11,10 +11,15 @@ const isCommentary = (s) => /commentary/i.test(s.title || "");
 const isPartial = (s) => /\b(signs?|songs?|karaoke|lyrics)\b/i.test(s.title || "") && !/\b(full|dialog(ue)?)\b/i.test(s.title || "");
 
 export function chooseTracks(streams, { showTitle } = {}) {
-  const want = config.language.audio;
+  // language.audio_by_show: a show that should always play in one language (the original, say),
+  // whatever the channel's usual one is: { "The Polygamist": zul }. Without a track in that language
+  // the file isn't used, and its subtitles (in the channel's language) are always shown.
+  const only = showTitle ? config.language.audio_by_show?.[showTitle] : null;
+  const want = only || config.language.audio;
   const subLang = config.language.subtitles;
   const audios = streams.filter((s) => s.type === "audio");
   if (!audios.length) return { playable: false, reason: "no audio track" };
+  if (only && !audios.some((s) => s.lang === only)) return { playable: false, reason: `no ${only} audio track (audio_by_show)` };
 
   const pick =
     audios.find((s) => s.lang === want && !isCommentary(s)) ||
@@ -23,7 +28,7 @@ export function chooseTracks(streams, { showTitle } = {}) {
     audios[0];
   const result = { audioStream: pick.index, audioLang: pick.lang || null, subs: { mode: "none" } };
 
-  const understood = pick.lang === want || UNKNOWN.has(pick.lang); // untagged audio is almost always English
+  const understood = pick.lang === config.language.audio || UNKNOWN.has(pick.lang); // untagged audio is almost always English
   const subs = chooseSubs(streams, subLang);
 
   // Audio we understand: always playable; subtitles on when there are any (the

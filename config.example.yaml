@@ -104,6 +104,10 @@ language:
   # Shows whose foreign-audio files have subtitles burned into the picture (no subtitle
   # track). Exact show title as Plex shows it. Otherwise those files are skipped.
   hardsubbed_shows: []
+  # A show that should always play in one audio language (the original, say), with the subtitles
+  # above on. Exact show title: language code (eng, zul, jpn...). Files without a track in that
+  # language aren't scheduled. Applies the next time a file is scanned.
+  audio_by_show: {}            # e.g. { "The Polygamist": zul }
 
 local:
   shows: D:\data\tv\shows            # <Show Name>\...\Show S01E02.mkv
