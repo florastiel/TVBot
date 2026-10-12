@@ -262,6 +262,7 @@ export class Player extends EventEmitter {
     let inBreak = null;
     let lastShow = null; // the last show/movie piece that played (where a restart at a break picks up)
     let failures = 0;
+    const failedItems = new Map(); // item id -> pieces in a row that died on the spot
     for (;;) {
       if (session !== this.session) return;
       if (session.paused) {
@@ -336,6 +337,19 @@ export class Player extends EventEmitter {
       if (r.result === "error" && r.playedSec < 1) {
         // Broken file or server down: don't spin. Back off a little more each time.
         failures++;
+        // A show or movie is played in pieces (Alien: about ten), and ads in between play fine and
+        // reset `failures`, so a bad file used to be tried again at every one of its pieces. The
+        // second piece that dies on the spot ends the whole item for this session (it stays on the
+        // schedule; /tvadmin skip takes it off).
+        if (isShow && seg.itemId != null) {
+          const n = (failedItems.get(seg.itemId) || 0) + 1;
+          failedItems.set(seg.itemId, n);
+          if (n >= 2) {
+            failedItems.delete(seg.itemId);
+            session.program?.skipItem?.(seg.itemId);
+            log.warn(`player: ${`${seg.title} ${seg.subtitle || ""}`.trim()} would not start ${n} times in a row; skipping the rest of it for now`);
+          }
+        }
         await sleep(Math.min(30000, 1000 * failures));
       } else {
         failures = 0;

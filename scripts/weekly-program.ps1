@@ -33,11 +33,18 @@ $deny = @("PowerShell", "WebFetch", "WebSearch", "Edit(/config.yaml)", "Edit(/sr
 $code = $LASTEXITCODE
 Say "Claude Code exited with $code"
 
-# Keep programming.yaml changes in git (local only).
+# Keep programming.yaml changes in git (local only) - but only on main. This job used to commit
+# onto whatever branch was checked out (the 2026-10-11 pass landed on a feature branch). On any
+# other branch the edit stays in the working copy and goes in with the next commit made there.
 if (-not $DryRun) {
-  git -C $root add programming.yaml 2>&1 | Out-Null
-  git -C $root diff --cached --quiet
-  if ($LASTEXITCODE -ne 0) { git -C $root commit -q -m "Weekly programming pass $(Get-Date -Format yyyy-MM-dd)" 2>&1 | Out-Null; Say "committed programming.yaml changes" }
+  $branch = (git -C $root branch --show-current 2>$null)
+  if ($branch -ne "main") {
+    Say "on branch '$branch', not main: leaving programming.yaml changes uncommitted"
+  } else {
+    git -C $root add programming.yaml 2>&1 | Out-Null
+    git -C $root diff --cached --quiet
+    if ($LASTEXITCODE -ne 0) { git -C $root commit -q -m "Weekly programming pass $(Get-Date -Format yyyy-MM-dd)" 2>&1 | Out-Null; Say "committed programming.yaml changes" }
+  }
 }
 if (Test-Path "$root\data\program\last-run.md") { Say "summary: data\program\last-run.md" }
 Say "weekly programming pass: done"

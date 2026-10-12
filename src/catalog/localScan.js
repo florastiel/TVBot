@@ -11,6 +11,7 @@ import { parseRelease, showName, tidy as tidyName } from "./release.js";
 import { measureSpots } from "./loudness.js";
 import { sortLoose, refineStaging, scanState } from "./brandsort.js";
 import { splitEyecatches } from "./eyesplit.js";
+import { inheritPlayHistory } from "./history.js";
 
 const run = promisify(execFile);
 const VIDEO = new Set([".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts", ".webm", ".flv"]);
@@ -111,6 +112,8 @@ export async function scanLocal() {
     try { await scanLocalFolders(); } finally { scanState.running = false; }
   };
   await scan();
+  // A file moved by hand is a new row; give it back the old row's play count and tags.
+  try { inheritPlayHistory(); } catch (e) { log.warn(`history: ${e.message}`); }
   // An eyecatch that is really two or three: cut apart (durations are known now), then read the new files.
   try {
     if ((await splitEyecatches()).some((r) => r.done)) await scan();
