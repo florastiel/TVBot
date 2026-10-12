@@ -3,7 +3,7 @@
 // breaks inside get eyecatches, broadcast.eyecatches "tv"). Prestige premium-cable
 // shows, arthouse and experimental films: no. Claude decides per show and per movie,
 // once (shows.tv_breaks, items.tv_breaks).
-import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient } from "../claude.js";
 import { config, secrets } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
@@ -57,7 +57,7 @@ export async function tagBreaks({ redo = false } = {}) {
     WHERE i.kind = 'movie' AND ${redo ? "1" : "i.tv_breaks IS NULL"} AND ${schedulableSql("i")} ORDER BY i.title`).all();
   const all = [...shows, ...movies];
   if (!all.length) return 0;
-  const client = new Anthropic({ apiKey: secrets.anthropicKey });
+  const client = claudeClient("tv-breaks");
   const putShow = db.prepare("UPDATE shows SET tv_breaks = ? WHERE title = ?");
   const putMovie = db.prepare("UPDATE items SET tv_breaks = ? WHERE id = ?");
   let n = 0, yes = 0;

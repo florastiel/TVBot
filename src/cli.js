@@ -97,11 +97,12 @@ Object.assign(commands, {
   // Long commercials that are really reels of several ads (catalog/eyesplit.js).
   // tv.cmd commercials            show which would be cut, and where (changes nothing; asks Claude to confirm)
   // tv.cmd commercials --apply    cut them; originals go to data\commercial-originals
+  // tv.cmd commercials --force --only=a,b   cut at every black + silence moment without asking Claude (serials Claude saw as one story)
   async commercials(...args) {
     const { splitCommercials } = await import("./catalog/eyesplit.js");
     const apply = args.includes("--apply");
     const only = (args.find((a) => a.startsWith("--only=")) || "").slice(7).split(",").filter(Boolean); // --only=aflac,krave
-    const rep = await splitCommercials({ dryRun: !apply, only });
+    const rep = await splitCommercials({ dryRun: !apply, only, force: args.includes("--force") });
     console.table(rep.map((r) => ({ file: r.file.split("\\").slice(-2).join("\\").slice(-58), s: r.seconds, pieces: r.pieces, lengths: r.lengths, via: r.via, note: r.skipped || (r.done ? "cut" : ""), why: (r.why || "").slice(0, 70) })));
     if (apply && rep.some((r) => r.done)) { const { syncLocal } = await import("./catalog/index.js"); await syncLocal(); }
     if (!rep.length) console.log("No reels found.");

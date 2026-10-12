@@ -4,7 +4,7 @@
 // synopsis when one mentions something a theme is about (tagging/tmdb.js). Each episode is
 // checked once per THEMES_VERSION. The flagged episodes become automatic buckets
 // (buckets.js); holiday ones also stay out of regular blocks off-season (fill.js).
-import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient } from "../claude.js";
 import { config, secrets } from "../config.js";
 import { getDb, tx, setMeta } from "../db.js";
 import { log } from "../log.js";
@@ -69,7 +69,7 @@ export async function tagEpisodeThemes({ redo = false } = {}) {
       AND (i.match = 'full' OR i.tmdb_ep IS NOT NULL OR (i.title IS NOT NULL AND i.title NOT LIKE 'Episode %'))
     ORDER BY i.show_title, i.season, i.episode`).all();
   if (!rows.length) return 0;
-  const client = new Anthropic({ apiKey: secrets.anthropicKey });
+  const client = claudeClient("episode-tags");
   const byShow = [...Map.groupBy(rows, (r) => r.show_title)];
   const mark = db.prepare(`UPDATE items SET themes_checked = ${THEMES_VERSION} WHERE id = ?`);
   const put = db.prepare("INSERT OR IGNORE INTO item_themes (item_id, theme) VALUES (?, ?)");

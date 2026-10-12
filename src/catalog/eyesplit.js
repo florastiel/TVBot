@@ -14,7 +14,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient, underCeiling } from "../claude.js";
 import { config, secrets, DATA_DIR } from "../config.js";
 import { getDb } from "../db.js";
 import { log } from "../log.js";
@@ -83,7 +83,7 @@ async function frameAt(file, t) {
 }
 
 const claudeRun = { n: 0 };
-export const claudeOn = () => !!(settings().claude_vision && secrets.anthropicKey);
+export const claudeOn = () => !!(settings().claude_vision && secrets.anthropicKey && underCeiling());
 
 async function askClaude(file, dur, cands, what = "eyecatch") {
   const max = claudeRun.max || Number(settings().max_claude_per_run) || 30;
@@ -102,10 +102,11 @@ async function askClaude(file, dur, cands, what = "eyecatch") {
     for (const img of [b, a]) if (img) content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } });
   }
   content.push({ type: "text", text: (commercial ? 'Which candidates are real boundaries between two SEPARATE commercials (a different ad starts: new scene, product or brand), and which are just a pause inside one commercial (a fade before its end card or tagline)? ' : 'Which candidates are real boundaries between two SEPARATE eyecatches (a different animation or title card starts; the jingle restarts), and which are just a moment inside one eyecatch (a scene change, a fade, a quiet beat)? ') + 'Reply with JSON only: {"cuts": [<seconds of each real boundary, inside its candidate\'s range>], "confidence": "high" | "medium" | "low", "why": <a few words>}. Use an empty list if it is one ' + what + '.' });
+  if (!underCeiling()) throw Object.assign(new Error("this month's Claude ceiling for filing is used up"), { infra: true });
   claudeRun.n++;
   let text;
   try {
-    const msg = await new Anthropic({ apiKey: secrets.anthropicKey }).messages.create({
+    const msg = await claudeClient("eyesplit").messages.create({
       model: settings().claude_model || config.claude.model, max_tokens: 300, messages: [{ role: "user", content }],
     });
     text = msg.content.map((c) => c.text || "").join("");
@@ -238,7 +239,7 @@ function copyCsvRow(root, original, parts) {
   try { writeFileSync(file, "\uFEFF" + stringify(rows, { header: true, columns: ["filename", "decade", "holiday", "notes"] })); } catch (e) { log.warn(`eyesplit: couldn't update ${file} (${e.code})`); }
 }
 
-export async function splitCommercials({ dryRun = false, minPieces = 3, minSeconds = 75, only = [] } = {}) {
+export async function splitCommercials({ dryRun = false, minPieces = 3, minSeconds = 75, only = [], force = false } = {}) {
   const root = config.local.commercials;
   if (!root || !existsSync(root)) return [];
   const rows = getDb().prepare(`SELECT id, source_key, duration_ms FROM items WHERE source = 'local' AND kind = 'commercial'
@@ -257,7 +258,8 @@ export async function splitCommercials({ dryRun = false, minPieces = 3, minSecon
     if (cands.length < minPieces - 1) continue; // not clearly a reel
     let d;
     try {
-      d = claudeOn() ? await decide(r.source_key, dur, cands, "commercial") : { cuts: cands.map((c) => c.at), gaps: cands.map((c) => c.gap), via: "black + silence" };
+      // force: cut at every black + silence moment without asking Claude (serials that Claude saw as one story).
+      d = !force && claudeOn() ? await decide(r.source_key, dur, cands, "commercial") : { cuts: cands.map((c) => c.at), gaps: cands.map((c) => c.gap), via: force ? "forced" : "black + silence" };
     } catch (e) {
       log.warn(`eyesplit: ${basename(r.source_key)}: ${e.message}`);
       if (e.infra) break;
@@ -279,4 +281,54 @@ export async function splitCommercials({ dryRun = false, minPieces = 3, minSecon
     }
   }
   return report;
+}
+// ---------- by hand: the eyecatch clipper page (editor.js serves it) ----------
+// You watch an eyecatch in the browser, press Space where one ends and the next begins, and the
+// pieces are cut here with the same machinery as the automatic splitter (original kept in
+// data\eyecatch-originals). data\eyecatch-reviewed.json remembers what you've looked at.
+const REVIEWED = () => join(DATA_DIR, "eyecatch-reviewed.json");
+const readReviewed = () => { try { return JSON.parse(readFileSync(REVIEWED(), "utf8")); } catch { return {}; } };
+const saveReviewed = (o) => { try { writeFileSync(REVIEWED(), JSON.stringify(o)); } catch { /* fine */ } };
+const eyecatchRow = (id) => getDb().prepare("SELECT id, source_key, duration_ms FROM items WHERE id = ? AND source = 'local' AND kind = 'eyecatch' AND present = 1").get(Number(id));
+
+export function clipperList() {
+  const root = config.local.eyecatches, reviewed = readReviewed(), machine = readChecked();
+  return getDb().prepare("SELECT id, source_key, duration_ms FROM items WHERE source = 'local' AND kind = 'eyecatch' AND present = 1 AND playable = 1 ORDER BY duration_ms DESC, id").all().map((r) => {
+    const dir = dirname(relative(root, r.source_key));
+    return { id: r.id, name: basename(r.source_key, extname(r.source_key)), folder: dir === "." ? "" : dir, seconds: Math.round(r.duration_ms / 100) / 10,
+      reviewed: reviewed[r.source_key]?.result ?? null, machineChecked: !!machine[r.source_key], part: alreadyCut(r.source_key) };
+  });
+}
+
+// The file behind an eyecatch id (and only eyecatches: the page can't ask for any other file).
+export function eyecatchFile(id) {
+  const r = eyecatchRow(id);
+  return r && existsSync(r.source_key) ? r.source_key : null;
+}
+
+export function markEyecatchSingle(id) {
+  const r = eyecatchRow(id);
+  if (!r) throw new Error("no such eyecatch");
+  const rev = readReviewed();
+  rev[r.source_key] = { at: new Date().toISOString(), result: "single" };
+  saveReviewed(rev);
+}
+
+// pieces: [[start, end], ...] in seconds - only the parts to KEEP. -> the new file names.
+export async function cutEyecatchByHand(id, pieces) {
+  const r = eyecatchRow(id);
+  if (!r || !existsSync(r.source_key)) throw new Error("that file isn't there any more");
+  const dur = r.duration_ms / 1000;
+  const keep = (Array.isArray(pieces) ? pieces : []).map((p) => [Number(p?.[0]), Number(p?.[1])])
+    .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b)).map(([a, b]) => [Math.max(0, a), Math.min(dur, b)])
+    .filter(([a, b]) => b - a >= 0.5).sort((x, y) => x[0] - y[0]);
+  if (!keep.length) throw new Error("no piece of at least half a second to keep");
+  for (let i = 1; i < keep.length; i++) if (keep[i][0] < keep[i - 1][1] - 0.01) throw new Error("the pieces overlap");
+  if (keep.length === 1 && keep[0][0] <= 0.05 && keep[0][1] >= dur - 0.05) throw new Error("that keeps the whole video; use \"It's one eyecatch\" instead");
+  const outs = await splitFile(r.source_key, keep, config.local.eyecatches);
+  const rev = readReviewed();
+  rev[r.source_key] = { at: new Date().toISOString(), result: "split", pieces: keep.length };
+  saveReviewed(rev);
+  log.info(`eyesplit: by hand, ${basename(r.source_key)} (${dur.toFixed(1)} s) -> ${keep.length} piece(s) [${keep.map(([a, b]) => `${a.toFixed(2)}-${b.toFixed(2)}`).join(", ")}]; original in data\\eyecatch-originals`);
+  return outs.map((o) => basename(o));
 }

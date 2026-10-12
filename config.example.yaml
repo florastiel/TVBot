@@ -173,6 +173,7 @@ player:
 
 claude:
   model: claude-sonnet-5       # used for tagging (and scheduling, with scheduling: api)
+  usage_log: ''                # where every Claude call's token counts are appended (blank = data\claude-usage.jsonl). Point it at a shared file to total several projects
   # local: no API for scheduling. The grid comes from programming.yaml, and a weekly
   # Claude Code job on glados (scripts\weekly-program.ps1, PROGRAMMING.md) curates the
   # buckets and the template. api: Claude API calls plan the grid and new buckets weekly.
@@ -195,6 +196,7 @@ brand_sort:
   claude_vision: true          # Claude looks at frames (needs ANTHROPIC_API_KEY); false = never
   claude_model: ""             # blank = claude.model
   max_claude_per_run: 30       # most Claude calls in one background pass
+  monthly_ceiling_usd: 2       # filing and splitting stop using Claude for the rest of the month once they have used about this much (0 = no ceiling)
   split_eyecatches: true       # an eyecatch longer than split_min_seconds that is really two or three is cut apart (needs a boundary: a gap of silence, a black frame or a hard cut; Claude confirms from frames). The original goes to data\eyecatch-originals
   split_min_seconds: 10.5
 # A weather report from the National Weather Service (US places): one clean static board (every

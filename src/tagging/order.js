@@ -3,7 +3,7 @@
 // episodic ones (sitcoms, anthologies: Fresh Prince, George Lopez, Black Mirror) air in
 // random order. Claude decides per show, once; shows.random / shows.in_order in
 // config.yaml override it.
-import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient } from "../claude.js";
 import { config, secrets } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
@@ -34,7 +34,7 @@ export async function tagOrder({ redo = false } = {}) {
     WHERE ${redo ? "1" : "s.serialized IS NULL"} AND EXISTS (SELECT 1 FROM items i WHERE i.show_title = s.title AND i.kind = 'episode' AND ${schedulableSql("i")})
     ORDER BY s.title`).all();
   if (!shows.length) return 0;
-  const client = new Anthropic({ apiKey: secrets.anthropicKey });
+  const client = claudeClient("order");
   const put = db.prepare("UPDATE shows SET serialized = ? WHERE title = ?");
   let n = 0;
   for (let k = 0; k < shows.length; k += CHUNK) {

@@ -3,7 +3,7 @@
 // on this PC (127.0.0.1) and every request needs the page's random token. Writes go straight to
 // the database with the same rules as scripts/program/tv.mjs apply; a backup is taken first.
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, createReadStream, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,8 +13,10 @@ import { schedulableSql } from "./catalog/schedulable.js";
 import { FORMATS, DAYPARTS, isMovieFormat, listBuckets } from "./schedule/buckets.js";
 import { loadTemplate } from "./schedule/templategrid.js";
 import { WEEKDAYS, blockedDays } from "./schedule/limits.js";
+import { clipperList, eyecatchFile, cutEyecatchByHand, markEyecatchSingle } from "./catalog/eyesplit.js";
 
 const PAGE = join(dirname(fileURLToPath(import.meta.url)), "editor.html");
+const CLIP_PAGE = join(dirname(fileURLToPath(import.meta.url)), "clipper.html");
 const MIN = { one_show: 1, variety: 4, movie: 3, movie_series: 2 };
 const MMDD = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const NAME = /^[\p{L}\p{N} &'-]{1,32}$/u;
@@ -197,6 +199,19 @@ function retire(id) {
   touched();
 }
 
+// A video file with Range support, so the browser can seek in it.
+function streamFile(req, res, file) {
+  const size = statSync(file).size, type = /\.webm$/i.test(file) ? "video/webm" : "video/mp4"; // .mov (H.264) plays as mp4 in Chrome
+  const base = { "content-type": type, "accept-ranges": "bytes", "cache-control": "no-store" };
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ""));
+  if (!m || (m[1] === "" && m[2] === "")) { res.writeHead(200, { ...base, "content-length": size }); return createReadStream(file).pipe(res); }
+  const start = m[1] === "" ? Math.max(0, size - Number(m[2])) : Number(m[1]);
+  const end = m[1] === "" || m[2] === "" ? size - 1 : Math.min(Number(m[2]), size - 1);
+  if (!(start >= 0 && start <= end && end < size)) { res.writeHead(416, { "content-range": `bytes */${size}` }); return res.end(); }
+  res.writeHead(206, { ...base, "content-range": `bytes ${start}-${end}/${size}`, "content-length": end - start + 1 });
+  createReadStream(file, { start, end }).pipe(res);
+}
+
 async function refill() {
   const { generateSchedule } = await import("./schedule/generate.js");
   await generateSchedule({ days: 7, replace: true });
@@ -216,6 +231,13 @@ export function startEditor({ port = 5174, host = "127.0.0.1", requireUser = fal
     if (req.method !== "GET") console.log(`editor: ${user || "local"} ${req.method} ${url.pathname}`);
     try {
       if (req.method === "GET" && url.pathname === "/") return send(200, readFileSync(PAGE, "utf8").replace("__TOKEN__", token), "text/html");
+      if (url.pathname === "/favicon.ico") return send(204, "", "image/x-icon");
+      if (req.method === "GET" && url.pathname === "/clip") return send(200, readFileSync(CLIP_PAGE, "utf8").replace("__TOKEN__", token), "text/html");
+      if (req.method === "GET" && url.pathname.startsWith("/media/")) { // the clipper's video; <video> can't send the token header, so it rides in the URL
+        if (url.searchParams.get("t") !== token) return send(403, { error: "bad token (reload the page)" });
+        const file = eyecatchFile(url.pathname.slice(7));
+        return file ? streamFile(req, res, file) : send(404, { error: "no such eyecatch" });
+      }
       if (!url.pathname.startsWith("/api/")) return send(404, { error: "not found" });
       if (req.headers["x-token"] !== token) return send(403, { error: "bad token (reload the page)" });
       let body = {};
@@ -236,6 +258,14 @@ export function startEditor({ port = 5174, host = "127.0.0.1", requireUser = fal
         else if (seg[2] === "retire") retire(id);
         else return send(404, { error: "not found" });
         return send(200, { ok: true });
+      }
+      if (req.method === "GET" && seg[0] === "clip" && seg[1] === "list") return send(200, clipperList());
+      if (req.method === "POST" && seg[0] === "clip" && seg[1] === "single") { markEyecatchSingle(body.id); return send(200, { ok: true }); }
+      if (req.method === "POST" && seg[0] === "clip" && seg[1] === "cut") {
+        let parts;
+        try { parts = await cutEyecatchByHand(body.id, body.pieces); } catch (e) { bad(e.message); }
+        try { const { syncLocal } = await import("./catalog/index.js"); await syncLocal(); } catch (e) { console.log(`editor: cut done but the catalog sync failed (${e.message}); the next sync fixes it`); }
+        return send(200, { ok: true, parts });
       }
       if (req.method === "POST" && seg[0] === "refill") { await refill(); return send(200, { ok: true }); }
       return send(404, { error: "not found" });

@@ -17,7 +17,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient, underCeiling } from "../claude.js";
 import { config, secrets, DATA_DIR } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
@@ -154,7 +154,7 @@ async function askVision(file, brands) {
 // ---------- Claude, looking at a few frames ----------
 const FFPROBE = () => process.env.FFPROBE_PATH || "ffprobe";
 const claudeRun = { n: 0 }; // calls in this pass, against brand_sort.max_claude_per_run
-const claudeOn = () => !!(settings().claude_vision && secrets.anthropicKey);
+const claudeOn = () => !!(settings().claude_vision && secrets.anthropicKey && underCeiling());
 
 async function frames(file, count = 5) {
   let dur = 0;
@@ -183,10 +183,11 @@ async function askClaude(kind, file, brands) {
   if (claudeRun.n >= max) throw Object.assign(new Error(`stopping after ${max} Claude calls this pass; the rest wait for the next one`), { infra: true });
   const imgs = await frames(file);
   if (!imgs.length) return {};
+  if (!underCeiling()) throw Object.assign(new Error("this month's Claude ceiling for filing is used up"), { infra: true });
   claudeRun.n++;
   let text;
   try {
-    const msg = await new Anthropic({ apiKey: secrets.anthropicKey }).messages.create({
+    const msg = await claudeClient("brandsort").messages.create({
       model: settings().claude_model || config.claude.model, max_tokens: 300,
       messages: [{ role: "user", content: [
         ...imgs.map((data) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } })),

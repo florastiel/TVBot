@@ -2,7 +2,7 @@
 // "Tearjerkers"). Claude sorts the catalog into them, many-to-many, judging titles by
 // what they are rather than how famous they are, and invents a few new ones each week
 // (seasonal ones especially). Code fills blocks with random picks from a bucket.
-import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient } from "../claude.js";
 import { config, secrets } from "../config.js";
 import { getDb, tx, getMeta, setMeta } from "../db.js";
 import { log } from "../log.js";
@@ -392,7 +392,7 @@ function upcomingDates(days) {
 
 // The first pass: 30-60 buckets, then the whole catalog sorted into them.
 export async function buildBuckets() {
-  const client = new Anthropic({ apiKey: secrets.anthropicKey });
+  const client = claudeClient("buckets");
   refreshHolidayBuckets();
   const cat = catalog();
   const fresh = await defineBuckets(client, `Define this channel's buckets: 30 to 60 of them that together give every show and movie below a home. Today is ${upcomingDates(1)[0]}; include seasonal buckets for the coming months too, with their active window. Halloween, Thanksgiving and Christmas episode and movie buckets already exist (made from holiday tags), but more specific seasonal ones are welcome.
@@ -413,7 +413,7 @@ ${cat.text}`, listBuckets());
 // thin: instead, new buckets for the titles that have only one bucket (often a loose fit
 // the first pass had to force); "show" or "movie" for only those.
 export async function newBuckets({ count = 5, request = null, thin = false } = {}) {
-  const client = new Anthropic({ apiKey: secrets.anthropicKey });
+  const client = claudeClient("buckets");
   refreshHolidayBuckets();
   const cat = catalog();
   const existing = listBuckets().filter((b) => b.source === "claude");

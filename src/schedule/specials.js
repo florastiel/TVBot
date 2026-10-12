@@ -3,7 +3,7 @@
 // either automatically each week or on request (/tvadmin special "..."). Code checks
 // the answer, removes the regular blocks it overlaps, saves it, and has the regular
 // planner re-fill any gaps around it.
-import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient } from "../claude.js";
 import { config, secrets } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
@@ -164,7 +164,7 @@ export async function planSpecials(opts = {}) {
 }
 
 async function planUnlocked({ request = null, fromMs = Date.now() + 3600000, days = 7, count = 1 } = {}) {
-  const client = new Anthropic({ apiKey: secrets.anthropicKey });
+  const client = claudeClient("specials");
   fromMs = Math.ceil(fromMs / gridMs()) * gridMs();
   const toMs = fromMs + days * DAY;
   const N = config.broadcast.no_repeat_days * DAY;

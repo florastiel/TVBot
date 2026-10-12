@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eyecatch Clipper</title>
+<style>
+  :root { --bg:#f6f6f4; --panel:#fff; --ink:#1d1d1b; --muted:#6b6b66; --line:#dcdcd6; --accent:#2f5fd0; --accent-ink:#fff; --bad:#b3261e; --ok:#1e7a46; --warn:#9a6700; --mark:#d6336c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161617; --panel:#1f1f21; --ink:#ececea; --muted:#9a9a94; --line:#333336; --accent:#6f95f2; --accent-ink:#101114; --bad:#ff7b72; --ok:#56d364; --warn:#e3b341; --mark:#ff6fa5; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; }
+  header a { color:var(--accent); text-decoration:none; }
+  main { display:grid; grid-template-columns:340px 1fr; min-height:calc(100vh - 50px); }
+  aside { border-right:1px solid var(--line); background:var(--panel); padding:10px; overflow:auto; max-height:calc(100vh - 50px); position:sticky; top:50px; }
+  section { padding:16px; min-width:0; }
+  input, select, button { font:inherit; color:inherit; }
+  input[type=search], select { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:6px 8px; width:100%; }
+  button { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:6px 12px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  button.small { padding:2px 8px; font-size:12px; }
+  button:disabled { opacity:.45; cursor:default; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .grow { flex:1; min-width:0; }
+  .hint { color:var(--muted); font-size:12px; }
+  .item { padding:7px 9px; border-radius:6px; cursor:pointer; border:1px solid transparent; }
+  .item:hover { background:var(--bg); }
+  .item.sel { border-color:var(--accent); background:var(--bg); }
+  .item .nm { font-weight:600; overflow-wrap:anywhere; }
+  .tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:9px; border:1px solid var(--line); color:var(--muted); margin-right:4px; }
+  .tag.ok { color:var(--ok); border-color:var(--ok); }
+  .tag.warn { color:var(--warn); border-color:var(--warn); }
+  video { width:100%; max-height:56vh; background:#000; border-radius:8px; }
+  #tl { position:relative; height:34px; margin:10px 0 4px; background:var(--panel); border:1px solid var(--line); border-radius:6px; cursor:pointer; user-select:none; }
+  #tl .piece { position:absolute; top:0; bottom:0; background:color-mix(in srgb, var(--accent) 22%, transparent); border-right:1px solid var(--line); }
+  #tl .piece.dropped { background:repeating-linear-gradient(45deg, transparent 0 6px, color-mix(in srgb, var(--bad) 30%, transparent) 6px 12px); }
+  #tl .mark { position:absolute; top:-3px; bottom:-3px; width:3px; margin-left:-1px; background:var(--mark); border-radius:2px; }
+  #tl .head { position:absolute; top:0; bottom:0; width:2px; background:var(--ink); pointer-events:none; }
+  fieldset { border:1px solid var(--line); border-radius:8px; margin:12px 0; padding:10px 12px; background:var(--panel); }
+  legend { padding:0 6px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { padding:4px 6px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
+  td.act { white-space:nowrap; text-align:right; width:1%; }
+  tr.off td.t { color:var(--muted); text-decoration:line-through; }
+  .time { font-variant-numeric:tabular-nums; font-weight:600; }
+  kbd { background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:0 5px; font:12px ui-monospace, Consolas, monospace; }
+  button.primary kbd { background:transparent; border-color:currentColor; color:inherit; opacity:.85; }
+  .toast { position:fixed; bottom:16px; right:16px; max-width:460px; padding:10px 14px; border-radius:8px; background:var(--panel); border:1px solid var(--line); box-shadow:0 4px 18px #0004; z-index:20; }
+  .toast.err { border-color:var(--bad); color:var(--bad); }
+  .err-box { color:var(--bad); margin:8px 0; }
+  @media (max-width: 800px) { main { grid-template-columns:1fr; } aside { position:static; max-height:50vh; border-right:0; border-bottom:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Eyecatch Clipper</h1>
+  <span class="hint"><kbd>Space</kbd> cut here &nbsp; <kbd>K</kbd> play/pause &nbsp; <kbd>&larr;</kbd><kbd>&rarr;</kbd> 1 s (<kbd>Shift</kbd> 0.1 s) &nbsp; <kbd>,</kbd><kbd>.</kbd> one frame &nbsp; <kbd>Backspace</kbd> undo last cut &nbsp; <kbd>Enter</kbd> save &nbsp; <kbd>N</kbd> it's one eyecatch &nbsp; <kbd>S</kbd> skip</span>
+  <span class="grow"></span>
+  <a href="/">Bucket editor</a>
+</header>
+<main>
+  <aside>
+    <div class="row" style="margin-bottom:8px">
+      <select id="show" class="grow" title="Which eyecatches to list">
+        <option value="todo">Not looked at yet</option>
+        <option value="all">All</option>
+        <option value="done">Looked at</option>
+      </select>
+      <select id="sort" class="grow">
+        <option value="long">Longest first</option>
+        <option value="name">By folder and name</option>
+      </select>
+    </div>
+    <input type="search" id="q" placeholder="Search" style="margin-bottom:6px">
+    <div class="hint" id="count" style="margin-bottom:6px"></div>
+    <div id="list"></div>
+  </aside>
+  <section>
+    <div id="empty" class="hint">Pick an eyecatch on the left. Play it, press <kbd>Space</kbd> at the moment one eyecatch ends and the next begins, then <kbd>Enter</kbd> to cut. The original is kept in <code>data\eyecatch-originals</code>.</div>
+    <div id="work" hidden>
+      <div class="row" style="margin-bottom:8px">
+        <div class="grow"><div id="title" style="font-weight:600;font-size:16px;overflow-wrap:anywhere"></div><div id="meta" class="hint"></div></div>
+        <button id="restart" title="R">&#8634; From the start</button>
+      </div>
+      <video id="v" controls preload="auto" playsinline></video>
+      <div id="verr" class="err-box" hidden></div>
+      <div id="tl" title="Click to jump"></div>
+      <div class="row">
+        <span class="time" id="now">0:00.00</span><span class="hint">of <span id="dur"></span></span>
+        <span class="grow"></span>
+        <button id="mark" class="primary">Cut here <kbd>Space</kbd></button>
+        <button id="undo">Undo last cut</button>
+      </div>
+      <fieldset>
+        <legend>Pieces (tick the ones to keep)</legend>
+        <table><tbody id="pieces"></tbody></table>
+        <div class="hint" id="nopieces">No cuts yet. Nothing changes unless you save.</div>
+      </fieldset>
+      <fieldset id="marksbox" hidden>
+        <legend>Cut points</legend>
+        <table><tbody id="marks"></tbody></table>
+      </fieldset>
+      <div class="row">
+        <button id="save" class="primary" disabled>Save the cuts <kbd>Enter</kbd></button>
+        <button id="single">It's one eyecatch <kbd>N</kbd></button>
+        <button id="skip">Skip for now <kbd>S</kbd></button>
+        <span class="hint" id="saving"></span>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+const TOKEN = "__TOKEN__";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (t) => { t = Math.max(0, t); const m = Math.floor(t / 60); return `${m}:${(t - m * 60).toFixed(2).padStart(5, "0")}`; };
+const r2 = (t) => Math.round(t * 100) / 100;
+
+let items = [], cur = null, marks = [], dropped = new Set(), stopAt = null, busy = false;
+
+async function api(path, body) {
+  const r = await fetch("/api/" + path, { method: body ? "POST" : "GET", headers: { "x-token": TOKEN, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+function toast(msg, err) { const t = document.createElement("div"); t.className = "toast" + (err ? " err" : ""); t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), err ? 7000 : 3500); }
+
+// ---------- the list ----------
+function visible() {
+  const q = $("q").value.trim().toLowerCase(), show = $("show").value;
+  let l = items.filter((i) => (show === "all" || (show === "todo" ? !i.reviewed : !!i.reviewed)) && (!q || `${i.folder} ${i.name}`.toLowerCase().includes(q)));
+  if ($("sort").value === "name") l = [...l].sort((a, b) => (a.folder + "/" + a.name).localeCompare(b.folder + "/" + b.name, undefined, { numeric: true }));
+  return l;
+}
+function renderList() {
+  const l = visible(), done = items.filter((i) => i.reviewed).length;
+  $("count").textContent = `${l.length} shown - you've looked at ${done} of ${items.length}`;
+  $("list").innerHTML = l.map((i) => `<div class="item${cur && cur.id === i.id ? " sel" : ""}" data-id="${i.id}">
+    <div class="nm">${esc(i.name)}</div>
+    <div class="hint">${esc(i.folder || "(top level)")} &middot; ${i.seconds} s
+      ${i.reviewed ? `<span class="tag ok">${i.reviewed === "split" ? "cut" : "one"}</span>` : ""}${i.machineChecked && !i.reviewed ? '<span class="tag">auto-checked</span>' : ""}${i.part ? '<span class="tag warn">a cut piece</span>' : ""}</div></div>`).join("");
+}
+$("list").addEventListener("click", (e) => { const d = e.target.closest(".item"); if (d) open(items.find((i) => i.id === Number(d.dataset.id))); });
+for (const id of ["show", "sort", "q"]) $(id).addEventListener("input", renderList);
+async function load() { items = await api("clip/list"); renderList(); }
+
+// ---------- the open eyecatch ----------
+const v = $("v");
+function open(item) {
+  if (!item) return;
+  cur = item; marks = []; dropped = new Set(); stopAt = null; $("verr").hidden = true;
+  $("empty").hidden = true; $("work").hidden = false;
+  $("title").textContent = item.name; $("meta").textContent = `${item.folder || "(top level)"} - ${item.seconds} s`;
+  v.src = `/media/${item.id}?t=${TOKEN}`; v.load(); v.play().catch(() => {});
+  renderList(); renderWork();
+}
+v.addEventListener("error", () => { const e = $("verr"); e.hidden = false; e.textContent = "This browser can't play this file (the format may not be supported). Try Chrome, or press S to skip it."; });
+v.addEventListener("loadedmetadata", () => { $("dur").textContent = fmt(v.duration); renderWork(); });
+const dur = () => (Number.isFinite(v.duration) && v.duration > 0 ? v.duration : cur ? cur.seconds : 0);
+
+function pieces() {
+  const b = [0, ...marks, dur()];
+  return b.slice(0, -1).map((a, i) => ({ a, b: b[i + 1], key: r2(a), keep: !dropped.has(r2(a)) })).filter((p) => p.b - p.a > 0.001);
+}
+function renderWork() {
+  if (!cur) return;
+  const d = dur() || 1, ps = pieces();
+  $("tl").innerHTML = ps.map((p) => `<div class="piece${p.keep ? "" : " dropped"}" style="left:${(p.a / d) * 100}%;width:${((p.b - p.a) / d) * 100}%"></div>`).join("")
+    + marks.map((m) => `<div class="mark" style="left:${(m / d) * 100}%"></div>`).join("") + '<div class="head" id="head"></div>';
+  $("nopieces").hidden = marks.length > 0;
+  $("pieces").innerHTML = marks.length ? ps.map((p, i) => `<tr class="${p.keep ? "" : "off"}"><td><input type="checkbox" data-k="${p.key}" ${p.keep ? "checked" : ""}></td>
+    <td class="t time">${fmt(p.a)} - ${fmt(p.b)}</td><td class="t hint">${(p.b - p.a).toFixed(2)} s</td><td class="act"><button class="small" data-play="${i}">&#9654; play</button></td></tr>`).join("") : "";
+  $("marksbox").hidden = !marks.length;
+  $("marks").innerHTML = marks.map((m, i) => `<tr><td class="time">${fmt(m)}</td><td class="act"><button class="small" data-go="${i}">go</button>
+    <button class="small" data-nudge="${i}" data-by="-0.1">-0.1</button><button class="small" data-nudge="${i}" data-by="0.1">+0.1</button>
+    <button class="small" data-del="${i}">remove</button></td></tr>`).join("");
+  $("save").disabled = busy || !marks.length || !ps.some((p) => p.keep);
+  head();
+}
+function head() { const h = $("head"); if (h) h.style.left = `${(v.currentTime / (dur() || 1)) * 100}%`; $("now").textContent = fmt(v.currentTime); }
+function tick() { head(); if (stopAt !== null && v.currentTime >= stopAt) { v.pause(); stopAt = null; } requestAnimationFrame(tick); }
+requestAnimationFrame(tick);
+
+$("tl").addEventListener("click", (e) => { const r = $("tl").getBoundingClientRect(); v.currentTime = ((e.clientX - r.left) / r.width) * dur(); stopAt = null; });
+$("pieces").addEventListener("click", (e) => {
+  const c = e.target.closest("input[type=checkbox]"); if (c) { c.checked ? dropped.delete(Number(c.dataset.k)) : dropped.add(Number(c.dataset.k)); return renderWork(); }
+  const p = e.target.closest("[data-play]"); if (p) { const x = pieces()[Number(p.dataset.play)]; v.currentTime = x.a; stopAt = x.b; v.play(); }
+});
+$("marks").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.go !== undefined) { v.currentTime = marks[Number(b.dataset.go)]; stopAt = null; }
+  if (b.dataset.nudge !== undefined) { const i = Number(b.dataset.nudge); marks[i] = r2(Math.min(dur() - 0.2, Math.max(0.2, marks[i] + Number(b.dataset.by)))); marks.sort((x, y) => x - y); renderWork(); }
+  if (b.dataset.del !== undefined) { marks.splice(Number(b.dataset.del), 1); renderWork(); }
+});
+
+function addMark() {
+  if (!cur) return;
+  const t = r2(v.currentTime);
+  if (t < 0.2 || t > dur() - 0.2) return toast("That's at the very start or end - there's nothing to cut off.", true);
+  if (marks.some((m) => Math.abs(m - t) < 0.1)) return;
+  marks.push(t); marks.sort((x, y) => x - y); renderWork();
+}
+function undoMark() { marks.pop(); renderWork(); }
+$("mark").onclick = addMark; $("undo").onclick = undoMark;
+$("restart").onclick = () => { v.currentTime = 0; stopAt = null; v.play(); };
+
+// ---------- saving ----------
+// The eyecatch after this one in the list as it is now (work it out BEFORE saving changes the list).
+function neighborId() { const l = visible(), at = cur ? l.findIndex((i) => i.id === cur.id) : -1; return (l[at + 1] || l[at - 1] || (at < 0 ? l[0] : null) || {}).id ?? null; }
+function goTo(id) {
+  const next = id != null ? items.find((i) => i.id === id) : null;
+  if (next) return open(next);
+  cur = null; v.pause(); $("work").hidden = true; $("empty").hidden = false; renderList();
+}
+const advance = () => goTo(neighborId());
+async function save() {
+  const ps = pieces().filter((p) => p.keep);
+  if (!cur || busy || !marks.length || !ps.length) return;
+  const nid = neighborId();
+  busy = true; v.pause(); renderWork(); $("saving").textContent = "Cutting... (a few seconds)";
+  try {
+    const r = await api("clip/cut", { id: cur.id, pieces: ps.map((p) => [p.a, p.b]) });
+    toast(`Cut into ${r.parts.length}: ${r.parts.join(", ")}`);
+    await load(); goTo(nid);
+  } catch (e) { toast(e.message, true); }
+  busy = false; $("saving").textContent = ""; renderWork();
+}
+async function single() {
+  if (!cur || busy) return;
+  const nid = neighborId();
+  try { await api("clip/single", { id: cur.id }); cur.reviewed = "single"; toast("Marked as one eyecatch."); goTo(nid); }
+  catch (e) { toast(e.message, true); }
+}
+$("save").onclick = save; $("single").onclick = single; $("skip").onclick = advance;
+
+// ---------- keys (captured before the video element's own) ----------
+document.addEventListener("keydown", (e) => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== "checkbox") return;
+  if (!cur) return;
+  const step = e.shiftKey ? 0.1 : e.altKey || e.ctrlKey ? 0.04 : 1;
+  const seek = (by) => { v.currentTime = Math.min(dur(), Math.max(0, v.currentTime + by)); stopAt = null; };
+  const k = e.key.toLowerCase();
+  if (e.key === " ") addMark();
+  else if (k === "k") (v.paused ? v.play() : v.pause());
+  else if (e.key === "ArrowLeft") seek(-step);
+  else if (e.key === "ArrowRight") seek(step);
+  else if (e.key === ",") seek(-0.04);
+  else if (e.key === ".") seek(0.04);
+  else if (e.key === "Backspace") undoMark();
+  else if (e.key === "Enter") save();
+  else if (k === "n") single();
+  else if (k === "s") advance();
+  else if (k === "r") { v.currentTime = 0; stopAt = null; v.play(); }
+  else return;
+  e.preventDefault(); e.stopPropagation();
+}, true);
+
+load().catch((e) => toast(e.message, true));
+</script>
+</body>
+</html>

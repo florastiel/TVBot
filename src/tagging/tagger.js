@@ -5,7 +5,7 @@
 //   shows:    vibe, audience, animated, anime, origin, decade (per show, not per episode)
 //   movies:   same, plus holiday
 //   episodes: holiday only, and only for episodes with real metadata (title + summary)
-import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient, logUsage } from "../claude.js";
 import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -180,7 +180,7 @@ export function dryRun({ redo = false } = {}) {
 
 // One small chunk of each kind, sent directly (not batched), printed and NOT saved.
 export async function sample() {
-  const client = new Anthropic({ apiKey: secrets.anthropicKey });
+  const client = claudeClient("tag");
   const work = collect(false);
   for (const kind of ["shows", "movies", "episodes"]) {
     const rows = work[kind][0]?.slice(0, kind === "episodes" ? 100 : 6);
@@ -200,7 +200,7 @@ export async function sample() {
 
 export async function runTagging({ redo = false } = {}) {
   if (!secrets.anthropicKey) throw new Error("ANTHROPIC_API_KEY is not set in .env");
-  const client = new Anthropic({ apiKey: secrets.anthropicKey });
+  const client = claudeClient("tag");
 
   // Resume a batch from an earlier run instead of paying for it twice.
   let pending = existsSync(PENDING) ? JSON.parse(readFileSync(PENDING, "utf8")) : null;
@@ -264,6 +264,7 @@ export async function runTagging({ redo = false } = {}) {
     }
   }
   rmSync(PENDING, { force: true });
+  logUsage({ purpose: "tag-batch", model: pending.model, input: inTok, output: outTok, batch: true }); // billed at half the list price
 
   const price = BATCH_PRICE[pending.model];
   const cost = price ? ` ≈ $${((inTok * price[0] + outTok * price[1]) / 1e6).toFixed(2)}` : "";

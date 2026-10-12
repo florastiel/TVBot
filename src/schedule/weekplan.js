@@ -1,7 +1,7 @@
 // The week's grid: Claude lays out bucket slots ("Saturday 06:00 Saturday Morning
 // Cartoons, 10:00 Shonen Anime, ...") from the bucket list alone. It never picks titles;
 // code fills each slot with random picks from its bucket (fill.js).
-import Anthropic from "@anthropic-ai/sdk";
+import { claudeClient } from "../claude.js";
 import { config, secrets } from "../config.js";
 import { getDb, tx } from "../db.js";
 import { log } from "../log.js";
@@ -150,7 +150,7 @@ export async function planWeek({ fromMs = Date.now(), count = 7 } = {}) {
     saveSlots(days, slots);
     return slots;
   }
-  const client = new Anthropic({ apiKey: secrets.anthropicKey });
+  const client = claudeClient("weekplan");
   const specials = getDb().prepare("SELECT label, MIN(start_at) a, MAX(end_at) z FROM blocks WHERE source = 'special' AND end_at > ? AND start_at < ? GROUP BY label")
     .all(days[0].startMs, days.at(-1).endMs);
   const seasons = [...new Set(days.map((d) => season(d)).filter((s) => s.theme !== "none").map((s) => `${s.theme} season (the day itself is ${s.holidayDate})`))];
